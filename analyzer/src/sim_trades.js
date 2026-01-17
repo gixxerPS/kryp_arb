@@ -8,6 +8,7 @@ const PERIOD = '24 hours';
 const Q = 5000;           // USDT pro Trade
 const SLIPPAGE = 0.0005;  // 0.05 %
 const MIN_RAW = 0.003;    // 0.30 %
+const MAX_ROWS_SYMBOL_ROUTE = 40; // max Zeilen für symbol x route Tabelle
 
 function rawSpread(buyAsk, sellBid) {
   return (sellBid - buyAsk) / buyAsk;
@@ -132,7 +133,7 @@ async function main() {
   rows.sort((a, b) => b.pnl_usdt - a.pnl_usdt);
 
   console.log('\n=== PnL by Symbol x Route ===');
-  console.table(rows);
+  console.table(rows.slice(0, MAX_ROWS_SYMBOL_ROUTE));
 
   // Tabelle 2: aggregiert je Symbol (über alle Routen)
   const bySymbol = new Map(); // symbol -> { trades, pnl }
@@ -164,6 +165,27 @@ async function main() {
 
   console.log('\n=== PnL by Symbol (Aggregated over all routes) ===');
   console.table(symbolRows);
+
+  // Gesamtgewinn ausgeben
+  // === PnL Total ===
+  let totalTrades = 0;
+  let totalPnl = 0;
+
+  for (const r of rows) {
+    totalTrades += r.trades;
+    totalPnl += r.pnl_usdt;
+  }
+
+  console.log('\n==============================================================');
+  console.log('=== PnL Total ===');
+  console.log({
+    trades: totalTrades,
+    pnl_usdt: Number(totalPnl.toFixed(2)),
+    avg_usdt_per_trade: totalTrades > 0
+      ? Number((totalPnl / totalTrades).toFixed(4))
+      : 0,
+  });
+  console.log('==============================================================');
 
 
   await db.end();

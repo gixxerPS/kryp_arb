@@ -1,11 +1,14 @@
 {
   "symbols": [
-    "ETHUSDT",
     "SOLUSDT",
-    "XRPUSDT",
-    "BNBUSDT",
-    "XMRUSDT",
-    "TRXUSDT"
+    "AXSUSDT",
+    "TRXUSDT",
+    "KCSUSDT",
+    "ABUSDT",
+    "AUSDT",
+    "METUSDT",
+    "AVAXUSDT",
+    "HNTUSDT"
   ]
 }
 
