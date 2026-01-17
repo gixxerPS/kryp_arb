@@ -1,0 +1,15 @@
+{
+  "binance": {
+    "maker_fee_pct": 0.0,
+    "taker_fee_pct": 0.0
+  },
+  "gate": {
+    "maker_fee_pct": 0.0,
+    "taker_fee_pct": 0.0
+  },
+  "bitget": {
+    "maker_fee_pct": 0.0,
+    "taker_fee_pct": 0.0
+  }
+}
+
