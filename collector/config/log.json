@@ -11,12 +11,13 @@
     }
   },
   "categories": {
-    "default": { "level": "debug" },
-    "app": { "level": "debug" },
+    "default": { "level": "info" },
+    "app": { "level": "info" },
     "db": { "level": "warn" },
-    "binance": { "level": "debug" },
+    "binance": { "level": "info" },
+    "binance_depth": { "level": "debug" },
     "gate": { "level": "debug" },
-    "bitget": { "level": "debug" }
+    "bitget": { "level": "info" }
   }
 }
 
