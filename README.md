@@ -9,6 +9,7 @@ krypto arbitrage
 
 ```bash
 psql postgresql://arbuser:pass@localhost:5432/arb -f queries/test_queries.sql;
+```
 
 Analyse- und Forschungsprojekt zur Identifikation von Cross-Exchange
 Spot-Arbitrage-Opportunitäten im Kryptomarkt.
