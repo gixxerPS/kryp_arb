@@ -3,6 +3,53 @@ krypto arbitrage
 
 - postgreSQL datenbank
 
+```bash
+psql postgresql://arbuser:pass@localhost:5432/arb -f queries/test_queries.sql;
+```
+
+## Installation
+
+### Voraussetzungen
+
+- postgreSQL installiert
+- node.js installiert
+
+* Datenbank und Benutzer anlegen
+
+```bash
+sudo -iu postgres
+createuser arbuser
+createdb arb -O arbuser
+psql -c "ALTER USER arbuser WITH PASSWORD 'STRONG_PASSWORD';"
+exit
+```
+
+* Tabelle anlegen
+
+```bash
+psql postgresql://arbuser:pass@localhost:5432/arb -f kryp_arb/collector/queries/schema.sql;
+```
+
+* .env Datei in Projekt-Root-Verzeichnis legen mit Inhalt:
+
+```bash
+POSTGRES_URL=postgresql://arbuser:pass@localhost:5432/arb
+```
+
+* Pakete installieren
+
+```bash
+cd collector
+npm install
+```
+
+* Applikation starten
+
+```bash
+cd src
+node index.js
+```
+
 ## postgreSQL
 
 - als datei gespeicherte query ausfuehren:
