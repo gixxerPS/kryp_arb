@@ -16,7 +16,7 @@
     "db": { "level": "warn" },
     "binance": { "level": "info" },
     "binance_depth": { "level": "debug" },
-    "gate": { "level": "debug" },
+    "gate": { "level": "info" },
     "bitget": { "level": "info" }
   }
 }

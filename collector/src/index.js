@@ -30,7 +30,7 @@ async function main() {
     require('./streams/gate')(db, symbols);
 
     // orderbuch tiefe
-    //require('./streams/binance_depth')(db, symbols);
+    require('./streams/binance_depth')(db, symbols);
   } catch (err) {
     log.error('Startup error', err);
     process.exit(1);

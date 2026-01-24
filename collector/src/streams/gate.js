@@ -3,18 +3,7 @@ const WebSocket = require('ws');
 const util = require('util');
 
 const log = require('../logger').getLogger('gate');
-const { fmt2, nowSec } = require('../myutil');
-
-function toGatePair(symbol) {
-  // "BTCUSDT" -> "BTC_USDT"
-  if (symbol.endsWith('USDT')) return symbol.slice(0, -4) + '_USDT';
-  return symbol;
-}
-
-function fromGatePair(currencyPair) {
-  // "BTC_USDT" -> "BTCUSDT"
-  return currencyPair.replace('_', '');
-}
+const { fmt2, nowSec, symToGate, symFromExchange } = require('../myutil');
 
 module.exports = function (db, symbols) {
   if (!Array.isArray(symbols) || symbols.length === 0) {
@@ -27,7 +16,7 @@ module.exports = function (db, symbols) {
   ws.on('open', () => {
     log.info('connected');
 
-    const payload = symbols.map((s) => toGatePair(s));
+    const payload = symbols.map((s) => symToGate(s));
     let msgObj = {
       time: Math.floor(Date.now() / 1000),
       channel: 'spot.tickers',
@@ -74,7 +63,7 @@ module.exports = function (db, symbols) {
 
       const t = parsed.result;
 
-      const symbol = fromGatePair(t.currency_pair);
+      const symbol = symFromExchange(t.currency_pair);
       const sec = nowSec();
 
       if (lastSeenSec.get(symbol) === sec) return;

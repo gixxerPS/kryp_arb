@@ -1,13 +1,13 @@
 {
   "symbols": [
-    "SOLUSDT",
-    "AXSUSDT",
-    "TRXUSDT",
-    "ABUSDT",
-    "AUSDT",
-    "METUSDT",
-    "AVAXUSDT",
-    "HNTUSDT"
+    "SOL_USDT",
+    "AXS_USDT",
+    "TRX_USDT",
+    "AB_USDT",
+    "A_USDT",
+    "MET_USDT",
+    "AVAX_USDT",
+    "HNT_USDT"
   ]
 }
 

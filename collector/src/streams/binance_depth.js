@@ -14,7 +14,7 @@
 const WebSocket = require('ws');
 
 const log = require('../logger').getLogger('binance_depth');
-const { nowSec, fmt2 } = require('../myutil');
+const { nowSec, fmt2, symToBinance, symFromExchange } = require('../myutil');
 
 const EXCHANGE = 'binance';
 const WS_BASE = 'wss://stream.binance.com:9443/stream?streams=';
@@ -49,7 +49,7 @@ module.exports = function startBinanceDepth(db, symbols) {
   }
 
   // Binance requires lowercase stream names
-  const streams = symbols.map((s) => `${s.toLowerCase()}@depth${LEVELS}@${UPDATE_MS}ms`);
+  const streams = symbols.map((s) => `${symToBinance(s)}@depth${LEVELS}@${UPDATE_MS}ms`);
 
   // Keep URLs reasonable length: open multiple connections if needed
   const MAX_STREAMS_PER_WS = 200;
@@ -73,17 +73,44 @@ module.exports = function startBinanceDepth(db, symbols) {
     ws.on('message', async (msg) => {
       try {
         const parsed = JSON.parse(msg.toString());
+        //log.debug(`message: ${msg.toString()})`);
+        // beispielausgabe:
+        // {
+        //     "stream": "metusdt@depth10@100ms",
+        //     "data": {
+        //       "lastUpdateId": 183132928,
+        //       "bids": [
+        //         ["0.2742","4193"], ["0.2741","12935.8"], ["0.2740","11667.6"],
+        //         ["0.2739","25052.1"], ["0.2738","19047.7"], ["0.2737","17313.1"],
+        //         ["0.2736","9567"],   ["0.2735","20070.9"], ["0.2734","9565.5"],
+        //         ["0.2733","16498.2"]
+        //       ],
+        //       "asks": [
+        //         ["0.2744","952.8"],  ["0.2745","20491"],  ["0.2746","16276.6"],
+        //         ["0.2747","19001.1"],["0.2748","23212.1"],["0.2749","10154.1"],
+        //         ["0.2750","16364.8"],["0.2751","13594.6"],["0.2752","21986.7"],
+        //         ["0.2753","10153.5"]
+        //       ]
+        //     }
+        //   }
+
 
         // Combined stream payload:
         // { stream: "...", data: { e:"depthUpdate", E, s:"BNBUSDT", b:[[p,q],...], a:[[p,q],...] } }
-        const data = parsed && parsed.data ? parsed.data : null;
-        if (!data) return;
+        const data = (parsed && parsed.data) ? parsed.data : null;
+        if (!data) {
+          //log.debug(`keine daten`);
+          return;
+        }
 
-        const symbol = data.s;
-        if (!symbol) return;
+        const symbol = symFromExchange(parsed.stream.split('@',1)[0]);
+        if (!symbol) {
+          //log.debug(`kein symbol`);
+          return;
+        }
 
-        const bids = data.b;
-        const asks = data.a;
+        const bids = data.bids;
+        const asks = data.asks;
 
         if (!Array.isArray(bids) || bids.length === 0) return;
         if (!Array.isArray(asks) || asks.length === 0) return;
@@ -130,7 +157,7 @@ module.exports = function startBinanceDepth(db, symbols) {
 
         log.debug(
           `saved ${symbol} bid=${fmt2(bestBid)} ask=${fmt2(bestAsk)} ` +
-          `qtyL1(b/a)=${fmt2(bidQtyL1)}/${fmt2(askQtyL1)} qtyL10(b/a)=${fmt2(bidQtyL10)}/${fmt2(askQtyL10)}`
+          `qtyL1(b|a)=${fmt2(bidQtyL1)}|${fmt2(askQtyL1)} qtyL10(b|a)=${fmt2(bidQtyL10)}|${fmt2(askQtyL10)}`
         );
       } catch (err) {
         log.error('message error', err);
@@ -138,7 +165,7 @@ module.exports = function startBinanceDepth(db, symbols) {
     });
 
     ws.on('close', (code, reason) => {
-      log.warn(`disconnected conn=${gi + 1}/${groups.length} code=${code} reason=${reason ? reason.toString() : ''}`);
+      log.error(`disconnected conn=${gi + 1}/${groups.length} code=${code} reason=${reason ? reason.toString() : ''}`);
     });
 
     ws.on('error', (err) => {

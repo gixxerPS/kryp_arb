@@ -1,11 +1,11 @@
 const WebSocket = require('ws');
 
 const log = require('../logger').getLogger('binance');
-const { fmt2, nowSec } = require('../myutil');
+const { fmt2, nowSec, symToBinance, symFromExchange } = require('../myutil');
 
 module.exports = function (db, symbols) {
   const streams = symbols
-    .map((s) => s.toLowerCase() + '@bookTicker')
+    .map((s) => symToBinance(s) + '@bookTicker')  // BTC_USDT -> btcusdt
     .join('/');
 
   const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
@@ -23,7 +23,7 @@ module.exports = function (db, symbols) {
       const data = parsed.data;
       if (!data || !data.s) return;
 
-      const symbol = data.s; // already normalized (BTCUSDT)
+      const symbol = symFromExchange(data.s); // BTCUSDT -> BTC_USDT
       const sec = nowSec();
 
       if (lastSeenSec.get(symbol) === sec) return;
@@ -49,7 +49,7 @@ module.exports = function (db, symbols) {
   });
 
   ws.on('close', () => {
-    log.warn('disconnected');
+    log.error('disconnected');
   });
 
   ws.on('error', (err) => {

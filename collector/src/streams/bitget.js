@@ -2,7 +2,7 @@
 const WebSocket = require('ws');
 
 const log = require('../logger').getLogger('bitget');
-const { fmt2, nowSec } = require('../myutil');
+const { fmt2, nowSec, symToBitget, symFromExchange } = require('../myutil');
 
 let pingTimer = null;
 
@@ -38,7 +38,7 @@ module.exports = function (db, symbols) {
       const args = chunk.map((s) => ({
         instType: 'SPOT',
         channel: 'ticker',
-        instId: s,
+        instId: symToBitget(s), // BTC_USDT -> BTCUSDT
       }));
 
       ws.send(JSON.stringify({
@@ -68,7 +68,7 @@ module.exports = function (db, symbols) {
       }
 
       const t = parsed.data[0];
-      const instId = t.instId;
+      const instId = symFromExchange(t.instId); // BTCUSDT -> BTC_USDT
 
       if (!instId || !wanted.has(instId)) return;
 
