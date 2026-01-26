@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
+const { makeBinanceDepthHandler } = require('./parsers/binance_depth');
 const { getLogger } = require('../logger');
 const { symFromExchange, symToBinance, nowSec } = require('../util');
 
@@ -27,6 +28,12 @@ module.exports = function startBinanceDepth(symbols, levels, updateMs) {
   const ws = new WebSocket(url);
   const lastSeenSec = new Map(); // symbol -> sec
 
+  const handler = makeBinanceDepthHandler({
+    exchange: 'binance',
+    emit: bus.emit.bind(bus),
+    nowMs: () => Date.now(),
+  });
+
   ws.on('open', () => {
     log.info({ symbols: symbols.length, levels, updateMs }, 'connected');
   });
@@ -34,9 +41,9 @@ module.exports = function startBinanceDepth(symbols, levels, updateMs) {
   ws.on('message', (msg) => {
     try {
       const parsed = JSON.parse(msg.toString());
-      if (!parsed.stream || !parsed.data) return;
+      const parsed = JSON.parse(msg.toString());
 
-      const stream = String(parsed.stream);
+      const stream = String(parsed.stream || '');
       const at = stream.indexOf('@');
       const base = at !== -1 ? stream.slice(0, at) : stream;
       const symbol = symFromExchange(base);
@@ -45,32 +52,8 @@ module.exports = function startBinanceDepth(symbols, levels, updateMs) {
       if (lastSeenSec.get(symbol) === sec) return;
       lastSeenSec.set(symbol, sec);
 
-      const bids = Array.isArray(parsed.data.bids) ? parsed.data.bids : [];
-      const asks = Array.isArray(parsed.data.asks) ? parsed.data.asks : [];
-      if (bids.length === 0 || asks.length === 0) return;
+      handler(parsed);
 
-      const bestBid = Number(bids[0][0]);
-      const bestAsk = Number(asks[0][0]);
-      const bidL1 = Number(bids[0][1]);
-      const askL1 = Number(asks[0][1]);
-
-      if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk)) return;
-      if (!Number.isFinite(bidL1) || !Number.isFinite(askL1)) return;
-
-      const bidL10 = sumQty(bids, 10);
-      const askL10 = sumQty(asks, 10);
-
-      bus.emit('md:l2', {
-        tsMs: Date.now(),
-        exchange: 'binance',
-        symbol,
-        bestBid,
-        bestAsk,
-        bidQtyL1: bidL1,
-        askQtyL1: askL1,
-        bidQtyL10: bidL10,
-        askQtyL10: askL10,
-      });
     } catch (e) {
       log.error({ err: e }, 'message error');
     }

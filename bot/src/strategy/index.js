@@ -1,99 +1,109 @@
+// bot/src/strategy/index.js
+//
+// Strategy runner:
+// - Maintains latest L2 snapshots per (exchange,symbol) from EventEmitter bus.
+// Event-driven Strategy:
+// - Updates latest L2 per (exchange,symbol).
+// - On md:l2 update, computes intents for that symbol
+//   at most once every throttle_ms.
+// - Computes intents for that symbol only, applies cooldown, emits trade:intent.
+// - Applies cooldown + assigns intent id + emits trade:intent.
+//
+// Config (from bot/config/bot.json):
+// - tick_ms
+// - cooldown_s
+// - min_raw_spread_pct
+// - slippage_pct
+// - q_min_usdt
+// - q_max_usdt
+// - exchanges[]
+// - symbols[]
+//
 const crypto = require('crypto');
 
 const bus = require('../bus');
 const { getLogger } = require('../logger');
-const { feePctToFactor } = require('../util');
+const { computeIntents } = require('./engine');
 
 const log = getLogger('strategy');
-
-function rawSpread(buyAsk, sellBid) {
-  return (sellBid - buyAsk) / buyAsk;
-}
 
 function key(ex, sym) {
   return `${ex}|${sym}`;
 }
 
 module.exports = function startStrategy(cfg, fees) {
-  const tickMs = Number(cfg.tick_ms);
   const cooldownS = Number(cfg.cooldown_s);
-  const minRaw = Number(cfg.min_raw_spread_pct) / 100.0;
-  const slippage = Number(cfg.slippage_pct) / 100.0;
-  const qMin = Number(cfg.q_min_usdt);
-  const qMax = Number(cfg.q_max_usdt);
+  const throttleMs = Number(cfg.throttle_ms ?? 200);
 
   const exchanges = cfg.exchanges;
-  const symbols = cfg.symbols;
+  const symbolsSet = new Set(cfg.symbols);
 
-  const latest = new Map(); // key(ex,sym) -> l2
-  bus.on('md:l2', (m) => {
-    latest.set(key(m.exchange, m.symbol), m);
-  });
-
+  const latest = new Map();       // key(ex,sym) -> l2 snapshot
   const lastIntentAt = new Map(); // `${sym}|buy->sell` -> tsMs
+  const lastRunAt = new Map();    // sym -> tsMs (throttle)
 
-  log.info(
-    { tickMs, cooldownS, minRawPct: cfg.min_raw_spread_pct, slippagePct: cfg.slippage_pct, qMin, qMax },
-    'started',
-  );
+  function tryComputeForSymbol(sym) {
+    if (!symbolsSet.has(sym)) return;
 
-  setInterval(() => {
-    const now = Date.now();
-
-    for (const sym of symbols) {
-      for (const buyEx of exchanges) {
-        for (const sellEx of exchanges) {
-          if (buyEx === sellEx) continue;
-
-          const buy = latest.get(key(buyEx, sym));
-          const sell = latest.get(key(sellEx, sym));
-          if (!buy || !sell) continue;
-
-          // stale guard
-          if (now - buy.tsMs > 1500) continue;
-          if (now - sell.tsMs > 1500) continue;
-
-          const buyAsk = Number(buy.bestAsk);
-          const sellBid = Number(sell.bestBid);
-          if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
-
-          const raw = rawSpread(buyAsk, sellBid);
-          if (raw < minRaw) continue;
-
-          const buyFee = feePctToFactor(fees[buyEx].taker_fee_pct);
-          const sellFee = feePctToFactor(fees[sellEx].taker_fee_pct);
-          const net = raw - buyFee - sellFee - slippage;
-          if (net <= 0) continue;
-
-          // Variante A: dynamische Größe aus L2
-          const qMaxBuy = Number(buy.askQtyL10) * buyAsk;
-          const qMaxSell = Number(sell.bidQtyL10) * sellBid;
-          if (!Number.isFinite(qMaxBuy) || !Number.isFinite(qMaxSell)) continue;
-
-          const qEff = Math.min(qMax, qMaxBuy, qMaxSell);
-          if (qEff < qMin) continue;
-
-          const route = `${buyEx}->${sellEx}`;
-          const ck = `${sym}|${route}`;
-          const last = lastIntentAt.get(ck);
-          if (last != null && (now - last) < cooldownS * 1000) continue;
-
-          lastIntentAt.set(ck, now);
-
-          bus.emit('trade:intent', {
-            id: crypto.randomUUID(),
-            tsMs: now,
-            symbol: sym,
-            buyEx,
-            sellEx,
-            qUsdt: qEff,
-            edgeNet: net,
-            buyAsk,
-            sellBid,
-          });
-        }
+    const nowMs = Date.now();
+    const lastRun = lastRunAt.get(sym);
+    if (lastRun != null) {
+      const delta = nowMs - lastRun;
+      if (delta < throttleMs) {
+        log.debug(
+          { symbol: sym, delta_ms: delta, throttle_ms: throttleMs },
+          'throttled compute',
+        );
+        return;
       }
     }
-  }, tickMs);
+    lastRunAt.set(sym, nowMs);
+
+    // Compute intents only for this symbol
+    const intents = computeIntents({
+      latest,
+      symbols: [sym],
+      exchanges,
+      fees,
+      nowMs,
+      cfg,
+    });
+
+    for (const it of intents) {
+      const route = `${it.buyEx}->${it.sellEx}`;
+      const ck = `${it.symbol}|${route}`;
+
+      const last = lastIntentAt.get(ck);
+      if (last != null && (nowMs - last) < cooldownS * 1000) continue;
+
+      lastIntentAt.set(ck, nowMs);
+
+      bus.emit('trade:intent', {
+        id: crypto.randomUUID(),
+        tsMs: nowMs,
+        ...it,
+      });
+    }
+  }
+
+  bus.on('md:l2', (m) => {
+    latest.set(key(m.exchange, m.symbol), m);
+    tryComputeForSymbol(m.symbol);
+  });
+
+  log.info(
+    {
+      mode: 'event-driven',
+      cooldownS,
+      debounceMs,
+      minRawSpreadPct: cfg.min_raw_spread_pct,
+      slippagePct: cfg.slippage_pct,
+      qMinUsdt: cfg.q_min_usdt,
+      qMaxUsdt: cfg.q_max_usdt,
+      exchanges,
+      symbols: cfg.symbols.length,
+    },
+    'started',
+  );
 };
 

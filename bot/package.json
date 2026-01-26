@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "test": "npm run test"
+    "test": "node --test"
   },
   "repository": {
     "type": "git",

@@ -1,5 +1,5 @@
 {
-  "period_ms": 200,
+  "throttle_ms": 200,
   "cooldown_s": 36,
   "min_raw_spread_pct": 0.30,
   "slippage_pct": 0.05,
