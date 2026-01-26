@@ -47,7 +47,8 @@ const { Client } = require('pg');
 const { loadExchanges, feePctToFactor } = require('./exchanges');
 
 const PERIOD = '24 hours';
-const Q = 5000;           // USDT pro Trade
+const Q_MIN = 100;           // nicht unter xxx USDT pro Trade
+const Q_MAX = 5000;           // USDT pro Trade
 const SLIPPAGE = 0.0005;  // 0.05 %
 const MIN_RAW = 0.003;    // 0.30 %
 const MAX_ROWS_SYMBOL_ROUTE = 40; // max Zeilen für symbol x route Tabelle
@@ -92,17 +93,40 @@ async function main() {
       ON a.t = b.t
      AND a.symbol = b.symbol
      AND a.exchange <> b.exchange
+  ),
+  d AS (
+    SELECT
+      to_timestamp(floor(extract(epoch FROM ts) / 2) * 2) AS t,
+      exchange,
+      symbol,
+      bid_qty_l10,
+      ask_qty_l10,
+      best_bid,
+      best_ask
+    FROM orderbook_depth
+    WHERE ts > now() - interval '${PERIOD}'
   )
   SELECT
-    t,
-    symbol,
-    buy_ex,
-    sell_ex,
-    buy_ask,
-    sell_bid
+    p.t,
+    p.symbol,
+    p.buy_ex,
+    p.sell_ex,
+    p.buy_ask,
+    p.sell_bid,
+    d_buy.ask_qty_l10  AS buy_ask_qty_l10,
+    d_sell.bid_qty_l10 AS sell_bid_qty_l10
   FROM p
-  ORDER BY t;
+  JOIN d d_buy
+    ON d_buy.t = p.t
+   AND d_buy.exchange = p.buy_ex
+   AND d_buy.symbol = p.symbol
+  JOIN d d_sell
+    ON d_sell.t = p.t
+   AND d_sell.exchange = p.sell_ex
+   AND d_sell.symbol = p.symbol
+  ORDER BY p.t;
 `;
+
 
 
   const res = await db.query(q);
@@ -123,7 +147,7 @@ async function main() {
       for (const buy of exchanges) {
         for (const sell of exchanges) {
           if (buy === sell) continue;
-          m.set(pairKey(buy, sell), { trades: 0, pnl: 0 });
+          m.set(pairKey(buy, sell), { trades: 0, pnl: 0, qsum: 0 });
         }
       }
       stats.set(symbol, m);
@@ -136,24 +160,44 @@ async function main() {
   let skippedCooldown = 0;
 
   function cooldownKey(r) {
-    return `${r.symbol}|${r.buy_ask}->${r.sell_bid}`;
+    return `${r.symbol}|${r.buy_ex}->${r.sell_ex}`;
   }
   for (const r of res.rows) {
     const raw = rawSpread(Number(r.buy_ask), Number(r.sell_bid));
-    if (raw < MIN_RAW) continue;
+
+    // Liquidity-based dynamic size (USDT)
+    const buyAsk = Number(r.buy_ask);
+    const sellBid = Number(r.sell_bid);
+
+    const buyQtyL10 = Number(r.buy_ask_qty_l10);   // base qty available on asks (top10)
+    const sellQtyL10 = Number(r.sell_bid_qty_l10); // base qty available on bids (top10)
+
+    if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
+    if (!Number.isFinite(buyQtyL10) || !Number.isFinite(sellQtyL10)) continue;
+
+    if (raw < MIN_RAW) continue; // kein trade wenn mindest Roh-Spread unterschritten
 
     const buyFee = feePctToFactor(fees[r.buy_ex].taker_fee_pct);
     const sellFee = feePctToFactor(fees[r.sell_ex].taker_fee_pct);
 
     const net = raw - buyFee - sellFee - SLIPPAGE;
-    if (net <= 0) continue;
+    if (net <= 0) continue; // kein trade wenn PnL negativ (nach Abzug Fees und Slippage
+
+    // max notional you can execute using top-10 on each leg
+    const qMaxBuy = buyQtyL10 * buyAsk;
+    const qMaxSell = sellQtyL10 * sellBid;
+    const qMaxLiquidity = Math.min(qMaxBuy, qMaxSell);
+
+        // choose effective trade size for this tick
+    const Qeff = Math.min(Q_MAX, qMaxLiquidity);
+    if (Qeff < Q_MIN) continue; // kein trade wenn mindest ordergroesse unterschritten
 
     const k = cooldownKey(r);
     const tMs = new Date(r.t ?? r.ts).getTime(); // t = bin timestamp
 
     if (!Number.isFinite(tMs)) {
-      log.error('invalid timestamp for cooldown', { t: r.t, ts: r.ts });
-      continue;
+      console.error('invalid timestamp for cooldown', { t: r.t, ts: r.ts });
+      continue; 
     }
 
     const lastMs = lastTradeAt.get(k);
@@ -168,14 +212,15 @@ async function main() {
     // nur zaehlen wenn cooldown zeit abgelaufen ist
     if (lastMs != null && (tMs - lastMs) < COOLDOWN_S * 1000) {
       skippedCooldown += 1;
-      continue;
+      continue; // kein trade wenn cooldown zeit nicht abgelaufen
     }
 
     const m = stats.get(r.symbol);
     const s = m.get(pairKey(r.buy_ex, r.sell_ex));
 
     s.trades += 1;
-    s.pnl += Q * net;
+    s.pnl += Qeff * net;
+    s.qsum += Qeff;
     lastTradeAt.set(k, tMs);
   }
 
@@ -193,11 +238,13 @@ async function main() {
   console.log('\n=== Simulation Parameters ===');
   console.log({
     period: PERIOD,
-    trade_size_usdt: Q,
+    trade_size_min_usdt: Q_MIN,
+    trade_size_max_usdt: Q_MAX,
     min_raw_spread_pct: (MIN_RAW * 100).toFixed(2),
     slippage_pct: (SLIPPAGE * 100).toFixed(2),
     fees_pct: feeSummary,
-    cooldown_s: COOLDOWN_S
+    cooldown_s: COOLDOWN_S,
+
   });
 
   console.log('\n=== Cooldown Stats ===');
@@ -225,6 +272,7 @@ async function main() {
         trades: s.trades,
         pnl_usdt: Number(s.pnl.toFixed(2)),
         avg_usdt: s.trades > 0 ? Number((s.pnl / s.trades).toFixed(4)) : 0,
+        avg_q_usdt: s.trades ? s.qsum / s.trades : 0
       });
     }
   }

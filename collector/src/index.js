@@ -25,12 +25,14 @@ async function main() {
     log.info(`Loaded symbols=${symbols.length}`);
 
     // bbo daten
-    require('./streams/binance')(db, symbols);
-    require('./streams/bitget')(db, symbols);
-    require('./streams/gate')(db, symbols);
+    //require('./streams/binance')(db, symbols);
+    //require('./streams/bitget')(db, symbols);
+    //require('./streams/gate')(db, symbols);
 
     // orderbuch tiefe
     require('./streams/binance_depth')(db, symbols);
+    require('./streams/bitget_depth')(db, symbols);
+    require('./streams/gate_depth')(db, symbols);
   } catch (err) {
     log.error('Startup error', err);
     process.exit(1);

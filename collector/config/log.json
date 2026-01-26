@@ -17,7 +17,9 @@
     "binance": { "level": "info" },
     "binance_depth": { "level": "debug" },
     "gate": { "level": "info" },
-    "bitget": { "level": "info" }
+    "gate_depth": { "level": "debug" },
+    "bitget": { "level": "info" },
+    "bitget_depth": { "level": "debug" }
   }
 }
 

@@ -1,0 +1,33 @@
+{
+  "name": "bot",
+  "version": "0.1.0",
+  "description": "krypto arbitrage bot",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "npm run test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gixxerPS/kryp_arb.git"
+  },
+  "keywords": [
+    "krypto",
+    "arbitrage",
+    "bot"
+  ],
+  "author": "db",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/gixxerPS/kryp_arb/issues"
+  },
+  "homepage": "https://github.com/gixxerPS/kryp_arb#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "pg": "^8.11.5",
+    "ws": "^8.17.0"
+  }
+}
