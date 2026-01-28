@@ -22,20 +22,22 @@
 const crypto = require('crypto');
 
 const bus = require('../bus');
-const { getLogger } = require('../logger');
 const { computeIntents } = require('./engine');
 
+const { getCfg } = require('../config');
+const cfg = getCfg();
+
+const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
 function key(ex, sym) {
   return `${ex}|${sym}`;
 }
 
-module.exports = function startStrategy(cfg, fees) {
-  const cooldownS = Number(cfg.cooldown_s);
-  const throttleMs = Number(cfg.throttle_ms ?? 200);
+module.exports = function startStrategy() {
+  const cooldownS = Number(cfg.bot.cooldown_s);
+  const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
 
-  const exchanges = cfg.exchanges;
   const symbolsSet = new Set(cfg.symbols);
 
   const latest = new Map();       // key(ex,sym) -> l2 snapshot
@@ -62,11 +64,9 @@ module.exports = function startStrategy(cfg, fees) {
     // Compute intents only for this symbol
     const intents = computeIntents({
       latest,
-      symbols: [sym],
-      exchanges,
-      fees,
+      fees:cfg.exchanges,
       nowMs,
-      cfg,
+      cfg
     });
 
     for (const it of intents) {
@@ -95,12 +95,11 @@ module.exports = function startStrategy(cfg, fees) {
     {
       mode: 'event-driven',
       cooldownS,
-      debounceMs,
-      minRawSpreadPct: cfg.min_raw_spread_pct,
-      slippagePct: cfg.slippage_pct,
-      qMinUsdt: cfg.q_min_usdt,
-      qMaxUsdt: cfg.q_max_usdt,
-      exchanges,
+      throttleMs,
+      minRawSpreadPct: cfg.bot.min_raw_spread_pct,
+      slippagePct: cfg.bot.slippage_pct,
+      qMinUsdt: cfg.bot.q_min_usdt,
+      qMaxUsdt: cfg.bot.q_max_usdt,
       symbols: cfg.symbols.length,
     },
     'started',

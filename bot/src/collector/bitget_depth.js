@@ -1,20 +1,13 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
+const { nowSec, symFromExchange, symToBitget, sumQty } = require('../util');
+
+const { getCfg } = require('../config');
+const cfg = getCfg();
+
 const { getLogger } = require('../logger');
-const { nowSec, symFromExchange, symToBitget } = require('../util');
-
-const log = getLogger('bitget_depth');
-
-function sumQty(levels, n) {
-  let s = 0;
-  const lim = Math.min(levels.length, n);
-  for (let i = 0; i < lim; i += 1) {
-    const q = Number(levels[i][1]);
-    if (Number.isFinite(q)) s += q;
-  }
-  return s;
-}
+const log = getLogger('collector').child({ exchange: 'bitget' });
 
 function startHeartbeat(ws, intervalMs) {
   let timer = null;
@@ -41,24 +34,20 @@ function startHeartbeat(ws, intervalMs) {
   ws.on('error', () => stop());
 }
 
-module.exports = function startBitgetDepth(symbols, levels) {
-  if (!Array.isArray(symbols) || symbols.length === 0) {
-    throw new Error('symbols must be non-empty array');
-  }
-
+module.exports = function startBitgetDepth(levels) {
   const ws = new WebSocket('wss://ws.bitget.com/v2/ws/public');
   const lastSeenSec = new Map(); // symbol -> sec
 
   startHeartbeat(ws, 20000);
 
   ws.on('open', () => {
-    log.info({ symbols: symbols.length, levels }, 'connected');
+    log.info({ symbols: cfg.symbols.length, levels }, 'connected');
 
     const channel = levels >= 15 ? 'books15' : (levels >= 5 ? 'books5' : 'books1');
 
     const chunkSize = 20;
-    for (let i = 0; i < symbols.length; i += chunkSize) {
-      const chunk = symbols.slice(i, i + chunkSize);
+    for (let i = 0; i < cfg.symbols.length; i += chunkSize) {
+      const chunk = cfg.symbols.slice(i, i + chunkSize);
       const args = chunk.map((s) => ({
         instType: 'SPOT',
         channel,

@@ -27,11 +27,22 @@ function feePctToFactor(pct) {
   return Number(pct) / 100.0;
 }
 
+function sumQty(levels, n) {
+  let s = 0;
+  const lim = Math.min(levels.length, n);
+  for (let i = 0; i < lim; i += 1) {
+    const q = Number(levels[i][1]);
+    if (Number.isFinite(q)) s += q;
+  }
+  return s;
+}
+
 module.exports = {
   symFromExchange,
   symToBinance,
   symToBitget,
   nowSec,
   feePctToFactor,
+  sumQty
 };
 

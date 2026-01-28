@@ -2,29 +2,19 @@ const WebSocket = require('ws');
 
 const bus = require('../bus');
 const { makeBinanceDepthHandler } = require('./parsers/binance_depth');
+const { symFromExchange, symToBinance, nowSec, sumQty } = require('../util');
+
+const { getCfg } = require('../config');
+const cfg = getCfg();
+
 const { getLogger } = require('../logger');
-const { symFromExchange, symToBinance, nowSec } = require('../util');
+const log = getLogger('collector:binance_depth');
 
-const log = getLogger('binance_depth');
-
-function sumQty(levels, n) {
-  let s = 0;
-  const lim = Math.min(levels.length, n);
-  for (let i = 0; i < lim; i += 1) {
-    const q = Number(levels[i][1]);
-    if (Number.isFinite(q)) s += q;
-  }
-  return s;
-}
-
-module.exports = function startBinanceDepth(symbols, levels, updateMs) {
-  if (!Array.isArray(symbols) || symbols.length === 0) {
-    throw new Error('symbols must be non-empty array');
-  }
-
-  const streams = symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);
+module.exports = function startBinanceDepth(levels, updateMs) {
+  const streams = cfg.symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);
   const url = `wss://stream.binance.com:9443/stream?streams=${streams.join('/')}`;
 
+  log.debug({url:url}, 'subscribe');
   const ws = new WebSocket(url);
   const lastSeenSec = new Map(); // symbol -> sec
 
@@ -35,12 +25,11 @@ module.exports = function startBinanceDepth(symbols, levels, updateMs) {
   });
 
   ws.on('open', () => {
-    log.info({ symbols: symbols.length, levels, updateMs }, 'connected');
+    log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
   });
 
   ws.on('message', (msg) => {
     try {
-      const parsed = JSON.parse(msg.toString());
       const parsed = JSON.parse(msg.toString());
 
       const stream = String(parsed.stream || '');
@@ -52,8 +41,8 @@ module.exports = function startBinanceDepth(symbols, levels, updateMs) {
       if (lastSeenSec.get(symbol) === sec) return;
       lastSeenSec.set(symbol, sec);
 
+      //log.info(parsed);
       handler(parsed);
-
     } catch (e) {
       log.error({ err: e }, 'message error');
     }

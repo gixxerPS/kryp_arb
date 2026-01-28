@@ -1,5 +1,15 @@
 {
-  "level": "info",
-  "pretty": true
+  "level": "debug",
+  "pretty": true,
+  "file": {
+    "path": "./logs/bot.log"
+  },
+  "levelsByName": {
+    "app": "info",
+    "collector": "debug",
+    "collector:binance_depth": "debug",
+    "strategy": "debug",
+    "executor": "debug",
+    "db": "info"
+  }
 }
-

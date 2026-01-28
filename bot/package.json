@@ -19,6 +19,9 @@
   ],
   "author": "db",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.13.0"
+  },
   "bugs": {
     "url": "https://github.com/gixxerPS/kryp_arb/issues"
   },

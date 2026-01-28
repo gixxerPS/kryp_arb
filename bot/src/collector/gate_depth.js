@@ -1,20 +1,13 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
+const { nowSec, symFromExchange, sumQty } = require('../util');
+
+const { getCfg } = require('../config');
+const cfg = getCfg();
+
 const { getLogger } = require('../logger');
-const { nowSec, symFromExchange } = require('../util');
-
 const log = getLogger('gate_depth');
-
-function sumQty(levels, n) {
-  let s = 0;
-  const lim = Math.min(levels.length, n);
-  for (let i = 0; i < lim; i += 1) {
-    const q = Number(levels[i][1]);
-    if (Number.isFinite(q)) s += q;
-  }
-  return s;
-}
 
 function startHeartbeat(ws, intervalMs) {
   let timer = null;
@@ -41,19 +34,15 @@ function startHeartbeat(ws, intervalMs) {
   ws.on('error', () => stop());
 }
 
-module.exports = function startGateDepth(symbols, levels, updateMs) {
-  if (!Array.isArray(symbols) || symbols.length === 0) {
-    throw new Error('symbols must be non-empty array');
-  }
-
+module.exports = function startGateDepth(levels, updateMs) {
   const ws = new WebSocket('wss://api.gateio.ws/ws/v4/');
   const lastSeenSec = new Map(); // symbol -> sec
 
   startHeartbeat(ws, 20000);
 
   ws.on('open', () => {
-    log.info({ symbols: symbols.length, levels, updateMs }, 'connected');
-    for (const sym of symbols) {
+    log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
+    for (const sym of cfg.symbols) {
       ws.send(JSON.stringify({
         time: Math.floor(Date.now() / 1000),
         channel: 'spot.order_book',
