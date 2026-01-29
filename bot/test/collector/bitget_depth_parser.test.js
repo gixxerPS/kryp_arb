@@ -33,12 +33,8 @@ suite('collector/bitget_depth', () => {
     assert.ok(out);
 
     assert.equal(out.symbol, 'MET_USDT');
-    assert.equal(out.bestBid, 0.2742);
-    assert.equal(out.bestAsk, 0.2744);
-    assert.equal(out.bidQtyL1, 4193.0);
-    assert.equal(out.askQtyL1, 952.8);
-    assert.equal(out.bidQtyL10, 4193.0 + 12935.8);
-    assert.equal(out.askQtyL10, 952.8 + 20491.0);
+    assert.equal(out.bids, msg.data[0].bids);
+    assert.equal(out.asks, msg.data[0].asks);
     assert.equal(out.tsMs, 1710000000123);
   });
 

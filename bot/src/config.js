@@ -31,7 +31,7 @@ function loadConfig() {
   const cfg = {
     bot,
     symbols,
-    exchanges: exchangeList,
+    exchanges,
   };
   //console.log(cfg);
 

@@ -6,18 +6,10 @@
 //
 const { symFromExchange } = require('../../util');
 
-function sumQty(levels, n) {
-  let s = 0;
-  const lim = Math.min(levels.length, n);
-  for (let i = 0; i < lim; i += 1) {
-    const q = Number(levels[i][1]);
-    if (Number.isFinite(q)) s += q;
-  }
-  return s;
-}
+const { getLogger } = require('../../logger');
+const log = getLogger('collector').child({ exchange: 'gate', sub:'parser' });
 
-function parseGateDepthMessage(raw) {
-  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+function parseGateDepthMessage(parsed) {
   if (!parsed) return null;
 
   // Gate sends different event types; we only want order_book updates.
@@ -33,29 +25,14 @@ function parseGateDepthMessage(raw) {
   const asks = Array.isArray(r.asks) ? r.asks : [];
   if (bids.length === 0 || asks.length === 0) return null;
 
-  const bestBid = Number(bids[0][0]);
-  const bestAsk = Number(asks[0][0]);
-  const bidL1 = Number(bids[0][1]);
-  const askL1 = Number(asks[0][1]);
-
-  if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk)) return null;
-  if (!Number.isFinite(bidL1) || !Number.isFinite(askL1)) return null;
-
-  const bidL10 = sumQty(bids, 10);
-  const askL10 = sumQty(asks, 10);
-
   // Gate provides seconds timestamps in r.t (not always present)
   const tsMs = Number.isFinite(Number(r.t)) ? Number(r.t) * 1000 : null;
 
   return {
     tsMs,
     symbol,
-    bestBid,
-    bestAsk,
-    bidQtyL1: bidL1,
-    askQtyL1: askL1,
-    bidQtyL10: bidL10,
-    askQtyL10: askL10,
+    bids,
+    asks
   };
 }
 
@@ -71,14 +48,9 @@ function makeGateDepthHandler({ exchange = 'gate', emit, nowMs }) {
       tsMs: out.tsMs != null ? out.tsMs : nowMs(),
       exchange,
       symbol: out.symbol,
-      bestBid: out.bestBid,
-      bestAsk: out.bestAsk,
-      bidQtyL1: out.bidQtyL1,
-      askQtyL1: out.askQtyL1,
-      bidQtyL10: out.bidQtyL10,
-      askQtyL10: out.askQtyL10,
+      bids: out.bids,
+      asks: out.asks
     });
-
     return true;
   };
 }

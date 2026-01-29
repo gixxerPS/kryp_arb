@@ -19,6 +19,10 @@ function symToBitget(sym) {
   return String(sym).replace('_', '').toUpperCase();
 }
 
+function symToGate(sym) {
+  return String(sym).toLowerCase();
+}
+
 function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
@@ -41,6 +45,7 @@ module.exports = {
   symFromExchange,
   symToBinance,
   symToBitget,
+  symToGate,
   nowSec,
   feePctToFactor,
   sumQty

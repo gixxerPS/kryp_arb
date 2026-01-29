@@ -1,7 +1,8 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
-const { nowSec, symFromExchange, symToBitget, sumQty } = require('../util');
+const { makeBitgetDepthHandler } = require('./parsers/bitget_depth');
+const { nowSec, symFromExchange, symToBitget } = require('../util');
 
 const { getCfg } = require('../config');
 const cfg = getCfg();
@@ -40,11 +41,18 @@ module.exports = function startBitgetDepth(levels) {
 
   startHeartbeat(ws, 20000);
 
+  const handler = makeBitgetDepthHandler({
+    exchange: 'bitget',
+    emit: bus.emit.bind(bus),
+    nowMs: () => Date.now(),
+  });
+
   ws.on('open', () => {
     log.info({ symbols: cfg.symbols.length, levels }, 'connected');
 
     const channel = levels >= 15 ? 'books15' : (levels >= 5 ? 'books5' : 'books1');
 
+     // Spot depth channel: books/books1/books5/books15. Use books15 to have >=10 levels.
     const chunkSize = 20;
     for (let i = 0; i < cfg.symbols.length; i += chunkSize) {
       const chunk = cfg.symbols.slice(i, i + chunkSize);
@@ -72,46 +80,8 @@ module.exports = function startBitgetDepth(levels) {
       }
 
       if (!parsed.data || !Array.isArray(parsed.data) || parsed.data.length === 0) return;
-
-      const arg = parsed.arg || {};
-      const instId = arg.instId;
-      if (!instId) return;
-
-      const symbol = symFromExchange(instId);
-      const d0 = parsed.data[0];
-
-      const bids = Array.isArray(d0.bids) ? d0.bids : [];
-      const asks = Array.isArray(d0.asks) ? d0.asks : [];
-      if (bids.length === 0 || asks.length === 0) return;
-
-      const sec = nowSec();
-      if (lastSeenSec.get(symbol) === sec) return;
-      lastSeenSec.set(symbol, sec);
-
-      const bestBid = Number(bids[0][0]);
-      const bestAsk = Number(asks[0][0]);
-      const bidL1 = Number(bids[0][1]);
-      const askL1 = Number(asks[0][1]);
-
-      if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk)) return;
-      if (!Number.isFinite(bidL1) || !Number.isFinite(askL1)) return;
-
-      const bidL10 = sumQty(bids, 10);
-      const askL10 = sumQty(asks, 10);
-
-      const tsMs = Number(d0.ts ?? parsed.ts ?? Date.now());
-
-      bus.emit('md:l2', {
-        tsMs,
-        exchange: 'bitget',
-        symbol,
-        bestBid,
-        bestAsk,
-        bidQtyL1: bidL1,
-        askQtyL1: askL1,
-        bidQtyL10: bidL10,
-        askQtyL10: askL10,
-      });
+      
+      handler(parsed);
     } catch (e) {
       log.error({ err: e }, 'message error');
     }

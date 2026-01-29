@@ -24,9 +24,6 @@ const crypto = require('crypto');
 const bus = require('../bus');
 const { computeIntents } = require('./engine');
 
-const { getCfg } = require('../config');
-const cfg = getCfg();
-
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
@@ -34,7 +31,7 @@ function key(ex, sym) {
   return `${ex}|${sym}`;
 }
 
-module.exports = function startStrategy() {
+module.exports = function startStrategy(cfg) {
   const cooldownS = Number(cfg.bot.cooldown_s);
   const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
 
@@ -52,10 +49,6 @@ module.exports = function startStrategy() {
     if (lastRun != null) {
       const delta = nowMs - lastRun;
       if (delta < throttleMs) {
-        log.debug(
-          { symbol: sym, delta_ms: delta, throttle_ms: throttleMs },
-          'throttled compute',
-        );
         return;
       }
     }
@@ -88,11 +81,12 @@ module.exports = function startStrategy() {
 
   bus.on('md:l2', (m) => {
     latest.set(key(m.exchange, m.symbol), m);
+    log.debug({ latest: Object.fromEntries(latest) }, 'latest dump');
+    //log.debug({latest:latest, m:m, key:key(m.exchange, m.symbol)}, 'md:l2');
     tryComputeForSymbol(m.symbol);
   });
 
-  log.info(
-    {
+  log.info({
       mode: 'event-driven',
       cooldownS,
       throttleMs,

@@ -14,48 +14,49 @@ function ensureDir(fp) {
 
 // ensure log dir exists
 let transport;
-if (cfg.file?.path) {
-  ensureDir(cfg.file.path);
+ensureDir(cfg.file.path);
 
-  const targets = [];
+const targets = [];
 
-  // 1) File target (immer JSON)
-  targets.push({
-    target: 'pino/file',
-    options: {
-      destination: cfg.file.path,
-      mkdir: true,
-    },
-  });
-  // test : menschenlesbare datei -> spaeter loeschen
+// 1) File target (immer JSON)
+targets.push({
+  target: 'pino/file',
+  level: 'debug',
+  options: {
+    destination: cfg.file.path,
+    mkdir: true,
+  },
+});
+// test : menschenlesbare datei -> spaeter loeschen
+targets.push({
+  target: 'pino-pretty',
+  level: 'debug',
+  options: {
+    destination: 'logs/pretty.log',
+    mkdir: true,
+    translateTime: 'SYS:standard',
+    minimumLevel: 'debug'
+  },
+});
+
+// 2) Optional pretty console
+if (cfg.pretty) {
   targets.push({
     target: 'pino-pretty',
-    options: {
-      destination: 'logs/pretty.log',
-      mkdir: true,translateTime: 'SYS:standard' 
+    level: 'debug',
+    options: { 
+      colorize: true, 
+      translateTime: 'SYS:standard'
     },
-  });
-
-  // 2) Optional pretty console
-  if (cfg.pretty) {
-    targets.push({
-      target: 'pino-pretty',
-      options: { colorize: true, translateTime: 'SYS:standard' },
-    });
-  }
-
-  transport = pino.transport({ targets });
-} else if (cfg.pretty) {
-  // Nur Console (Dev)
-  transport = pino.transport({
-    target: 'pino-pretty',
-    options: { colorize: true, translateTime: 'SYS:standard' },
   });
 }
 
+transport = pino.transport({ targets });
+
 let baseLogger;
 function initLogger() {
-  baseLogger = pino({ level: cfg.level || 'info' });
+  baseLogger = pino({ level: 'debug' }, transport); // base immer auf debug damit childs level selbst steuern koennen
+  //baseLogger = pino({ level: 'debug' }); // transport zum testen deaktivieren
 }
 
 function resolveLevel(name) {
@@ -78,14 +79,17 @@ function resolveLevel(name) {
     }
   }
 
-  //console.log(`logger not found for ${name}. level = ${cfg.level || 'info'}`);
+  console.log(`logger not found for ${name}. level = ${cfg.level || 'info'}`);
   // 3) default
   return cfg.level || 'info';
 }
 
 
 function getLogger(name) {
-  if (!baseLogger) throw new Error('logger not initialized');
+  if (!baseLogger) {
+    initLogger();
+    //throw new Error('logger not initialized');
+  }
   return baseLogger.child({ name }, { level: resolveLevel(name) });
 }
 

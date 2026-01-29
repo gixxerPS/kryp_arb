@@ -34,8 +34,8 @@ function computeIntents({ latest,fees, nowMs, cfg }) {
         if (nowMs - buy.tsMs > 1500) continue;
         if (nowMs - sell.tsMs > 1500) continue;
 
-        const buyAsk = Number(buy.bestAsk);
-        const sellBid = Number(sell.bestBid);
+        const buyAsk = Number(buy.asks[0][0]);
+        const sellBid = Number(sell.bids[0][0]);
         if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
 
         const raw = rawSpread(buyAsk, sellBid);
@@ -46,8 +46,8 @@ function computeIntents({ latest,fees, nowMs, cfg }) {
         const net = raw - buyFee - sellFee - slippage;
         if (net <= 0) continue;
 
-        const qMaxBuy = Number(buy.askQtyL10) * buyAsk;
-        const qMaxSell = Number(sell.bidQtyL10) * sellBid;
+        const qMaxBuy = /*Number(buy.askQtyL10) **/ buyAsk;
+        const qMaxSell = /*Number(sell.bidQtyL10) **/ sellBid;
         if (!Number.isFinite(qMaxBuy) || !Number.isFinite(qMaxSell)) continue;
 
         const qEff = Math.min(qMax, qMaxBuy, qMaxSell);

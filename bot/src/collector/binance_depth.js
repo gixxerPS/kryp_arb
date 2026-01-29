@@ -8,7 +8,7 @@ const { getCfg } = require('../config');
 const cfg = getCfg();
 
 const { getLogger } = require('../logger');
-const log = getLogger('collector:binance_depth');
+const log = getLogger('collector').child({ exchange: 'binance' });
 
 module.exports = function startBinanceDepth(levels, updateMs) {
   const streams = cfg.symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);

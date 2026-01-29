@@ -27,13 +27,28 @@ async function main() {
 
   log.info({ cfg }, 'starting');
 
-  // collectors (L2 only)
-  startBinanceDepth(10, 100);
-  //startGateDepth(10, 100);
-  //startBitgetDepth(15);
+  // L2 collectors 
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // nur wenn in config/exchanges.json die exchange enabled ist werden daten gesammelt
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  if (cfg.exchanges.binance.enabled) {
+    startBinanceDepth(10, 100);
+  } else {
+    log.info({exchange:'binance'}, 'exchange disabled');
+  }
+  if (cfg.exchanges.gate.enabled) {
+    startGateDepth(10, 100);
+  } else {
+    log.info({exchange:'gate'}, 'exchange disabled');
+  }
+  if (cfg.exchanges.bitget.enabled) {
+    startBitgetDepth(15);
+  } else {
+    log.info({exchange:'bitget'}, 'exchange disabled');
+  }
 
   //// strategy + executor
-  //startStrategy(cfg, fees);
+  startStrategy(cfg, fees);
   //startPaperExecutor();
 }
 

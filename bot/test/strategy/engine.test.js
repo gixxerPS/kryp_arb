@@ -26,16 +26,28 @@ suite('strategy/engine', () => {
     // buy on gate: ask=100, askQtyL10=100 => qMaxBuy=10k
     latest.set('gate|AAA_USDT', {
       tsMs: nowMs,
-      bestAsk: 100,
-      askQtyL10: 100,
+      bids: [
+        ['100.0103', '4193.0'],
+        ['100.0102', '12935.8'],
+      ],
+      asks: [
+        ['100.0000', '952.8'],
+        ['100.0001', '20491.0'],
+      ],
     });
 
     // sell on binance: bid=100.6 => raw = 0.6%
     // bidQtyL10=100 => qMaxSell=10,060
     latest.set('binance|AAA_USDT', {
       tsMs: nowMs,
-      bestBid: 100.6,
-      bidQtyL10: 100,
+      bids: [
+        ['100.6103', '4193.0'],
+        ['100.6102', '12935.8'],
+      ],
+      asks: [
+        ['100.6000', '952.8'],
+        ['100.6001', '20491.0'],
+      ],
     });
 
     cfg.bot.symbols = ['AAA_USDT'];
@@ -61,14 +73,26 @@ suite('strategy/engine', () => {
 
     latest.set('gate|AAA_USDT', {
       tsMs: nowMs - 5000,
-      bestAsk: 100,
-      askQtyL10: 100,
+      bids: [
+        ['100.0000', '4193.0'],
+        ['100.0001', '12935.8'],
+      ],
+      asks: [
+        ['100.0000', '952.8'],
+        ['100.0001', '20491.0'],
+      ],
     });
 
     latest.set('binance|AAA_USDT', {
       tsMs: nowMs,
-      bestBid: 101,
-      bidQtyL10: 100,
+      bids: [
+        ['100.0000', '4193.0'],
+        ['100.0001', '12935.8'],
+      ],
+      asks: [
+        ['100.0000', '952.8'],
+        ['100.0001', '20491.0'],
+      ],
     });
 
     cfg.bot.symbols = ['AAA_USDT'];
