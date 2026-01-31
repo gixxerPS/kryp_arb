@@ -19,8 +19,4 @@ suite('util', () => {
     assert.equal(symToBitget('met_usdt'), 'METUSDT');
   });
 
-  test('feePctToFactor wandelt Prozent in Faktor um', () => {
-    assert.equal(feePctToFactor(0.1), 0.001);
-    assert.equal(feePctToFactor('0.1'), 0.001);
-  });
 });

@@ -1,3 +1,12 @@
+
+// formattierung in ausgaben
+// bsp: log.debug(`net=${f(net)} buy=${f(buyPx, 2)} sell=${f(sellPx, 2)}`);
+function f(n, d = 4) {
+  return Number.isFinite(n) ? n.toFixed(d) : 'NaN';
+}
+
+
+
 function symFromExchange(sym) {
   if (!sym) return sym;
   const s = String(sym).toUpperCase();
@@ -27,18 +36,19 @@ function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
 
-function feePctToFactor(pct) {
-  return Number(pct) / 100.0;
+function toNumLevels(levels) {
+  const out = new Array(levels.length);
+  for (let i = 0; i < levels.length; i++) {
+    out[i] = [Number(levels[i][0]), Number(levels[i][1])];
+  }
+  return out;
 }
 
-function sumQty(levels, n) {
-  let s = 0;
-  const lim = Math.min(levels.length, n);
-  for (let i = 0; i < lim; i += 1) {
-    const q = Number(levels[i][1]);
-    if (Number.isFinite(q)) s += q;
-  }
-  return s;
+function tradeRouteKey({ symbol, buyEx, sellEx }) {
+  // beispiele:
+  // BTC_USDT|binance->bitget
+  // ETH_USDT|gate->binance
+  return `${symbol}|${buyEx}->${sellEx}`;
 }
 
 module.exports = {
@@ -47,7 +57,8 @@ module.exports = {
   symToBitget,
   symToGate,
   nowSec,
-  feePctToFactor,
-  sumQty
+  toNumLevels,
+  tradeRouteKey,
+  f
 };
 

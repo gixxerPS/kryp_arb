@@ -4,12 +4,49 @@
 // - parseGateDepthMessage(raw): parse/normalize a Gate spot.order_book update message
 // - makeGateDepthHandler({ exchange, emit, nowMs }): builds a handler that emits md:l2
 //
-const { symFromExchange } = require('../../util');
+const { symFromExchange, toNumLevels } = require('../../util');
 
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'gate', sub:'parser' });
 
+const { createHeartbeat } = require('../../common/heartbeat');
+const hb = createHeartbeat({
+  log,
+  exchange: 'gate',
+  intervalMs: 10_000,
+  staleAfterMs: 30_000,
+});
+
+/**
+ * sample parsed:
+ * {
+ *   time: 1769878661,
+ *   time_ms: 1769878661588,
+ *   channel: 'spot.order_book',
+ *   event: 'update',
+ *   result: {
+ *     t: 1769878661588,
+ *     lastUpdateId: 315800571,
+ *     s: 'MET_USDT',
+ *     l: '10',
+ *     bids: [
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *     ],
+ *     asks: [
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *     ]
+ *   }
+ * }
+ * 
+ *
+ */
 function parseGateDepthMessage(parsed) {
+  console.log('gate');
+  console.log(parsed);
   if (!parsed) return null;
 
   // Gate sends different event types; we only want order_book updates.
@@ -21,8 +58,8 @@ function parseGateDepthMessage(parsed) {
 
   const symbol = symFromExchange(r.s);
 
-  const bids = Array.isArray(r.bids) ? r.bids : [];
-  const asks = Array.isArray(r.asks) ? r.asks : [];
+  const bids = Array.isArray(r.bids) ? toNumLevels(r.bids) : [];
+  const asks = Array.isArray(r.asks) ? toNumLevels(r.asks) : [];
   if (bids.length === 0 || asks.length === 0) return null;
 
   // Gate provides seconds timestamps in r.t (not always present)
@@ -51,6 +88,7 @@ function makeGateDepthHandler({ exchange = 'gate', emit, nowMs }) {
       bids: out.bids,
       asks: out.asks
     });
+    hb.onMessage({symbol: out.symbol, tsMs: nowMs()});
     return true;
   };
 }

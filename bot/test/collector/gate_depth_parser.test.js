@@ -31,9 +31,9 @@ suite('collector/gate_depth', () => {
     assert.ok(out);
 
     assert.equal(out.symbol, 'MET_USDT');
-    assert.equal(out.bids, msg.result.bids);
-    assert.equal(out.asks, msg.result.asks);
-    assert.equal(out.tsMs, 1710000001 * 1000);
+    assert.deepEqual(out.bids, [[0.2742, 4193.0],[0.2741, 12935.8]]);
+    assert.deepEqual(out.asks, [[0.2744, 952.8],[0.2745, 20491.0]]);
+    assert.deepEqual(out.tsMs, 1710000001 * 1000);
   });
 
   test('parseGateDepthMessage returns null for non-update messages', () => {

@@ -26,9 +26,9 @@ suite('collector/binance_depth', () => {
     const out = parseBinanceDepthMessage(msg);
     assert.ok(out);
 
-    assert.equal(out.symbol, 'MET_USDT');
-    assert.equal(out.bids, msg.data.bids);
-    assert.equal(out.asks, msg.data.asks);
+    assert.deepEqual(out.symbol, 'MET_USDT');
+    assert.deepEqual(out.bids, [[0.2742, 4193.0],[0.2741, 12935.8]]);
+    assert.deepEqual(out.asks, [[0.2744, 952.8],[0.2745, 20491.0]]);
   });
 
   test('makeBinanceDepthHandler emits md:l2', () => {

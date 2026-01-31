@@ -1,7 +1,6 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
-const { makeBinanceDepthHandler } = require('./parsers/binance_depth');
 const { symFromExchange, symToBinance, nowSec, sumQty } = require('../util');
 
 const { getCfg } = require('../config');
@@ -9,6 +8,9 @@ const cfg = getCfg();
 
 const { getLogger } = require('../logger');
 const log = getLogger('collector').child({ exchange: 'binance' });
+
+const { makeBinanceDepthHandler } = require('./parsers/binance_depth');
+const { exState } = require('../../common/exchange_state');
 
 module.exports = function startBinanceDepth(levels, updateMs) {
   const streams = cfg.symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);
@@ -25,10 +27,12 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   });
 
   ws.on('open', () => {
+    exState.onWsState('binance', 'OPEN');
     log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
   });
 
   ws.on('message', (msg) => {
+    exState.onWsMessage('binance');
     try {
       const parsed = JSON.parse(msg.toString());
 
@@ -49,10 +53,12 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   });
 
   ws.on('close', (code, reason) => {
+    exState.onWsState('binance', 'CLOSED');
     log.warn({ code, reason: reason ? reason.toString() : '' }, 'disconnected');
   });
 
   ws.on('error', (err) => {
+    exState.onWsError('binance', e);
     log.error({ err }, 'ws error');
   });
 

@@ -4,10 +4,18 @@
 // - parseBitgetDepthMessage(raw): parse/normalize a Bitget books (L2) update message
 // - makeBitgetDepthHandler({ exchange, emit, nowMs }): builds a handler that emits md:l2
 //
-const { symFromExchange } = require('../../util');
+const { symFromExchange, toNumLevels } = require('../../util');
 
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'bitget', sub:'parser' });
+
+const { createHeartbeat } = require('../../common/heartbeat');
+const hb = createHeartbeat({
+  log,
+  exchange: 'bitget',
+  intervalMs: 10_000,
+  staleAfterMs: 30_000,
+});
 
 function isBooksChannel(ch) {
   if (typeof ch !== 'string') return false;
@@ -15,6 +23,24 @@ function isBooksChannel(ch) {
   return ch === 'books' || ch === 'books5' || ch === 'books15' || ch.startsWith('books');
 }
 
+/**
+ * sample parsed:
+ * {
+ *   action: 'snapshot',
+ *   arg: { instType: 'SPOT', channel: 'books15', instId: 'AXSUSDT' },
+ *   data: [
+ *     {
+ *       asks: [Array],
+ *       bids: [Array],
+ *       ts: '1769878502854',
+ *       checksum: 0,
+ *       seq: 8942869007
+ *     }
+ *   ],
+ *   ts: 1769878502858
+ * }
+ *
+ */
 function parseBitgetDepthMessage(parsed) {
   if (!parsed) return null;
 
@@ -37,8 +63,8 @@ function parseBitgetDepthMessage(parsed) {
   const d = dataArr[0];
   if (!d) return null;
 
-  const bids = Array.isArray(d.bids) ? d.bids : [];
-  const asks = Array.isArray(d.asks) ? d.asks : [];
+  const bids = Array.isArray(d.bids) ? toNumLevels(d.bids) : [];
+  const asks = Array.isArray(d.asks) ? toNumLevels(d.asks) : [];
   if (bids.length === 0 || asks.length === 0) return null;
 
   const symbol = symFromExchange(instId);
@@ -69,6 +95,7 @@ function makeBitgetDepthHandler({ exchange = 'bitget', emit, nowMs }) {
       bids: out.bids,
       asks: out.asks,
     });
+    hb.onMessage({symbol: out.symbol, tsMs: nowMs()});
 
     return true;
   };

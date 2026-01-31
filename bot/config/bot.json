@@ -1,7 +1,9 @@
 {
+  "strategy": "arbitrage_v1", 
   "throttle_ms": 200,
+  "intent_time_to_live_ms": 1500,
   "cooldown_s": 36,
-  "min_raw_spread_pct": 0.30,
+  "raw_spread_buffer_pct": 0.05,
   "slippage_pct": 0.05,
   "q_min_usdt": 100,
   "q_max_usdt": 5000,

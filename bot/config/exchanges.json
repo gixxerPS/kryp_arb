@@ -2,16 +2,22 @@
   "binance": {
     "maker_fee_pct": 0.1,
     "taker_fee_pct": 0.1,
-    "enabled": false
+    "timeout_no_msg_trade_warn_ms": 8000,
+    "timeout_no_msg_trade_stop_ms": 20000,
+    "enabled": true
   },
   "gate": {
     "maker_fee_pct": 0.1,
     "taker_fee_pct": 0.1,
-    "enabled": false
+    "timeout_no_msg_trade_warn_ms": 8000,
+    "timeout_no_msg_trade_stop_ms": 20000,
+    "enabled": true
   },
   "bitget": {
     "maker_fee_pct": 0.1,
     "taker_fee_pct": 0.1,
+    "timeout_no_msg_trade_warn_ms": 8000,
+    "timeout_no_msg_trade_stop_ms": 20000,
     "enabled": true
   }
 }

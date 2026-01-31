@@ -20,6 +20,7 @@ function loadConfig() {
   const exchanges = readJson(absConfigPath('exchanges.json'));
   const symbolsFile = readJson(absConfigPath('symbols.json'));
   const log = readJson(absConfigPath('log.json'));
+  const db = readJson(absConfigPath('db.json'));
 
   const symbols = symbolsFile.symbols || [];
 
@@ -32,6 +33,7 @@ function loadConfig() {
     bot,
     symbols,
     exchanges,
+    db,
   };
   //console.log(cfg);
 

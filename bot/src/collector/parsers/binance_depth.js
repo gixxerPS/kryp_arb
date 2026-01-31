@@ -1,9 +1,37 @@
 // bot/src/collector/parsers/binance_depth.js
-const { symFromExchange } = require('../../util');
+const { symFromExchange, toNumLevels } = require('../../util');
 
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'binance', sub:'parser' });
 
+const { createHeartbeat } = require('../../common/heartbeat');
+const hb = createHeartbeat({
+  log,
+  exchange: 'binance',
+  intervalMs: 10_000,
+  staleAfterMs: 30_000,
+});
+
+/**
+ * sample raw:
+ * {
+ *   stream: 'metusdt@depth10@100ms',
+ *   data: {
+ *     lastUpdateId: 194692000,
+ *     bids: [
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *     ],
+ *     asks: [
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *       [Array], [Array],
+ *     ]
+ *   }
+ * }
+ *
+ */
 function parseBinanceDepthMessage(raw) {
   const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (!parsed || !parsed.stream || !parsed.data) return null;
@@ -13,8 +41,8 @@ function parseBinanceDepthMessage(raw) {
   const base = at !== -1 ? stream.slice(0, at) : stream;
   const symbol = symFromExchange(base);
 
-  const bids = Array.isArray(parsed.data.bids) ? parsed.data.bids : [];
-  const asks = Array.isArray(parsed.data.asks) ? parsed.data.asks : [];
+  const bids = Array.isArray(parsed.data.bids) ? toNumLevels(parsed.data.bids) : [];
+  const asks = Array.isArray(parsed.data.asks) ? toNumLevels(parsed.data.asks) : [];
   if (bids.length === 0 || asks.length === 0) return null;
 
   return {
@@ -59,6 +87,7 @@ function makeBinanceDepthHandler({ exchange = 'binance', emit, nowMs }) {
       exchange,
       ...out,
     });
+    hb.onMessage({symbol: out.symbol, tsMs: nowMs()});
     return true;
   };
 }

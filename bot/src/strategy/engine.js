@@ -1,5 +1,3 @@
-const { feePctToFactor } = require('../util');
-
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
@@ -7,11 +5,98 @@ function rawSpread(buyAsk, sellBid) {
   return (sellBid - buyAsk) / buyAsk;
 }
 
+// fuer 10 levels noch OK zu iterieren
+function bestBidPx(bids) {
+  let best = -Infinity;
+  for (const lvl of bids || []) {
+    const px = Number(lvl?.[0]);
+    if (Number.isFinite(px) && px > best) best = px;
+  }
+  return Number.isFinite(best) ? best : NaN;
+}
+
+// fuer 10 levels noch OK zu iterieren
+function bestAskPx(asks) {
+  let best = Infinity;
+  for (const lvl of asks || []) {
+    const px = Number(lvl?.[0]);
+    if (Number.isFinite(px) && px < best) best = px;
+  }
+  return Number.isFinite(best) ? best : NaN;
+}
+
+/**
+ * side: 'buy' (asks) oder 'sell' (bids)
+ * levels: [[price, qty], ...] (Strings oder Numbers)
+ * slippagePct: z.B. 0.10 für 0.10% (also config in Prozent)
+ * qMin/qMax in USDT
+ * 
+    //   bids: [ ["0.10000000","2978.60000000"],["0.09990000","52469.90000000"],...
+    //   asks: [ ["0.10010000","10071.60000000"],["0.10020000","58914.50000000"],...
+ */
+/**
+ * @function getQWithinSlippage
+ *
+ * @description
+ * Summiert die verfügbare Liquidität (Quote-Währung, z. B. USDT) eines Orderbuchs
+ * **innerhalb eines Slippage-Bands** relativ zum Bestpreis und clamped das Ergebnis
+ * auf einen erlaubten Handelsbereich.
+ *
+ * Die Funktion wird für **Stage-2 (Liquiditätsprüfung)** verwendet und beantwortet
+ * die Frage:
+ * > „Wie viel Quote kann ich handeln, ohne den Preis um mehr als `slippage_pct`
+ * > gegenüber dem Top-of-Book zu verschlechtern?“
+ *
+ * @param {Object} params
+ * @param {Array.<[number, number]>} params.levels
+ * @param {number} params.slippage_pct   Max. Slippage in Prozent (z. B. 0.10 = 0.10%)
+ * @param {number} params.q_min           Minimale Quote-Größe
+ * @param {number} params.q_max           Maximale Quote-Größe
+ *
+ * @returns {{
+ *   q: number,
+ *   limLvl: number,
+ *   pxLim: number
+ * }}
+ * Ergebnis der Liquiditätsberechnung:
+ * - `q`         - nutzbare Quote nach Clamping 
+ * - `limLvlIdx` - array index in dem abgebrochen wurde (slippage verletzt oder array zu ende)
+ * - `pxLim`     - Preisgrenze des Slippage-Bands
+ *
+ * @notes
+ * - Es wird eine Sortierung der Levels vorausgesetzt.
+ */
+function getQWithinSlippage({ levels, slippagePct, qMax }) {
+  let l = levels.length;
+  let bestPx = levels[0][0]; // best price
+  let q = bestPx * levels[0][1];
+  let dir = 1; // 1 = buy, -1 = sell
+  if (l > 1) {
+    dir = levels[1][0] > levels[0][0] ? 1 : -1; 
+  }
+  const pxLim = dir == 1 ? bestPx * (1 + slippagePct*0.01) : bestPx * (1 - slippagePct*0.01);
+  let i = 1;
+  for (; i < l; i++) {
+    let px = levels[i][0];
+    let qty = levels[i][1];
+    //console.log({px,qty,i,pxLim,dir, lvl10:levels[1][0], lvl00:levels[0][0]});
+
+    if (px * dir > pxLim * dir) { // preis ist nicht mehr in erlaubter slippage spanne ?
+      //console.log(`break at i=${i}`);
+      break;
+    }
+    q += px * qty;
+  }
+  q = Math.min(qMax, q);
+  //console.log(`done. i=${i}`);
+  return { q, limLvlIdx: i-1, pxLim };
+}
+
 // latest: Map("ex|sym" -> l2 object)
 // returns: array of intents
-function computeIntents({ latest,fees, nowMs, cfg }) {
-  const minRaw = Number(cfg.bot.min_raw_spread_pct) / 100.0;
-  const slippage = Number(cfg.bot.slippage_pct) / 100.0;
+function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
+  const rawBuffer = Number(cfg.bot.raw_spread_buffer_pct) * 0.01;
+  const slippage = Number(cfg.bot.slippage_pct) * 0.01;
   const qMin = Number(cfg.bot.q_min_usdt);
   const qMax = Number(cfg.bot.q_max_usdt);
 
@@ -21,53 +106,98 @@ function computeIntents({ latest,fees, nowMs, cfg }) {
     return `${ex}|${sym}`;
   }
   //console.log(cfg);
+  for (const buyEx of cfg.bot.exchanges) {
+    for (const sellEx of cfg.bot.exchanges) {
+      if (buyEx === sellEx) continue;
 
-  for (const sym of cfg.bot.symbols) {
-    for (const buyEx of cfg.bot.exchanges) {
-      for (const sellEx of cfg.bot.exchanges) {
-        if (buyEx === sellEx) continue;
+      const buy = latest.get(key(buyEx, sym));
+      const sell = latest.get(key(sellEx, sym));
+      if (!buy || !sell) continue;
 
-        const buy = latest.get(key(buyEx, sym));
-        const sell = latest.get(key(sellEx, sym));
-        if (!buy || !sell) continue;
-
-        if (nowMs - buy.tsMs > 1500) continue;
-        if (nowMs - sell.tsMs > 1500) continue;
-
-        const buyAsk = Number(buy.asks[0][0]);
-        const sellBid = Number(sell.bids[0][0]);
-        if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
-
-        const raw = rawSpread(buyAsk, sellBid);
-        if (raw < minRaw) continue;
-
-        const buyFee = feePctToFactor(fees[buyEx].taker_fee_pct);
-        const sellFee = feePctToFactor(fees[sellEx].taker_fee_pct);
-        const net = raw - buyFee - sellFee - slippage;
-        if (net <= 0) continue;
-
-        const qMaxBuy = /*Number(buy.askQtyL10) **/ buyAsk;
-        const qMaxSell = /*Number(sell.bidQtyL10) **/ sellBid;
-        if (!Number.isFinite(qMaxBuy) || !Number.isFinite(qMaxSell)) continue;
-
-        const qEff = Math.min(qMax, qMaxBuy, qMaxSell);
-        if (qEff < qMin) continue;
-
-        intents.push({
-          symbol: sym,
-          buyEx,
-          sellEx,
-          qUsdt: qEff,
-          edgeNet: net,
-          buyAsk,
-          sellBid,
-        });
+      // ist einer der stream datenpunkte aelter als 1500 ms?
+      // koennte auf stream problem hindeuten. 
+      // der preis ist moeglicherweise laengst weggelaufen -> kein trade!!!
+      const maxAgeMs = Number(cfg.bot.max_book_age_ms ?? 1500);
+      if (nowMs - buy.tsMs > maxAgeMs) {
+        //log.warn({
+        //  symbol: sym,
+        //  buyEx,
+        //  ageMs: nowMs - buy.tsMs,
+        //  maxAgeMs,
+        //  tsMs: buy.tsMs,
+        //}, 'stale buy book');
+        continue;
       }
+      if (nowMs - sell.tsMs > maxAgeMs) {
+        //log.warn({
+        //  symbol: sym,
+        //  sellEx,
+        //  ageMs: nowMs - sell.tsMs,
+        //  maxAgeMs,
+        //  tsMs: sell.tsMs,
+        //}, 'stale buy book');
+        continue;
+      }
+      const buyAsk = bestAskPx(buy.asks);
+      const sellBid = bestBidPx(sell.bids);
+      if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
+
+      // STAGE 1: trade-chance auf basis vom net spread erkennen
+
+      const raw = rawSpread(buyAsk, sellBid);
+      const buyFee = fees[buyEx].taker_fee_pct * 0.01;
+      const sellFee = fees[sellEx].taker_fee_pct * 0.01;
+      const net1 = raw - (buyFee + sellFee + rawBuffer); // zb: 0.31 - (0.1 + 0.1 + 0.05) = 0.06 % 
+      if (net1 <= 0) {
+        continue; // kein profit? kein trade!
+      }
+
+      // STAGE 2: max moegliche ordergroesse anhand von L2 daten ermitteln
+      let par = {levels:buy.asks, slippagePct: cfg.bot.slippage_pct, qMax: qMax};
+      const qBuy = getQWithinSlippage({levels:buy.asks, slippagePct: cfg.bot.slippage_pct, qMax: qMax});
+      const qSell = getQWithinSlippage({levels:sell.bids, slippagePct: cfg.bot.slippage_pct, qMax: qMax});
+      
+      if (qBuy.q < qMin || qSell.q < qMin) {
+        log.debug({qBuy:qBuy.q, qSell:qSell.q, qMin, buyEx, sellEx, buyAsks:buy.asks, sellBids:sell.bids},
+          'possible trade but not enough liquidity on orderbook');
+        continue;
+      }
+      const qEff = Math.min(qBuy.q, qSell.q);
+
+      // Worst-case Slippage bis zur Band-Grenze (nicht abhängig von qEff!)
+      // Es wird ja eine Seite begrenzt verursacht also potentiell weniger slippage.
+      // Wenn aber auch fuer diese Seite mit dem slippage grenzlevelIdx gerechnet wird
+      // ist (sollte sein) der reale gewinn hoeher als der hier berechnete.
+      // Im Umkehrschluss bedeutet das hier werden u.U. Trades ausgelassen
+      const buyPxWorst = buy.asks[qBuy.limLvlIdx][0];
+      const sellPxWorst = sell.bids[qSell.limLvlIdx][0];
+      if (!Number.isFinite(buyPxWorst) || !Number.isFinite(sellPxWorst)) continue;
+
+      const raw2 = rawSpread(buyPxWorst, sellPxWorst);
+      const net2 = raw2 - (buyFee + sellFee);
+      if (net2 <= 0) {
+        log.debug({buyPxWorst, sellPxWorst, raw2}, 'possible trade but slippage makes it unprofitable');
+        continue;
+      }
+      const intent = {
+        symbol: sym,
+        buyEx,
+        sellEx,
+        q: qEff,
+        net:net2,
+        buyAsk,
+        sellBid,
+      };
+      intents.push(intent);
     }
   }
-
   return intents;
 }
 
-module.exports = { computeIntents };
+module.exports = { 
+  computeIntentsForSym,
+  bestAskPx,
+  bestBidPx,
+  getQWithinSlippage
+};
 

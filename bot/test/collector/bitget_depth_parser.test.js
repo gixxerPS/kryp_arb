@@ -32,10 +32,10 @@ suite('collector/bitget_depth', () => {
     const out = parseBitgetDepthMessage(msg);
     assert.ok(out);
 
-    assert.equal(out.symbol, 'MET_USDT');
-    assert.equal(out.bids, msg.data[0].bids);
-    assert.equal(out.asks, msg.data[0].asks);
-    assert.equal(out.tsMs, 1710000000123);
+    assert.deepEqual(out.symbol, 'MET_USDT');
+    assert.deepEqual(out.bids, [[0.2742, 4193.0],[0.2741, 12935.8]]);
+    assert.deepEqual(out.asks, [[0.2744, 952.8],[0.2745, 20491.0]]);
+    assert.deepEqual(out.tsMs, 1710000000123);
   });
 
   test('parseBitgetDepthMessage returns null for non-books / non-update messages', () => {

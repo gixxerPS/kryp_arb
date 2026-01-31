@@ -21,8 +21,9 @@
 //
 const crypto = require('crypto');
 
-const bus = require('../bus');
-const { computeIntents } = require('./engine');
+const appBus = require('../bus');
+const { computeIntentsForSym: appCompute } = require('./engine');
+const { tradeRouteKey } = require('../util');
 
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
@@ -31,11 +32,17 @@ function key(ex, sym) {
   return `${ex}|${sym}`;
 }
 
-module.exports = function startStrategy(cfg) {
+module.exports = function startStrategy(cfg, deps = {}) { // deps machen es testbar durch injektion
+  const bus = deps.bus ?? appBus;
+  const computeIntentsForSym = deps.computeIntentsForSymbol ?? appCompute;
+  const nowFn = deps.nowFn ?? (() => Date.now());
+  const uuidFn = deps.uuidFn ?? (() => crypto.randomUUID());
+
   const cooldownS = Number(cfg.bot.cooldown_s);
   const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
+  const ttlMs = Number(cfg.bot.intent_time_to_live_ms ?? 1500);
 
-  const symbolsSet = new Set(cfg.symbols);
+  const symbolsSet = new Set(cfg.bot.symbols);
 
   const latest = new Map();       // key(ex,sym) -> l2 snapshot
   const lastIntentAt = new Map(); // `${sym}|buy->sell` -> tsMs
@@ -44,7 +51,7 @@ module.exports = function startStrategy(cfg) {
   function tryComputeForSymbol(sym) {
     if (!symbolsSet.has(sym)) return;
 
-    const nowMs = Date.now();
+    const nowMs = nowFn();
     const lastRun = lastRunAt.get(sym);
     if (lastRun != null) {
       const delta = nowMs - lastRun;
@@ -55,7 +62,8 @@ module.exports = function startStrategy(cfg) {
     lastRunAt.set(sym, nowMs);
 
     // Compute intents only for this symbol
-    const intents = computeIntents({
+    const intents = computeIntentsForSym({
+      sym,
       latest,
       fees:cfg.exchanges,
       nowMs,
@@ -63,17 +71,19 @@ module.exports = function startStrategy(cfg) {
     });
 
     for (const it of intents) {
-      const route = `${it.buyEx}->${it.sellEx}`;
-      const ck = `${it.symbol}|${route}`;
+      const rk = tradeRouteKey(it);
 
-      const last = lastIntentAt.get(ck);
-      if (last != null && (nowMs - last) < cooldownS * 1000) continue;
-
-      lastIntentAt.set(ck, nowMs);
+      const last = lastIntentAt.get(rk);
+      if (last != null && (nowMs - last) < cooldownS * 1000) {
+        log.debug({rk, age:nowMs - last, cooldownS}, 'trade chance ignored due to coolDown');
+        continue;
+      }
+      lastIntentAt.set(rk, nowMs);
 
       bus.emit('trade:intent', {
-        id: crypto.randomUUID(),
+        id: uuidFn(),
         tsMs: nowMs,
+        valid_until: new Date(nowMs + ttlMs),
         ...it,
       });
     }
@@ -81,7 +91,7 @@ module.exports = function startStrategy(cfg) {
 
   bus.on('md:l2', (m) => {
     latest.set(key(m.exchange, m.symbol), m);
-    log.debug({ latest: Object.fromEntries(latest) }, 'latest dump');
+    //log.debug({ latest: Object.fromEntries(latest) }, 'latest dump');
     //log.debug({latest:latest, m:m, key:key(m.exchange, m.symbol)}, 'md:l2');
     tryComputeForSymbol(m.symbol);
   });
@@ -94,7 +104,6 @@ module.exports = function startStrategy(cfg) {
       slippagePct: cfg.bot.slippage_pct,
       qMinUsdt: cfg.bot.q_min_usdt,
       qMaxUsdt: cfg.bot.q_max_usdt,
-      symbols: cfg.symbols.length,
     },
     'started',
   );

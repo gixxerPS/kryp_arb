@@ -8,6 +8,6 @@
     "collector": "info",
     "strategy": "debug",
     "executor": "debug",
-    "db": "info"
+    "db": "debug"
   }
 }

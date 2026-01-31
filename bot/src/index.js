@@ -9,13 +9,18 @@ const { initLogger, getLogger } = require('./logger');
 initLogger();
 const log = getLogger('app');
 
+const db = require('./db');
+
 const startBinanceDepth = require('./collector/binance_depth');
 const startGateDepth = require('./collector/gate_depth');
 const startBitgetDepth = require('./collector/bitget_depth');
 
 const startStrategy = require('./strategy');
-const startPaperExecutor = require('./executor/paper');
+//const startPaperExecutor = require('./executor/paper');
 
+const startDbIntentWriter = require('./db/intent_writer');
+
+const { initExchangeState } = require('./common/exchange_state');
 
 function loadJson(fp) {
   const raw = fs.readFileSync(fp, 'utf8');
@@ -26,6 +31,9 @@ async function main() {
   const { cfg, fees } = loadConfig();
 
   log.info({ cfg }, 'starting');
+
+  const pool = db.init();
+  await db.ping();
 
   // L2 collectors 
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -46,10 +54,14 @@ async function main() {
   } else {
     log.info({exchange:'bitget'}, 'exchange disabled');
   }
+  initExchangeState(); // monitoring, heartbeat ueberwachung und logging der exchange zustaende
 
-  //// strategy + executor
+  // strategy + executor
   startStrategy(cfg, fees);
   //startPaperExecutor();
+  
+  // datenbank
+  startDbIntentWriter(cfg, pool); // trade ideen eintragen
 }
 
 main().catch((e) => {

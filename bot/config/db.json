@@ -1,0 +1,4 @@
+{
+  "flushIntervalMs": 1000,
+  "maxBatch": 200
+}
