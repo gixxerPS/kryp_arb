@@ -28,6 +28,8 @@ const { tradeRouteKey } = require('../util');
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
+const { exState } = require('../common/exchange_state');
+
 function key(ex, sym) {
   return `${ex}|${sym}`;
 }
@@ -79,13 +81,15 @@ module.exports = function startStrategy(cfg, deps = {}) { // deps machen es test
         continue;
       }
       lastIntentAt.set(rk, nowMs);
-
-      bus.emit('trade:intent', {
+      const intent = {
         id: uuidFn(),
         tsMs: nowMs,
         valid_until: new Date(nowMs + ttlMs),
         ...it,
-      });
+      };
+
+      log.debug({intent}, 'trade:intent found');
+      bus.emit('trade:intent', intent);
     }
   }
 

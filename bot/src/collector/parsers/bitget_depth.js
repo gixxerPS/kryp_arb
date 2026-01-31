@@ -9,14 +9,6 @@ const { symFromExchange, toNumLevels } = require('../../util');
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'bitget', sub:'parser' });
 
-const { createHeartbeat } = require('../../common/heartbeat');
-const hb = createHeartbeat({
-  log,
-  exchange: 'bitget',
-  intervalMs: 10_000,
-  staleAfterMs: 30_000,
-});
-
 function isBooksChannel(ch) {
   if (typeof ch !== 'string') return false;
   // Bitget commonly uses: books / books5 / books15
@@ -95,7 +87,6 @@ function makeBitgetDepthHandler({ exchange = 'bitget', emit, nowMs }) {
       bids: out.bids,
       asks: out.asks,
     });
-    hb.onMessage({symbol: out.symbol, tsMs: nowMs()});
 
     return true;
   };

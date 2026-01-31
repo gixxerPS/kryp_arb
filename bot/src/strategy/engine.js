@@ -1,6 +1,9 @@
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
+const { getExState } = require('../common/exchange_state');
+const { EXCHANGE_QUALITY } = require('../common/constants');
+
 function rawSpread(buyAsk, sellBid) {
   return (sellBid - buyAsk) / buyAsk;
 }
@@ -102,6 +105,8 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
 
   const intents = [];
 
+  const exState = getExState();
+
   function key(ex, sym) {
     return `${ex}|${sym}`;
   }
@@ -114,30 +119,49 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
       const sell = latest.get(key(sellEx, sym));
       if (!buy || !sell) continue;
 
-      // ist einer der stream datenpunkte aelter als 1500 ms?
+      // NEU: nur weil ein datenpunkt alt ist heisst das nicht
+      // dass er nicht up-to-date sein kann!
+      // naemlich wenn kaum aktivitaet auf den boersen ist, wird preis ggf
+      // laenger nicht aktualisisert!
+      // deshalb ist der ansatz mit max_book_age_ms nicht praxistauglich
+      //
+      // stattdessen: unabhaengig kommunikationszustand zu exchanges auswerten (common/exchange_state.js)
+      // und hier lediglich pruefen
+      //const buyS = exState.getExchangeState(buyEx);
+      //if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+      //  log.debug({exchange: buyEx, buyS}, 'no trade. bad exchange quality');
+      //  return;
+      //}
+      //const sellS = exState.getExchangeState(sellEx);
+      //if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+      //  log.debug({exchange: sellEx, sellS}, 'no trade. bad exchange quality');
+      //  return;
+      //}
+      //
+      // ALT: ist einer der stream datenpunkte aelter als 1500 ms?
       // koennte auf stream problem hindeuten. 
       // der preis ist moeglicherweise laengst weggelaufen -> kein trade!!!
-      const maxAgeMs = Number(cfg.bot.max_book_age_ms ?? 1500);
-      if (nowMs - buy.tsMs > maxAgeMs) {
-        //log.warn({
-        //  symbol: sym,
-        //  buyEx,
-        //  ageMs: nowMs - buy.tsMs,
-        //  maxAgeMs,
-        //  tsMs: buy.tsMs,
-        //}, 'stale buy book');
-        continue;
-      }
-      if (nowMs - sell.tsMs > maxAgeMs) {
-        //log.warn({
-        //  symbol: sym,
-        //  sellEx,
-        //  ageMs: nowMs - sell.tsMs,
-        //  maxAgeMs,
-        //  tsMs: sell.tsMs,
-        //}, 'stale buy book');
-        continue;
-      }
+      //const maxAgeMs = Number(cfg.bot.max_book_age_ms ?? 1500);
+      //if (nowMs - buy.tsMs > maxAgeMs) {
+      //  //log.warn({
+      //  //  symbol: sym,
+      //  //  buyEx,
+      //  //  ageMs: nowMs - buy.tsMs,
+      //  //  maxAgeMs,
+      //  //  tsMs: buy.tsMs,
+      //  //}, 'stale buy book');
+      //  continue;
+      //}
+      //if (nowMs - sell.tsMs > maxAgeMs) {
+      //  //log.warn({
+      //  //  symbol: sym,
+      //  //  sellEx,
+      //  //  ageMs: nowMs - sell.tsMs,
+      //  //  maxAgeMs,
+      //  //  tsMs: sell.tsMs,
+      //  //}, 'stale buy book');
+      //  continue;
+      //}
       const buyAsk = bestAskPx(buy.asks);
       const sellBid = bestBidPx(sell.bids);
       if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;

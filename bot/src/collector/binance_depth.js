@@ -10,7 +10,8 @@ const { getLogger } = require('../logger');
 const log = getLogger('collector').child({ exchange: 'binance' });
 
 const { makeBinanceDepthHandler } = require('./parsers/binance_depth');
-const { exState } = require('../../common/exchange_state');
+const { getExState } = require('../common/exchange_state');
+const { WS_STATE } = require('../common/constants');
 
 module.exports = function startBinanceDepth(levels, updateMs) {
   const streams = cfg.symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);
@@ -26,8 +27,10 @@ module.exports = function startBinanceDepth(levels, updateMs) {
     nowMs: () => Date.now(),
   });
 
+  const exState = getExState();
+
   ws.on('open', () => {
-    exState.onWsState('binance', 'OPEN');
+    exState.onWsState('binance', WS_STATE.OPEN);
     log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
   });
 
@@ -53,7 +56,7 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   });
 
   ws.on('close', (code, reason) => {
-    exState.onWsState('binance', 'CLOSED');
+    exState.onWsState('binance', WS_STATE.CLOSED);
     log.warn({ code, reason: reason ? reason.toString() : '' }, 'disconnected');
   });
 

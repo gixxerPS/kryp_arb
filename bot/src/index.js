@@ -22,11 +22,6 @@ const startDbIntentWriter = require('./db/intent_writer');
 
 const { initExchangeState } = require('./common/exchange_state');
 
-function loadJson(fp) {
-  const raw = fs.readFileSync(fp, 'utf8');
-  return JSON.parse(raw);
-}
-
 async function main() {
   const { cfg, fees } = loadConfig();
 
@@ -34,6 +29,9 @@ async function main() {
 
   const pool = db.init();
   await db.ping();
+
+  console.log(cfg);
+  initExchangeState(cfg); // monitoring, heartbeat ueberwachung und logging der exchange zustaende
 
   // L2 collectors 
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -54,7 +52,6 @@ async function main() {
   } else {
     log.info({exchange:'bitget'}, 'exchange disabled');
   }
-  initExchangeState(); // monitoring, heartbeat ueberwachung und logging der exchange zustaende
 
   // strategy + executor
   startStrategy(cfg, fees);

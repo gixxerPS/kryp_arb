@@ -9,13 +9,6 @@ const { symFromExchange, toNumLevels } = require('../../util');
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'gate', sub:'parser' });
 
-const { createHeartbeat } = require('../../common/heartbeat');
-const hb = createHeartbeat({
-  log,
-  exchange: 'gate',
-  intervalMs: 10_000,
-  staleAfterMs: 30_000,
-});
 
 /**
  * sample parsed:
@@ -45,8 +38,6 @@ const hb = createHeartbeat({
  *
  */
 function parseGateDepthMessage(parsed) {
-  console.log('gate');
-  console.log(parsed);
   if (!parsed) return null;
 
   // Gate sends different event types; we only want order_book updates.
@@ -88,7 +79,6 @@ function makeGateDepthHandler({ exchange = 'gate', emit, nowMs }) {
       bids: out.bids,
       asks: out.asks
     });
-    hb.onMessage({symbol: out.symbol, tsMs: nowMs()});
     return true;
   };
 }

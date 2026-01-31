@@ -10,6 +10,9 @@ const cfg = getCfg();
 const { getLogger } = require('../logger');
 const log = getLogger('collector').child({ exchange: 'gate' });
 
+const { getExState } = require('../common/exchange_state');
+const { WS_STATE } = require('../common/constants');
+
 function startHeartbeat(ws, intervalMs) {
   let timer = null;
 
@@ -47,7 +50,10 @@ module.exports = function startGateDepth(levels, updateMs) {
     nowMs: () => Date.now(),
   });
 
+  const exState = getExState();
+
   ws.on('open', () => {
+    exState.onWsState('gate', WS_STATE.OPEN);
     const symbols = cfg.symbols;
     log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
 
@@ -67,6 +73,7 @@ module.exports = function startGateDepth(levels, updateMs) {
   });
 
   ws.on('message', (msg) => {
+    exState.onWsMessage('gate');
     try {
       const parsed = JSON.parse(msg.toString());
 
@@ -91,10 +98,12 @@ module.exports = function startGateDepth(levels, updateMs) {
   });
 
   ws.on('close', (code, reason) => {
+    exState.onWsState('gate', WS_STATE.CLOSED);
     log.warn({ code, reason: reason ? reason.toString() : '' }, 'disconnected');
   });
 
   ws.on('error', (err) => {
+    exState.onWsError('gate', e);
     log.error({ err }, 'ws error');
   });
 

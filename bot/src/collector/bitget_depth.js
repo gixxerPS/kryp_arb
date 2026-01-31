@@ -10,6 +10,9 @@ const cfg = getCfg();
 const { getLogger } = require('../logger');
 const log = getLogger('collector').child({ exchange: 'bitget' });
 
+const { getExState } = require('../common/exchange_state');
+const { WS_STATE } = require('../common/constants');
+
 function startHeartbeat(ws, intervalMs) {
   let timer = null;
 
@@ -47,8 +50,11 @@ module.exports = function startBitgetDepth(levels) {
     nowMs: () => Date.now(),
   });
 
+  const exState = getExState();
+
   ws.on('open', () => {
     log.info({ symbols: cfg.symbols.length, levels }, 'connected');
+    exState.onWsState('bitget', WS_STATE.OPEN);
 
     const channel = levels >= 15 ? 'books15' : (levels >= 5 ? 'books5' : 'books1');
 
@@ -66,6 +72,7 @@ module.exports = function startBitgetDepth(levels) {
   });
 
   ws.on('message', (msg) => {
+    exState.onWsMessage('bitget');
     try {
       const parsed = JSON.parse(msg.toString());
 
@@ -88,10 +95,12 @@ module.exports = function startBitgetDepth(levels) {
   });
 
   ws.on('close', (code, reason) => {
+    exState.onWsState('bitget', WS_STATE.CLOSED);
     log.warn({ code, reason: reason ? reason.toString() : '' }, 'disconnected');
   });
 
   ws.on('error', (err) => {
+    exState.onWsError('bitget', e);
     log.error({ err }, 'ws error');
   });
 

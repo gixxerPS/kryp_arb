@@ -4,13 +4,6 @@ const { symFromExchange, toNumLevels } = require('../../util');
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'binance', sub:'parser' });
 
-const { createHeartbeat } = require('../../common/heartbeat');
-const hb = createHeartbeat({
-  log,
-  exchange: 'binance',
-  intervalMs: 10_000,
-  staleAfterMs: 30_000,
-});
 
 /**
  * sample raw:
@@ -87,7 +80,6 @@ function makeBinanceDepthHandler({ exchange = 'binance', emit, nowMs }) {
       exchange,
       ...out,
     });
-    hb.onMessage({symbol: out.symbol, tsMs: nowMs()});
     return true;
   };
 }
