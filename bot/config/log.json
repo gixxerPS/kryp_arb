@@ -1,7 +1,8 @@
 {
   "pretty": true,
   "file": {
-    "path": "./logs/bot.log"
+    "path": "./logs/bot.log",
+    "heartbeatpath": "./logs/heartbeat.log"
   },
   "levelsByName": {
     "app": "info",

@@ -55,7 +55,7 @@ transport = pino.transport({ targets });
 
 let baseLogger;
 function initLogger() {
-  baseLogger = pino({ level: 'debug' }, transport); // base immer auf debug damit childs level selbst steuern koennen
+  baseLogger = pino({ level: 'debug', base: null }, transport); // base immer auf debug damit childs level selbst steuern koennen
   //baseLogger = pino({ level: 'debug' }); // transport zum testen deaktivieren
 }
 
@@ -93,5 +93,17 @@ function getLogger(name) {
   return baseLogger.child({ name }, { level: resolveLevel(name) });
 }
 
-module.exports = { initLogger, getLogger };
+const heartbeatLogger = pino({
+  level: 'info',
+  base: null,                 // kein pid, hostname
+}, pino.destination({
+    dest: cfg.file.heartbeatpath,
+  mkdir: true,
+  sync: false,                // async write!
+}));
+function getHeartbeatLogger() {
+  return heartbeatLogger;
+}
+
+module.exports = { initLogger, getLogger, getHeartbeatLogger};
 

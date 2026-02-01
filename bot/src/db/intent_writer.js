@@ -73,7 +73,7 @@ module.exports = function startIntentWriter(cfg, pool) {
         );
       }
       const sql = `
-        INSERT INTO trade_intent (${cols.join(',')})
+        INSERT INTO public.trade_intent (${cols.join(',')})
         VALUES ${params.join(',')}
         ON CONFLICT (id) DO NOTHING
       `;

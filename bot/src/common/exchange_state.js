@@ -1,6 +1,7 @@
 'use strict';
-const { getLogger } = require('../logger');
+const { getLogger, getHeartbeatLogger } = require('../logger');
 const log = getLogger('app').child({ module: 'exchange_state' });
+const hblog = getHeartbeatLogger(); // separater logger mit eigener datei fuer heartbeats
 
 const bus = require('../bus');
 
@@ -146,7 +147,7 @@ function createExchangeState(cfg) {
         });
       }
 
-      log.info({ exchanges: snapshot }, 'exchange heartbeat');
+      hblog.info({ exchanges: snapshot }, 'exchange heartbeat'); // regelmaessige heartbeats in eigene datei
     }, intervalMs);
 
     if (t.unref) t.unref();

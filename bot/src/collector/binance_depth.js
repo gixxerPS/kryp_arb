@@ -17,7 +17,6 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   const streams = cfg.symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);
   const url = `wss://stream.binance.com:9443/stream?streams=${streams.join('/')}`;
 
-  log.debug({url:url}, 'subscribe');
   const ws = new WebSocket(url);
   const lastSeenSec = new Map(); // symbol -> sec
 

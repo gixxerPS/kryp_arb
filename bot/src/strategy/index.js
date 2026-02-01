@@ -77,7 +77,7 @@ module.exports = function startStrategy(cfg, deps = {}) { // deps machen es test
 
       const last = lastIntentAt.get(rk);
       if (last != null && (nowMs - last) < cooldownS * 1000) {
-        log.debug({rk, age:nowMs - last, cooldownS}, 'trade chance ignored due to coolDown');
+        log.debug({reason:'cooldown violation', rk, age:nowMs - last, cooldownS}, 'dropped trade');
         continue;
       }
       lastIntentAt.set(rk, nowMs);

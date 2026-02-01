@@ -79,6 +79,7 @@ function getQWithinSlippage({ levels, slippagePct, qMax }) {
   }
   const pxLim = dir == 1 ? bestPx * (1 + slippagePct*0.01) : bestPx * (1 - slippagePct*0.01);
   let i = 1;
+  let targetQty = 0;
   for (; i < l; i++) {
     let px = levels[i][0];
     let qty = levels[i][1];
@@ -88,11 +89,25 @@ function getQWithinSlippage({ levels, slippagePct, qMax }) {
       //console.log(`break at i=${i}`);
       break;
     }
-    q += px * qty;
+
+    const qLevel = px * qty;
+    const qRemaining = qMax - q;
+
+    if (qRemaining <= 0) break;
+
+    if (qLevel <= qRemaining) { // ganzes level passt noch rein
+      q += qLevel;
+      targetQty += qty;
+    } else { // nur anteiliges level passt rein
+      const partialQty = qRemaining / px;
+      q += qRemaining;
+      targetQty += partialQty;
+      break;
+    }
   }
   q = Math.min(qMax, q);
   //console.log(`done. i=${i}`);
-  return { q, limLvlIdx: i-1, pxLim };
+  return { q, limLvlIdx: i-1, pxLim, targetQty };
 }
 
 // latest: Map("ex|sym" -> l2 object)
