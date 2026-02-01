@@ -22,11 +22,12 @@ function startHeartbeat(ws, intervalMs) {
       timer = null;
     }
   }
-
   ws.on('open', () => {
     stop();
     timer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.ping();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('ping');
+      }
     }, intervalMs);
   });
 
@@ -42,7 +43,7 @@ module.exports = function startBitgetDepth(levels) {
   const ws = new WebSocket('wss://ws.bitget.com/v2/ws/public');
   const lastSeenSec = new Map(); // symbol -> sec
 
-  startHeartbeat(ws, 20000);
+  startHeartbeat(ws, 20000); // bitget erwartet alle 30s ping -> bisschen puffer
 
   const handler = makeBitgetDepthHandler({
     exchange: 'bitget',
@@ -74,20 +75,22 @@ module.exports = function startBitgetDepth(levels) {
   ws.on('message', (msg) => {
     exState.onWsMessage('bitget');
     try {
-      const parsed = JSON.parse(msg.toString());
-
+      const msgStr = msg.toString();
+      if (msgStr === 'pong') {
+        return;
+      }
+      const parsed = JSON.parse(msgStr);
       if (parsed.event === 'subscribe') {
         log.info({ arg: parsed.arg }, 'subscribed');
         return;
       }
-
       if (parsed.event === 'error') {
         log.error({ parsed }, 'subscribe error');
         return;
       }
-
-      if (!parsed.data || !Array.isArray(parsed.data) || parsed.data.length === 0) return;
-      
+      if (!parsed.data || !Array.isArray(parsed.data) || parsed.data.length === 0) {
+        return;
+      }
       handler(parsed);
     } catch (e) {
       log.error({ err: e }, 'message error');

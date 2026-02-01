@@ -5,7 +5,7 @@
   },
   "levelsByName": {
     "app": "info",
-    "collector": "info",
+    "collector": "debug",
     "strategy": "debug",
     "executor": "debug",
     "db": "debug"

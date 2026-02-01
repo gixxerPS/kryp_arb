@@ -127,16 +127,20 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
       //
       // stattdessen: unabhaengig kommunikationszustand zu exchanges auswerten (common/exchange_state.js)
       // und hier lediglich pruefen
-      //const buyS = exState.getExchangeState(buyEx);
-      //if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-      //  log.debug({exchange: buyEx, buyS}, 'no trade. bad exchange quality');
-      //  return;
-      //}
-      //const sellS = exState.getExchangeState(sellEx);
-      //if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-      //  log.debug({exchange: sellEx, sellS}, 'no trade. bad exchange quality');
-      //  return;
-      //}
+      const buyS = exState.getExchangeState(buyEx);
+      if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+        if (buyS.anyAgeMs !== null) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+          log.debug({reason:'bad exchange quality', exchange: buyEx, buyS}, 'dropped trade');
+        }
+        continue;
+      }
+      const sellS = exState.getExchangeState(sellEx);
+      if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+        if (sellS.anyAgeMs !== null) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+          log.debug({reason:'bad exchange quality', exchange: sellEx, sellS}, 'dropped trade');
+        }
+        continue;
+      }
       //
       // ALT: ist einer der stream datenpunkte aelter als 1500 ms?
       // koennte auf stream problem hindeuten. 
@@ -182,8 +186,9 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
       const qSell = getQWithinSlippage({levels:sell.bids, slippagePct: cfg.bot.slippage_pct, qMax: qMax});
       
       if (qBuy.q < qMin || qSell.q < qMin) {
-        log.debug({qBuy:qBuy.q, qSell:qSell.q, qMin, buyEx, sellEx, buyAsks:buy.asks, sellBids:sell.bids},
-          'possible trade but not enough liquidity on orderbook');
+        log.debug({reason:'not enough liquidity on orderbook',
+          qBuy:qBuy.q, qSell:qSell.q, qMin, buyEx, sellEx, buyAsks:buy.asks, sellBids:sell.bids},
+          'dropped trade');
         continue;
       }
       const qEff = Math.min(qBuy.q, qSell.q);
@@ -200,14 +205,19 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
       const raw2 = rawSpread(buyPxWorst, sellPxWorst);
       const net2 = raw2 - (buyFee + sellFee);
       if (net2 <= 0) {
-        log.debug({buyPxWorst, sellPxWorst, raw2}, 'possible trade but slippage makes it unprofitable');
+        log.debug({reason:'slippage makes it unprofitable', buyPxWorst, sellPxWorst, raw2}, 'dropped trade');
         continue;
       }
+
+      // TODO:
+      const targetQty = 0;
+
       const intent = {
         symbol: sym,
         buyEx,
         sellEx,
         q: qEff,
+        targetQty,
         net:net2,
         buyAsk,
         sellBid,

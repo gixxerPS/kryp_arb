@@ -30,7 +30,6 @@ async function main() {
   const pool = db.init();
   await db.ping();
 
-  console.log(cfg);
   initExchangeState(cfg); // monitoring, heartbeat ueberwachung und logging der exchange zustaende
 
   // L2 collectors 

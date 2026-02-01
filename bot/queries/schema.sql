@@ -15,6 +15,7 @@ CREATE TABLE trade_intent (
   expected_pnl_bps   NUMERIC(10,4) NOT NULL,
 
   size_quote NUMERIC(18,8) NOT NULL,      -- z.B. 5000 USDT Budget
+  target_qty NUMERIC(18,8) NOT NULL,      -- z.B. 100 AXS
 
   theoretical_buy_px  numeric(18,8) NOT NULL,
   theoretical_sell_px numeric(18,8) NOT NULL,

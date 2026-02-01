@@ -26,7 +26,9 @@ function startHeartbeat(ws, intervalMs) {
   ws.on('open', () => {
     stop();
     timer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.ping();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('ping');
+      }
     }, intervalMs);
   });
 

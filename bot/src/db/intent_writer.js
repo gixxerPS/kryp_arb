@@ -39,6 +39,7 @@ module.exports = function startIntentWriter(cfg, pool) {
         'expected_pnl_quote',
         'expected_pnl_bps',
         'size_quote',
+        'target_qty',
         'theoretical_buy_px',
         'theoretical_sell_px',
         'meta',
@@ -52,7 +53,7 @@ module.exports = function startIntentWriter(cfg, pool) {
         const expectedPnlQuote = it.q * it.net;
         const expectedPnlBps = it.net * 10_000;
 
-        params.push(`($${p++},$${p++},${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+        params.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
 
         values.push(
           it.id,
@@ -65,6 +66,7 @@ module.exports = function startIntentWriter(cfg, pool) {
           expectedPnlQuote,
           expectedPnlBps,
           it.q,
+          it.targetQty,
           it.buyAsk,
           it.sellBid,
           it.meta ? JSON.stringify(it.meta) : null

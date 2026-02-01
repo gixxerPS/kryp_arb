@@ -124,7 +124,7 @@ function createExchangeState(cfg) {
    * Heartbeat / Diagnose
    * ===================== */
 
-  function startHeartbeat(intervalMs = 10_000) {
+  function startHeartbeat(intervalMs = 5_000) {
     const t = setInterval(() => {
       const now = Date.now();
 
@@ -140,6 +140,7 @@ function createExchangeState(cfg) {
           exchange,
           enabled: cfg.enabled,
           wsState: s?.wsState ?? WS_STATE.UNKNOWN,
+          exchangeQuality: s.exchangeQuality,
           anyAgeMs,
           counts: s?.counts ?? { anyMsg: 0, reconnects: 0, errors: 0 },
         });
@@ -164,9 +165,7 @@ function createExchangeState(cfg) {
 /* ========= Singleton Export ========= */
 
 function initExchangeState(cfg) {
-  console.log('initExchangeState');
   if (exState) return exState;
-  console.log('really initExchangeState');
   exState = createExchangeState(cfg);
   exState.startHeartbeat();
   return exState;

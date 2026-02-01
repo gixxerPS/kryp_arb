@@ -1,12 +1,5 @@
-SELECT
-  created_at,
-  symbol,
-  buy_ex,
-  sell_ex,
-  status,
-  buy_ask,
-  sell_bid
+SELECT *
 FROM trade_intent
-WHERE created_at >= now() - INTERVAL '10 minutes'
+WHERE created_at >= now() - INTERVAL '24 hours'
 ORDER BY created_at DESC;
 
