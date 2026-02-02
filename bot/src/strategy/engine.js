@@ -1,7 +1,6 @@
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
-const { getExState } = require('../common/exchange_state');
 const { EXCHANGE_QUALITY } = require('../common/constants');
 
 function rawSpread(buyAsk, sellBid) {
@@ -112,15 +111,13 @@ function getQWithinSlippage({ levels, slippagePct, qMax }) {
 
 // latest: Map("ex|sym" -> l2 object)
 // returns: array of intents
-function computeIntentsForSym({ sym, latest,fees, nowMs, cfg }) {
+function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
   const rawBuffer = Number(cfg.bot.raw_spread_buffer_pct) * 0.01;
   const slippage = Number(cfg.bot.slippage_pct) * 0.01;
   const qMin = Number(cfg.bot.q_min_usdt);
   const qMax = Number(cfg.bot.q_max_usdt);
 
   const intents = [];
-
-  const exState = getExState();
 
   function key(ex, sym) {
     return `${ex}|${sym}`;

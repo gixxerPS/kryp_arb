@@ -2,6 +2,7 @@ const { suite, test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { computeIntentsForSym, getQWithinSlippage } = require('../../src/strategy/engine');
+const { EXCHANGE_QUALITY } = require('../../src/common/constants');
 
 const cfg = { 
   bot : {
@@ -17,6 +18,9 @@ const fees = {
   binance: { taker_fee_pct: 0.1 },
 };
 
+const exState = {
+  getExchangeState: (ex) => ({ exchange: ex, exchangeQuality: EXCHANGE_QUALITY.OK, anyAgeMs: 0 })
+};
 
 suite('strategy/engine stage 1. detect trades from spread', () => {
   test('computeIntents erzeugt intent wenn net edge > 0 und genug l10 liquidität', () => {
@@ -42,7 +46,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState});
 
     assert.deepEqual(intents.length, 1);
     assert.deepEqual(intents[0].buyEx, 'gate');
@@ -73,7 +77,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState});
 
     assert.deepEqual(intents.length, 0);
   });
@@ -98,7 +102,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState});
 
     assert.equal(intents.length, 0);
   });
@@ -124,7 +128,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
 
     const fees = { binance: { taker_fee_pct: 0.0 }, bitget: { taker_fee_pct: 0.0 } };
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
     assert.equal(intents.length, 1);
   });
   test('computeIntentsForSymbol uses bestAskPx for asks and bestBidPx for bids (guards against swap bug)', () => {
@@ -169,7 +173,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       bitget: { taker_fee_pct: 0 },
     };
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
 
     assert.equal(intents.length, 1);
     assert.equal(intents[0].symbol, sym);
@@ -228,7 +232,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       bitget:  { taker_fee_pct: 0 },
     };
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
     assert.equal(intents.length, 0);
   });
 
@@ -275,7 +279,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       binance: { taker_fee_pct: 0 },
       bitget:  { taker_fee_pct: 0 },
     };
-    const intents = computeIntentsForSym({sym, latest, fees, nowMs, cfg,});
+    const intents = computeIntentsForSym({sym, latest, fees, nowMs, cfg, exState});
 
     assert.equal(intents.length, 1);
     const it = intents[0];
@@ -329,11 +333,50 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       binance: { taker_fee_pct: 0 },
       bitget:  { taker_fee_pct: 0 },
     };
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg });
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
     assert.equal(intents.length, 0);
+  });
+  test('computeIntents erzeugt keinen intent wenn trade gueltig aber exchange state passt nicht', () => {
+    const latest = new Map();
+    const nowMs = 1_000_000;
+    const sym = 'AAA_USDT';
+
+    const exStateBinanceFail = {
+      getExchangeState: (ex) => ({
+        exchange: ex,
+        exchangeQuality: ex === 'binance' ? EXCHANGE_QUALITY.STOP : EXCHANGE_QUALITY.OK,
+        anyAgeMs: 9000
+      })
+    };
+    // buy on gate: ask=100, askQtyL10=100 => qMaxBuy=10k
+    latest.set('gate|AAA_USDT', {
+      tsMs: nowMs,
+      bids: [ [100.0103, 4193.0],[100.0102, 12935.8],],
+      asks: [ [100.0000, 952.8], [100.0001, 20491.0],],
+    });
+
+    // sell on binance: bid=100.6 => raw = 0.6%
+    // bidQtyL10=100 => qMaxSell=10,060
+    latest.set('binance|AAA_USDT', {
+      tsMs: nowMs,
+      bids: [ [100.6103, 4193.0],[100.6102, 12935.8],],
+      asks: [ [100.6000, 952.8], [100.6001, 20491.0],],
+    });
+
+    cfg.bot.symbols = [sym];
+    cfg.bot.exchanges = ['gate', 'binance'];
+
+    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState:exStateBinanceFail});
+
+    assert.deepEqual(intents.length, 0);
   });
 
 });
+
+//=============================================================================
+//
+//=============================================================================
+
 suite('strategy/engine stage 2. determine possible q', () => {
   test('buy-side sums asks up to bestAsk*(1+slippage)', () => {
     const asks = [

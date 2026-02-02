@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test_debug": "node --inspect-brk --test",
+    "test:debug:one": "node --inspect-brk --test test/strategy/*.test.js"
   },
   "repository": {
     "type": "git",

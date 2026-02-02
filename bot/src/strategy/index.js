@@ -28,7 +28,7 @@ const { tradeRouteKey } = require('../util');
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');
 
-const { exState } = require('../common/exchange_state');
+const { getExState: appGetExState } = require('../common/exchange_state');
 
 function key(ex, sym) {
   return `${ex}|${sym}`;
@@ -36,9 +36,11 @@ function key(ex, sym) {
 
 module.exports = function startStrategy(cfg, deps = {}) { // deps machen es testbar durch injektion
   const bus = deps.bus ?? appBus;
+  const getExStateFct = deps.getExState ?? appGetExState; 
   const computeIntentsForSym = deps.computeIntentsForSymbol ?? appCompute;
   const nowFn = deps.nowFn ?? (() => Date.now());
   const uuidFn = deps.uuidFn ?? (() => crypto.randomUUID());
+  const exState = getExStateFct();
 
   const cooldownS = Number(cfg.bot.cooldown_s);
   const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
@@ -69,7 +71,8 @@ module.exports = function startStrategy(cfg, deps = {}) { // deps machen es test
       latest,
       fees:cfg.exchanges,
       nowMs,
-      cfg
+      cfg,
+      exState
     });
 
     for (const it of intents) {
