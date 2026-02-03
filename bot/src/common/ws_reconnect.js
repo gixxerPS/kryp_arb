@@ -51,21 +51,41 @@
 
 const { clamp, sleep, withJitter } = require('../common/util');
 
+/**
+ * @param {object} opts
+ * @param {string} opts.name - label for logs
+ * @param {() => import('ws')} opts.connect - must create and return a new ws instance
+ * @param {(ws: any) => (void|Promise<void>)} opts.onOpen - subscribe/resync logic
+ * @param {(data: any, ws: any) => void} [opts.onMessage] - optional message hook
+ * @param {(err: any) => void} opts.onLog - logger fn (e.g. (o,msg)=>log.info(o,msg))
+ * @param {number} [opts.baseDelayMs=1000] initial reconnect delay after first disconnect.
+//             Example: 1000ms => first retry happens quickly for transient drops.
+ * @param {number} [opts.maxDelayMs=30000] upper bound for backoff delay.
+//            Prevents very long waits; typical 30–60s for market-data streams.
+ * @param {number} [opts.backoffFactor=2] exponential growth factor per failed attempt.
+//               With base=1000 and factor=2: 1s, 2s, 4s, 8s, ... capped by maxDelayMs.
+//               attempt counter resets only after a successful 'open'.
+ * @param {number} [opts.jitterPct=0.3] randomization to avoid reconnect storms across many sockets.
+//           0.3 => multiply delay by random factor in [0.7 .. 1.3].
+ * @param {number} [opts.staleTimeoutMs=60000] - if no message for this long => terminate
+ * @param {(ctx: {code?: number, reason?: string, err?: any}) => number|null} [opts.delayOverrideMs]
+ *        Return a number to override delay, or null/undefined for default backoff.
+ */
 function createReconnectWS(opts) {
   const {
     name,
-    connect,
-    onOpen,
-    onMessage,
-    onLog,
-
+    log,
     baseDelayMs = 1000,
     maxDelayMs = 30000,
     backoffFactor = 2,
     jitterPct = 0.3,
-
     staleTimeoutMs = 60000,
-
+    connect,
+    onReconnect,        
+    onOpen,
+    onMessage,
+    onClose,
+    onError,
     delayOverrideMs,
   } = opts;
 
@@ -73,13 +93,11 @@ function createReconnectWS(opts) {
   let stopped = false;
   let attempt = 0;
   let lastMsgTs = 0;
-
   let staleTimer = null;
 
   async function cleanup() {
     if (staleTimer) clearInterval(staleTimer);
     staleTimer = null;
-
     if (ws) {
       try { ws.removeAllListeners?.(); } catch {}
       ws = null;
@@ -88,12 +106,12 @@ function createReconnectWS(opts) {
 
   function startTimers(currentWs) {
     lastMsgTs = Date.now();
-
+    // stale detection: if no messages for too long, kill socket
     if (staleTimeoutMs > 0) {
       staleTimer = setInterval(() => {
         const age = Date.now() - lastMsgTs;
         if (age > staleTimeoutMs) {
-          onLog({ name, ageMs: age, staleTimeoutMs }, 'ws stale; terminating');
+            log.warn({ name, ageMs: age, staleTimeoutMs }, 'ws stale; terminating');
           try { currentWs?.terminate?.(); }
           catch { try { currentWs?.close?.(); } catch {} }
         }
@@ -124,27 +142,19 @@ function createReconnectWS(opts) {
           if (stopped) return;
           attempt = 0;
           startTimers(ws);
-          onLog({ name }, 'ws open');
-
-          try {
-            await onOpen(ws);
-          } catch (err) {
-            onLog({ name, err }, 'onOpen failed');
-            try { ws.terminate?.(); } catch {}
-          }
+          log.info({ name }, 'ws open');
+          await onOpen(ws);
         });
 
         ws.on('message', (data) => {
           lastMsgTs = Date.now();
-          try { onMessage?.(data, ws); }
-          catch (err) {
-            onLog({ name, err }, 'onMessage error');
-          }
+          onMessage(data); 
         });
 
         ws.on('pong', () => {
           lastMsgTs = Date.now();
         });
+
         const evt = await new Promise((resolve) => {
           ws.on('close', (code, reasonBuf) => {
             resolve({
@@ -158,22 +168,28 @@ function createReconnectWS(opts) {
           });
         });
 
+        if (evt.type === 'close') {
+          onClose();
+        } else {
+          onError(evt.err);
+        }
+
         if (stopped) break;
 
         await cleanup();
         attempt += 1;
+        onReconnect();
         const delayMs = computeDelayMs(evt);
-        onLog(
-          { name, attempt, delayMs, ...evt },
+        log.debug({ name, attempt, delayMs, ...evt },
           'ws disconnected; reconnect scheduled'
         );
         await sleep(delayMs);
       } catch (err) {
         await cleanup();
         attempt += 1;
+        onReconnect();
         const delayMs = computeDelayMs({ type: 'error', err });
-        onLog(
-          { name, attempt, delayMs, err },
+        log.debug({ name, attempt, delayMs, err },
           'ws loop error; reconnect scheduled'
         );
         await sleep(delayMs);
@@ -190,7 +206,7 @@ function createReconnectWS(opts) {
     stopped = true;
     try { ws?.terminate?.(); } catch {}
     await cleanup();
-    onLog({ name }, 'ws stopped');
+    log.warn({ name }, 'ws stopped');
   }
   return {
     start,
