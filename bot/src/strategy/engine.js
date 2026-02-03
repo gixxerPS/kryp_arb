@@ -141,14 +141,14 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
       // und hier lediglich pruefen
       const buyS = exState.getExchangeState(buyEx);
       if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-        if (buyS.anyAgeMs !== null) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+        if (buyS.anyMsgAt) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
           log.debug({reason:'bad exchange quality', exchange: buyEx, buyS}, 'dropped trade');
         }
         continue;
       }
       const sellS = exState.getExchangeState(sellEx);
       if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-        if (sellS.anyAgeMs !== null) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+        if (sellS.anyMsgAt) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
           log.debug({reason:'bad exchange quality', exchange: sellEx, sellS}, 'dropped trade');
         }
         continue;

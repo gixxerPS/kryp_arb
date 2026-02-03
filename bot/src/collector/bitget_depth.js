@@ -4,7 +4,7 @@ const bus = require('../bus');
 const { makeBitgetDepthHandler } = require('./parsers/bitget_depth');
 const { symToBitget } = require('../common/util');
 
-const { getCfg } = require('../config');
+const { getCfg } = require('../common/config');
 const cfg = getCfg();
 
 const { getLogger } = require('../logger');

@@ -34,6 +34,8 @@ psql postgresql://arbuser:pass@localhost:5432/arb -f kryp_arb/collector/queries/
 
 ```bash
 POSTGRES_URL=postgresql://arbuser:pass@localhost:5432/arb
+TELEGRAM_BOT_TOKEN="80...12"
+TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
 ```
 
 * Pakete installieren

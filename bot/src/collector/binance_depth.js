@@ -3,7 +3,7 @@ const WebSocket = require('ws');
 const bus = require('../bus');
 const { symFromExchange, symToBinance, nowSec, sumQty } = require('../common/util');
 
-const { getCfg } = require('../config');
+const { getCfg } = require('../common/config');
 const cfg = getCfg();
 
 const { getLogger } = require('../logger');

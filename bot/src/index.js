@@ -3,7 +3,7 @@ const path = require('path');
 
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
-const { loadConfig } = require('./config');
+const { loadConfig } = require('./common/config');
 
 const { initLogger, getLogger } = require('./logger');
 initLogger();
@@ -21,6 +21,8 @@ const startStrategy = require('./strategy');
 const startDbIntentWriter = require('./db/intent_writer');
 
 const { initExchangeState } = require('./common/exchange_state');
+
+require('./ui/telegram_bot');
 
 async function main() {
   const { cfg, fees } = loadConfig();

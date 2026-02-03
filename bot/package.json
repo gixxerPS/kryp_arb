@@ -30,9 +30,10 @@
   "homepage": "https://github.com/gixxerPS/kryp_arb#readme",
   "dependencies": {
     "dotenv": "^17.2.3",
+    "node-telegram-bot-api": "^0.67.0",
+    "pg": "^8.11.5",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
-    "pg": "^8.11.5",
     "ws": "^8.17.0"
   }
 }
