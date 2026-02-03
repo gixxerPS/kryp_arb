@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 
 const bus = require('../bus');
 const { makeGateDepthHandler } = require('./parsers/gate_depth');
-const { nowSec, symFromExchange, symToGate } = require('../util');
+const { nowSec, symFromExchange, symToGate } = require('../common/util');
 
 const { getCfg } = require('../config');
 const cfg = getCfg();
@@ -105,7 +105,7 @@ module.exports = function startGateDepth(levels, updateMs) {
   });
 
   ws.on('error', (err) => {
-    exState.onWsError('gate', e);
+    exState.onWsError('gate', err);
     log.error({ err }, 'ws error');
   });
 

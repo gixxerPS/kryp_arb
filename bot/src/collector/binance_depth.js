@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
-const { symFromExchange, symToBinance, nowSec, sumQty } = require('../util');
+const { symFromExchange, symToBinance, nowSec, sumQty } = require('../common/util');
 
 const { getCfg } = require('../config');
 const cfg = getCfg();
@@ -60,7 +60,7 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   });
 
   ws.on('error', (err) => {
-    exState.onWsError('binance', e);
+    exState.onWsError('binance', err);
     log.error({ err }, 'ws error');
   });
 

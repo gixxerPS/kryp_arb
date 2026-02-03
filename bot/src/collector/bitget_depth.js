@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 
 const bus = require('../bus');
 const { makeBitgetDepthHandler } = require('./parsers/bitget_depth');
-const { nowSec, symFromExchange, symToBitget } = require('../util');
+const { nowSec, symFromExchange, symToBitget } = require('../common/util');
 
 const { getCfg } = require('../config');
 const cfg = getCfg();
@@ -103,7 +103,7 @@ module.exports = function startBitgetDepth(levels) {
   });
 
   ws.on('error', (err) => {
-    exState.onWsError('bitget', e);
+    exState.onWsError('bitget', err);
     log.error({ err }, 'ws error');
   });
 

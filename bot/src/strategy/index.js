@@ -23,7 +23,7 @@ const crypto = require('crypto');
 
 const appBus = require('../bus');
 const { computeIntentsForSym: appCompute } = require('./engine');
-const { tradeRouteKey } = require('../util');
+const { tradeRouteKey } = require('../common/util');
 
 const { getLogger } = require('../logger');
 const log = getLogger('strategy');

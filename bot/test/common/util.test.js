@@ -1,7 +1,7 @@
 const { suite, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { symFromExchange, symToBinance, symToBitget, feePctToFactor } = require('../src/util');
+const { symFromExchange, symToBinance, symToBitget, feePctToFactor } = require('../../src/common/util');
 
 suite('util', () => {
   test('symFromExchange normalisiert zu BASE_QUOTE (uppercase, underscore)', () => {

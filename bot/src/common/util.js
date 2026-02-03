@@ -51,6 +51,22 @@ function tradeRouteKey({ symbol, buyEx, sellEx }) {
   return `${symbol}|${buyEx}->${sellEx}`;
 }
 
+
+function clamp(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function sleep(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+function withJitter(ms, jitterPct = 0) {
+  const j = clamp(jitterPct, 0, 1);
+  const r = (1 - j) + Math.random() * (2 * j); // [1-j, 1+j]
+  return Math.max(0, Math.round(ms * r));
+}
+
+
 module.exports = {
   symFromExchange,
   symToBinance,
@@ -59,6 +75,9 @@ module.exports = {
   nowSec,
   toNumLevels,
   tradeRouteKey,
-  f
+  f,
+  clamp,
+  sleep,
+  withJitter,
 };
 

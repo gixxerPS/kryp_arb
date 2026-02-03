@@ -1,5 +1,5 @@
 // bot/src/collector/parsers/binance_depth.js
-const { symFromExchange, toNumLevels } = require('../../util');
+const { symFromExchange, toNumLevels } = require('../../common/util');
 
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'binance', sub:'parser' });

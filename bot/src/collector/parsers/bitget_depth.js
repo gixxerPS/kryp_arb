@@ -4,7 +4,7 @@
 // - parseBitgetDepthMessage(raw): parse/normalize a Bitget books (L2) update message
 // - makeBitgetDepthHandler({ exchange, emit, nowMs }): builds a handler that emits md:l2
 //
-const { symFromExchange, toNumLevels } = require('../../util');
+const { symFromExchange, toNumLevels } = require('../../common/util');
 
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'bitget', sub:'parser' });

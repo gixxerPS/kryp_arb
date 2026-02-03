@@ -4,7 +4,7 @@
 // - parseGateDepthMessage(raw): parse/normalize a Gate spot.order_book update message
 // - makeGateDepthHandler({ exchange, emit, nowMs }): builds a handler that emits md:l2
 //
-const { symFromExchange, toNumLevels } = require('../../util');
+const { symFromExchange, toNumLevels } = require('../../common/util');
 
 const { getLogger } = require('../../logger');
 const log = getLogger('collector').child({ exchange: 'gate', sub:'parser' });
