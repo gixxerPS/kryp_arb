@@ -7,7 +7,7 @@ const { symToBitget } = require('../common/util');
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
 
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('collector').child({ exchange: 'bitget' });
 
 const { getExState } = require('../common/exchange_state');

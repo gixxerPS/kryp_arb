@@ -25,7 +25,7 @@ const appBus = require('../bus');
 const { computeIntentsForSym: appCompute } = require('./engine');
 const { tradeRouteKey } = require('../common/util');
 
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('strategy');
 
 const { getExState: appGetExState } = require('../common/exchange_state');

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
 
-const { getLogCfg } = require('./common/config');
+const { getLogCfg } = require('./config');
 const cfg = getLogCfg();
 
 function ensureDir(fp) {

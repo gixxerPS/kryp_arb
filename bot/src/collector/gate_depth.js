@@ -6,7 +6,7 @@ const { makeGateDepthHandler } = require('./parsers/gate_depth');
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
 
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('collector').child({ exchange: 'gate' });
 
 const { getExState } = require('../common/exchange_state');

@@ -2,7 +2,7 @@
 //
 //
 const bus = require('../bus');
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('db').child({ module:'trade_intents' });
 
 module.exports = function startIntentWriter(cfg, pool) {

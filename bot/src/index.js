@@ -5,7 +5,7 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const { loadConfig } = require('./common/config');
 
-const { initLogger, getLogger } = require('./logger');
+const { initLogger, getLogger } = require('./common/logger');
 initLogger();
 const log = getLogger('app');
 
@@ -22,7 +22,7 @@ const startDbIntentWriter = require('./db/intent_writer');
 
 const { initExchangeState } = require('./common/exchange_state');
 
-require('./ui/telegram_bot');
+const { initTelegramBot } = require('./ui/telegram_bot');
 
 async function main() {
   const { cfg, fees } = loadConfig();
@@ -60,6 +60,10 @@ async function main() {
   
   // datenbank
   startDbIntentWriter(cfg, pool); // trade ideen eintragen
+
+  if (cfg.ui.telegram_enabled) {
+    initTelegramBot(cfg);
+  }
 }
 
 main().catch((e) => {

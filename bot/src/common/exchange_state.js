@@ -1,5 +1,5 @@
 'use strict';
-const { getLogger, getHeartbeatLogger } = require('../logger');
+const { getLogger, getHeartbeatLogger } = require('./logger');
 const log = getLogger('app').child({ module: 'exchange_state' });
 const hblog = getHeartbeatLogger(); // separater logger mit eigener datei fuer heartbeats
 

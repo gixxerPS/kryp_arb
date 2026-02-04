@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('db');
 
 let pool;

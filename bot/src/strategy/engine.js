@@ -1,4 +1,4 @@
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('strategy');
 
 const { EXCHANGE_QUALITY } = require('../common/constants');
@@ -71,14 +71,20 @@ function bestAskPx(asks) {
 function getQWithinSlippage({ levels, slippagePct, qMax }) {
   let l = levels.length;
   let bestPx = levels[0][0]; // best price
-  let q = bestPx * levels[0][1];
+  let targetQty = levels[0][1];
+  let q = bestPx * targetQty;
   let dir = 1; // 1 = buy, -1 = sell
   if (l > 1) {
     dir = levels[1][0] > levels[0][0] ? 1 : -1; 
+  } else { // nur 1 level (0 duerfte nicht vorkommen)
+    if (bestPx === 0.0) { // avoid div-by-zero, should not happen
+      return {q, limLvlIdx: 0, pxLim:0, targetQty};
+    }
+    // ganzes qMax wenn es passt, sonst ganzes level
+    targetQty = qMax < q ? qMax / bestPx : levels[0][1];
   }
   const pxLim = dir == 1 ? bestPx * (1 + slippagePct*0.01) : bestPx * (1 - slippagePct*0.01);
   let i = 1;
-  let targetQty = 0;
   for (; i < l; i++) {
     let px = levels[i][0];
     let qty = levels[i][1];
@@ -98,9 +104,13 @@ function getQWithinSlippage({ levels, slippagePct, qMax }) {
       q += qLevel;
       targetQty += qty;
     } else { // nur anteiliges level passt rein
+      if (px === 0.0) { // avoid div-by-zero, should not happen
+        return {q, limLvlIdx: 0, pxLim:0, targetQty};
+      }
       const partialQty = qRemaining / px;
       q += qRemaining;
       targetQty += partialQty;
+      i+=1; // level wurde noch benutzt -> unten -1 also hier vorher erhoehen
       break;
     }
   }
@@ -141,14 +151,14 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
       // und hier lediglich pruefen
       const buyS = exState.getExchangeState(buyEx);
       if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-        if (buyS.anyMsgAt) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+        if (buyS.anyAgeMs) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
           log.debug({reason:'bad exchange quality', exchange: buyEx, buyS}, 'dropped trade');
         }
         continue;
       }
       const sellS = exState.getExchangeState(sellEx);
       if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-        if (sellS.anyMsgAt) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+        if (sellS.anyAgeMs) { // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
           log.debug({reason:'bad exchange quality', exchange: sellEx, sellS}, 'dropped trade');
         }
         continue;
@@ -193,9 +203,8 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
       }
 
       // STAGE 2: max moegliche ordergroesse anhand von L2 daten ermitteln
-      let par = {levels:buy.asks, slippagePct: cfg.bot.slippage_pct, qMax: qMax};
-      const qBuy = getQWithinSlippage({levels:buy.asks, slippagePct: cfg.bot.slippage_pct, qMax: qMax});
-      const qSell = getQWithinSlippage({levels:sell.bids, slippagePct: cfg.bot.slippage_pct, qMax: qMax});
+      const qBuy = getQWithinSlippage({levels:buy.asks, slippagePct: slippage, qMax: qMax});
+      const qSell = getQWithinSlippage({levels:sell.bids, slippagePct: slippage, qMax: qMax});
       
       if (qBuy.q < qMin || qSell.q < qMin) {
         log.debug({reason:'not enough liquidity on orderbook',
@@ -221,8 +230,7 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
         continue;
       }
 
-      // TODO:
-      const targetQty = 0;
+      const targetQty = Math.min(qBuy.targetQty, qSell.targetQty);
 
       const intent = {
         symbol: sym,

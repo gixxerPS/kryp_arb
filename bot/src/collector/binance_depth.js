@@ -6,7 +6,7 @@ const { symFromExchange, symToBinance, nowSec, sumQty } = require('../common/uti
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
 
-const { getLogger } = require('../logger');
+const { getLogger } = require('../common/logger');
 const log = getLogger('collector').child({ exchange: 'binance' });
 
 const { makeBinanceDepthHandler } = require('./parsers/binance_depth');

@@ -6,7 +6,7 @@
 //
 const { symFromExchange, toNumLevels } = require('../../common/util');
 
-const { getLogger } = require('../../logger');
+const { getLogger } = require('../../common/logger');
 const log = getLogger('collector').child({ exchange: 'bitget', sub:'parser' });
 
 function isBooksChannel(ch) {

@@ -9,6 +9,7 @@
     "collector": "debug",
     "strategy": "debug",
     "executor": "debug",
-    "db": "debug"
+    "db": "debug",
+    "ui": "debug"
   }
 }
