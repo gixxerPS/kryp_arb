@@ -34,8 +34,10 @@ psql postgresql://arbuser:pass@localhost:5432/arb -f kryp_arb/collector/queries/
 
 ```bash
 POSTGRES_URL=postgresql://arbuser:pass@localhost:5432/arb
-TELEGRAM_BOT_TOKEN="80...12"
+TELEGRAM_BOT_TOKEN="<my_telegram_bot_token>"
 TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+BINANCE_API_KEY="<my_binance_api_key>"
+BINANCE_API_SECRET="<my_binance_secret_key>"
 ```
 
 * Pakete installieren
