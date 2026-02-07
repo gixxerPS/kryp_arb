@@ -1,12 +1,6 @@
 # kryp_arb
 krypto arbitrage
 
-- postgreSQL datenbank
-
-```bash
-psql postgresql://arbuser:pass@localhost:5432/arb -f queries/test_queries.sql;
-```
-
 ## Installation
 
 ### Voraussetzungen
@@ -28,7 +22,7 @@ exit
 * Tabelle anlegen
 
 ```bash
-psql postgresql://arbuser:pass@localhost:5432/arb -f kryp_arb/collector/queries/schema.sql;
+sudo -u postgres psql -d arb -f queries/schema.sql
 ```
 
 * .env Datei in Projekt-Root-Verzeichnis legen mit Inhalt:
