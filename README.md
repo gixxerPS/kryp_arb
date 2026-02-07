@@ -60,8 +60,10 @@ node index.js
 
 - als datei gespeicherte query ausfuehren:
 
+(Voraussetzung: ~/.pgpass ist angelegt)
+
 ```bash
-psql postgresql://arbuser:pass@localhost:5432/arb -f queries/test_queries.sql;
+psql -h localhost -U arbuser -d arb -f queries/test_queries.sql 
 ```
 
 Analyse- und Forschungsprojekt zur Identifikation von Cross-Exchange
