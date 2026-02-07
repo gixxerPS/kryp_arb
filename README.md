@@ -15,7 +15,14 @@ sudo -iu postgres
 createuser arbuser
 createdb arb -O arbuser
 psql -c "ALTER USER arbuser WITH PASSWORD 'STRONG_PASSWORD';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE arb TO arbuser;"
+psql -d arb -c "
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO arbuser;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO arbuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL PRIVILEGES ON TABLES TO arbuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL PRIVILEGES ON SEQUENCES TO arbuser;
+"
 exit
 ```
 
