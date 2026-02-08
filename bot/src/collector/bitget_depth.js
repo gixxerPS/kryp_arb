@@ -15,32 +15,6 @@ const { WS_STATE } = require('../common/constants');
 
 const { createReconnectWS } = require('../common/ws_reconnect');
 
-function startHeartbeat(ws, intervalMs) {
-  let timer = null;
-
-  function stop() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-  }
-  ws.on('open', () => {
-    stop();
-    timer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send('ping');
-      }
-    }, intervalMs);
-  });
-
-  ws.on('ping', (d) => {
-    try { ws.pong(d); } catch (e) { /* ignore */ }
-  });
-
-  ws.on('close', () => stop());
-  ws.on('error', () => stop());
-}
-
 module.exports = function startBitgetDepth(levels) {
   const handler = makeBitgetDepthHandler({
     exchange: 'bitget',
@@ -56,11 +30,9 @@ module.exports = function startBitgetDepth(levels) {
   const mgr = createReconnectWS({
     name: 'bitget:depth',
     log,
-
+    heartbeatIntervalMs : 20000,
     connect: () => {
       const ws = new WebSocket(url);
-      // bitget erwartet alle 30s ping -> bisschen puffer
-      startHeartbeat(ws, 20000);
       return ws;
     },
 

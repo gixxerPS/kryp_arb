@@ -5,7 +5,23 @@ function f(n, d = 4) {
   return Number.isFinite(n) ? n.toFixed(d) : 'NaN';
 }
 
+// 09.02.2026, 14:37:05
+function fmtNowLocal() { 
+  return new Date().toLocaleString('de-DE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
+// 2026-02-09 14:37:05
+function fmtNowIsoLocal() {
+  const d = new Date();
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
 
 function symFromExchange(sym) {
   if (!sym) return sym;
@@ -79,5 +95,7 @@ module.exports = {
   clamp,
   sleep,
   withJitter,
+  fmtNowLocal,
+  fmtNowIsoLocal
 };
 

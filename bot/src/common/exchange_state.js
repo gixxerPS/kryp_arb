@@ -153,13 +153,21 @@ function createExchangeState(cfg) {
     if (t.unref) t.unref();
   }
 
+  // get all as snapshot
+  function getAllExchangeStates() {
+    return Array.from(state.values()).map(s => ({ ...s, counts: { ...s.counts } }));
+  }
+
+  evaluateAll(Date.now()); // map direkt beim start erzeugen
+
   return {
     onWsState,
     onWsMessage,
     onWsReconnect,
     onWsError,
     startHeartbeat,
-    getExchangeState
+    getExchangeState,
+    getAllExchangeStates // (als array)
   };
 }
 

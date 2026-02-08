@@ -6,10 +6,10 @@
   },
   "levelsByName": {
     "app": "info",
-    "collector": "debug",
-    "strategy": "debug",
+    "collector": "info",
+    "strategy": "info",
     "executor": "debug",
-    "db": "debug",
+    "db": "info",
     "ui": "debug"
   }
 }

@@ -4,10 +4,10 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const { loadConfig } = require('./common/config');
-
 const { initLogger, getLogger } = require('./common/logger');
 initLogger();
 const log = getLogger('app');
+const { initExchangeState } = require('./common/exchange_state');
 
 const db = require('./db');
 
@@ -15,19 +15,18 @@ const startBinanceDepth = require('./collector/binance_depth');
 const startGateDepth = require('./collector/gate_depth');
 const startBitgetDepth = require('./collector/bitget_depth');
 
-const startStrategy = require('./strategy');
-//const startPaperExecutor = require('./executor/paper');
-
 const startDbIntentWriter = require('./db/intent_writer');
 
-const { initExchangeState } = require('./common/exchange_state');
+const startExecutor = require('./executor');
+
+const startStrategy = require('./strategy');
 
 const { initTelegramBot } = require('./ui/telegram_bot');
 
 async function main() {
   const { cfg, fees } = loadConfig();
-
-  log.info({ cfg }, 'starting');
+  log.debug({ cfg }, 'starting');
+  log.info({  }, 'starting');
 
   const pool = db.init();
   await db.ping();
@@ -54,15 +53,17 @@ async function main() {
     log.info({exchange:'bitget'}, 'exchange disabled');
   }
 
-  // strategy + executor
   startStrategy(cfg, fees);
-  //startPaperExecutor();
   
-  // datenbank
-  startDbIntentWriter(cfg, pool); // trade ideen eintragen
+  startDbIntentWriter(cfg, pool); // datenbank. trade ideen eintragen
 
+  // executor (private exchange APIs: balances, user streams, orders)
+  const executor = await startExecutor({ cfg, fees });
+
+  const app = { cfg, executor}; // zentraler app-context für UI und andere Module
+  
   if (cfg.ui.telegram_enabled) {
-    initTelegramBot(cfg);
+    initTelegramBot(cfg); // TODO: noch in (app) umbauen
   }
 }
 

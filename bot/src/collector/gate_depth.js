@@ -14,33 +14,6 @@ const { WS_STATE } = require('../common/constants');
 
 const { createReconnectWS } = require('../common/ws_reconnect');
 
-function startHeartbeat(ws, intervalMs) {
-  let timer = null;
-
-  function stop() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-  }
-
-  ws.on('open', () => {
-    stop();
-    timer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send('ping');
-      }
-    }, intervalMs);
-  });
-
-  ws.on('ping', (d) => {
-    try { ws.pong(d); } catch (e) { /* ignore */ }
-  });
-
-  ws.on('close', () => stop());
-  ws.on('error', () => stop());
-}
-
 module.exports = function startGateDepth(levels, updateMs) {
   const handler = makeGateDepthHandler({
     exchange: 'gate',
@@ -55,6 +28,7 @@ module.exports = function startGateDepth(levels, updateMs) {
   const mgr = createReconnectWS({
     name: 'gate',
     log,
+    heartbeatIntervalMs: 20000,
     connect: () => {
       const ws = new WebSocket(url);
       // bitget erwartet alle 30s ping -> bisschen puffer

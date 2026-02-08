@@ -68,6 +68,8 @@ const { clamp, sleep, withJitter } = require('../common/util');
  * @param {number} [opts.jitterPct=0.3] randomization to avoid reconnect storms across many sockets.
 //           0.3 => multiply delay by random factor in [0.7 .. 1.3].
  * @param {number} [opts.staleTimeoutMs=60000] - if no message for this long => terminate
+ * @param {number} [opts.heartbeatIntervalMs=0] - application side heartbeat (=ping msg) to server. 0 means disabled
+ * @param {number} [opts.autoAppPingPong] - application side ping replies (i.e. pong) to server
  * @param {(ctx: {code?: number, reason?: string, err?: any}) => number|null} [opts.delayOverrideMs]
  *        Return a number to override delay, or null/undefined for default backoff.
  */
@@ -80,6 +82,8 @@ function createReconnectWS(opts) {
     backoffFactor = 2,
     jitterPct = 0.3,
     staleTimeoutMs = 60000,
+    heartbeatIntervalMs = 0, 
+    autoAppPingPong = false,
     connect,
     onReconnect,        
     onOpen,
@@ -94,17 +98,24 @@ function createReconnectWS(opts) {
   let attempt = 0;
   let lastMsgTs = 0;
   let staleTimer = null;
+  let hbTimer = null;
 
   async function cleanup() {
-    if (staleTimer) clearInterval(staleTimer);
-    staleTimer = null;
+    if (staleTimer) {
+      clearInterval(staleTimer);
+      staleTimer = null;
+    }
+    if (hbTimer) {
+      clearInterval(hbTimer);
+      hbTimer = null;
+    }
     if (ws) {
       try { ws.removeAllListeners?.(); } catch {}
       ws = null;
     }
   }
 
-  function startTimers(currentWs) {
+  function startTimers(currentWs, heartbeatIntervalMs) {
     lastMsgTs = Date.now();
     // stale detection: if no messages for too long, kill socket
     if (staleTimeoutMs > 0) {
@@ -116,6 +127,17 @@ function createReconnectWS(opts) {
           catch { try { currentWs?.close?.(); } catch {} }
         }
       }, clamp(Math.floor(staleTimeoutMs * 0.25), 1000, 5000));
+    }
+    if (heartbeatIntervalMs > 0) {
+      if (hbTimer) {
+        clearInterval(hbTimer);
+        hbTimer = null;
+      }
+      hbTimer = setInterval(() => {
+        if (currentWs.readyState === WebSocket.OPEN) {
+          currentWs.send('ping');
+        }
+      }, heartbeatIntervalMs);
     }
   }
 
@@ -141,7 +163,12 @@ function createReconnectWS(opts) {
         ws.on('open', async () => {
           if (stopped) return;
           attempt = 0;
-          startTimers(ws);
+          startTimers(ws, heartbeatIntervalMs);
+          if (autoAppPingPong) {
+            ws.on('ping', (d) => {
+              try { ws.pong(d); } catch (e) { /* ignore */ }
+            });
+          }
           log.info({ name }, 'ws open');
           await onOpen(ws);
         });
@@ -202,12 +229,20 @@ function createReconnectWS(opts) {
     loop();
   }
 
+  let stopping = false;
   async function stop() {
+    if (stopping) return;
+    stopping = true;
+
     stopped = true;
     try { ws?.terminate?.(); } catch {}
     await cleanup();
     log.warn({ name }, 'ws stopped');
   }
+  // war der versuch aufzurauemen bei beenden des node-prozesses
+  // process.once('SIGINT', stop);
+  // process.once('SIGTERM', stop);
+
   return {
     start,
     stop,

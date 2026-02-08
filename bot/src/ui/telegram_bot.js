@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 
+const { fmtNowIsoLocal } = require('../common/util');
 const { getExState } = require('../common/exchange_state');
 const { EXCHANGE_QUALITY } = require('../common/constants'); // ggf. Pfad anpassen
 
@@ -56,6 +57,7 @@ function buildStatusTable({ exState, exchanges }) {
       quality:  s.exchangeQuality ?? 'n/a',
       ws:       s.wsState ?? 'n/a',
       mdAge:    s.anyMsgAt ? fmtAge(s.anyMsgAt) : 'n/a',
+      reconn:   s.counts.reconnects ?? 0,
       reason:   s.reason ?? '',
     });
   }
@@ -65,6 +67,7 @@ function buildStatusTable({ exState, exchanges }) {
     { key: 'quality',  label: 'Q',        width: 5 },
     { key: 'ws',       label: 'WS',       width: 6 },
     { key: 'mdAge',    label: 'MSG_AGE',   width: 8 },
+    { key: 'reconn',   label: 'RECONN',   width: 7 },
     { key: 'reason',   label: 'REASON',   width: 12 },
   ]);
 }
@@ -117,9 +120,12 @@ function initTelegramBot(cfg) {
   // }
 
   bot.onText(/^\/status$/, async (msg) => {
-    if (!isAllowed(msg)) return;
+    if (!isAllowed(msg)) {
+      log.error({ userId: msg.chat.id }, 'user id not authorized');
+      return;
+    }
     try {
-      const header = `trading=${runtimestate.tradingEnabled ? 'ON' : 'OFF'}  @ ${new Date().toISOString().slice(11,19)}`;
+      const header = `trading=${runtimestate.tradingEnabled ? 'ON' : 'OFF'}  @ ${fmtNowIsoLocal()}`;
 
       bot.sendMessage(msg.chat.id,
         `<pre>${header}\n\n${buildStatusTable({ exState, exchanges })}</pre>`,
@@ -147,7 +153,7 @@ function initTelegramBot(cfg) {
     log.error({ err }, 'telegram polling error');
   });
 
-  log.info({ exchanges }, 'telegram bot started');
+  log.info({  }, 'telegram bot started');
   return bot;
 }
 
