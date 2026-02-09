@@ -85,6 +85,7 @@
 'use strict';
 const crypto = require('crypto');
 const WebSocket = require('ws');
+const fs = require('fs');
 
 const { getLogger } = require('../../common/logger');
 const log = getLogger('executor').child({ exchange: 'binance' });
@@ -187,6 +188,11 @@ let openPromise;
 async function init( cfg ) {
   if (mgr) return openPromise; 
 
+  const privateKeyPem = fs.readFileSync(
+    process.env.BINANCE_ED25519_PRIVATE_KEY_FILE,
+    'utf8'
+  );
+
   openPromise = new Promise((res, rej) => {
     openResolve = res;
     openReject = rej;
@@ -217,6 +223,7 @@ async function init( cfg ) {
       let parsed;
       try {
         parsed = JSON.parse(msg.toString());
+        log.debug({msg:parsed}, 'onMessage');
       } catch (e) {
         log.error({ err: e }, 'binance ws-api message parse error');
         return;
@@ -246,8 +253,9 @@ async function init( cfg ) {
       exState.onWsReconnect('binance-ws-api');
     },
 
-    onClose: ({ code, reason }) => {
+    onClose: ( code, reason ) => {
       exState.onWsState('binance-ws-api', WS_STATE.CLOSED);
+      // log.warn({code, reason}, 'ws closed');
       wsRef = null;
       rejectAllPending(new Error(`binance ws closed code=${code} reason=${reason || ''}`));
       openReject?.(new Error('ws closed during init'));
@@ -276,16 +284,21 @@ async function init( cfg ) {
   return openPromise;
 }
 
-// One-shot snapshot using the persistent WS
+/**
+ * One-shot snapshot using the persistent WS
+ * 
+ * @param {object} cfg 
+ * @returns {object} - {BNB:0.177, USDC:1234, ...}
+ */
 async function getStartupBalances( cfg ) {
   const params = makeSignedParams({ omitZeroBalances: true });
-  log.debug({params}, `REQ account.status`);
+  // log.debug({params}, `REQ account.status`);
   const result = await sendReq(
     'account.status',
     params,
     { timeoutMs: 10_000 }
   );
-  log.debug({result}, `RES account.status`);
+  // log.debug({result}, `RES account.status`);
   // [2026-02-08 09:36:14.859 +0100] DEBUG (executor): RES account.status
   //   exchange: "binance"
   //   result: {
@@ -329,23 +342,14 @@ async function getStartupBalances( cfg ) {
   //     ],
   //     "uid": 1212042824
   //   }
-
-  const map = new Map();
-  for (const b of (result?.balances ?? [])) {
-    map.set(b.asset, {
-      free: Number(b.free ?? 0),
-      locked: Number(b.locked ?? 0),
-    });
-  }
-
   const out = {};
-  for (const a of assetsWanted) {
-    const v = map.get(a) ?? { free: 0, locked: 0 };
-    out[a] = { ...v, total: v.free + v.locked };
+  for (const b of (result?.balances ?? [])) {
+    out[b.asset] = Number(b.free ?? 0);
   }
   return out;
 }
 
+// test um zu pruefen ob rabatte auch wirklich hinterlegt sind
 async function getAccountCommission(sym) {
   // convert "BTC_USDT" -> "BTCUSDT" (if you already have symToBinance(), use that)
   const symbol = sym;
@@ -354,7 +358,15 @@ async function getAccountCommission(sym) {
   log.debug({ params }, `REQ account.commission ${symbol}`);
 
   const result = await sendReq('account.commission', params, { timeoutMs: 10_000 });
-
+  //[2026-02-08 09:46:31.758 +0100] DEBUG (executor): RES account.commission AXSUSDC exchange: "binance" result: 
+  // { "symbol": "AXSUSDC", 
+  //   "standardCommission": 
+  //     { "maker": "0.00100000", "taker": "0.00095000", "buyer": "0.00000000", "seller": "0.00000000" }, 
+  //   "specialCommission": 
+  //     { "maker": "0.00000000", "taker": "0.00000000", "buyer": "0.00000000", "seller": "0.00000000" }, 
+  //   "taxCommission": 
+  //     { "maker": "0.00000000", "taker": "0.00000000", "buyer": "0.00000000", "seller": "0.00000000" }, 
+  //   "discount": { "enabledForAccount": true, "enabledForSymbol": true, "discountAsset": "BNB", "discount": "0.75000000" } }
   log.debug({ result }, `RES account.commission ${symbol}`);
 
   // Typical fields (keep it tolerant; Binance may add/change fields):
@@ -387,9 +399,33 @@ async function getAccountCommission(sym) {
 async function subscribeUserData(/* handler */) {
   throw new Error('subscribeUserData not implemented');
 }
-async function placeOrder(/* order */) {
-  throw new Error('placeOrder not implemented');
+
+async function placeOrder(test = true, orderParams ) {
+  // const method = test ? 'order.test' : 'order.place';
+
+  if (test) {
+    log.debug({}, 'TEST ORDER!!!!');
+  } else {
+    log.debug({}, 'REAL ORDER!!!!');
+  }
+  const method = 'order.test';
+
+
+  const params = makeSignedParams({ 
+    symbol  : orderParams.symbol,
+    side    : orderParams.side,
+    type    : orderParams.type,
+    quantity: orderParams.quantity,
+    newClientOrderId : orderParams.orderId ? String(orderParams.orderId) : undefined,
+    computeCommissionRates:true // test
+  });
+
+  log.debug({ method, params }, `REQ placeOrder`);
+  const result = await sendReq(method, params, { timeoutMs: 10_000 });
+
+  log.debug({ result }, `RES placeOrder`);
 }
+
 async function cancelOrder(/* id */) {
   throw new Error('cancelOrder not implemented');
 }

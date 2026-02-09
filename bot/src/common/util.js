@@ -82,6 +82,10 @@ function withJitter(ms, jitterPct = 0) {
   return Math.max(0, Math.round(ms * r));
 }
 
+async function getPublicIp() {
+  const res = await fetch('https://api.ipify.org');
+  return (await res.text()).trim();
+}
 
 module.exports = {
   symFromExchange,
@@ -96,6 +100,7 @@ module.exports = {
   sleep,
   withJitter,
   fmtNowLocal,
-  fmtNowIsoLocal
+  fmtNowIsoLocal,
+  getPublicIp
 };
 

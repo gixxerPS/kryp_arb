@@ -196,7 +196,7 @@ function createReconnectWS(opts) {
         });
 
         if (evt.type === 'close') {
-          onClose();
+          onClose(evt.code, evt.reason);
         } else {
           onError(evt.err);
         }

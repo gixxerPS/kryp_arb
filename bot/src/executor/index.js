@@ -53,19 +53,31 @@ module.exports = async function startExecutor({ cfg, fees}) {
     await ad.init(cfg);
   }
 
-  adapters.binance.getAccountCommission('AXSUSDC');
+  // test um zu pruefen ob rabatte auch wirklich hinterlegt sind
+  // adapters.binance.getAccountCommission('AXSUSDC');
 
   const state = {
     // binance : {
-    //   balances : [ { asset: 'USDC', free: 1.00, locked: 0.00 } , { ... }, ...  ],
-    //   commissionRates: { maker: 0.0015, taker: 0.0015, buyer: 0.00, seller: 0.00 },
+    //   balances : {BNB:0.177, USDC:1234, ...},
     // }
    };
    
   // startup balances
   for (const [ex, ad] of Object.entries(adapters)) {
-    state[ex] = await ad.getStartupBalances(cfg );
+    state[ex] = {
+      balances : await ad.getStartupBalances(cfg )
+    }
   }
+
+  //
+  // await adapters.binance.placeOrder(true, {
+  //   symbol: 'AXSUSDC',
+  //   side: 'BUY',
+  //   type: 'MARKET',
+  //   // qty/quoteQty je nach Ansatz
+  //   quantity:1,
+  //   orderId: '123456789',
+  // });
 
   // später:
   // for (const [ex, ad] of Object.entries(adapters)) {
@@ -121,7 +133,6 @@ module.exports = async function startExecutor({ cfg, fees}) {
     return {
       startedAtMs: state.startedAtMs,
       enabledSymbols: state.enabledSymbols,
-      assetsWanted: state.assetsWanted,
       balancesByEx: state.balancesByEx,
       exchanges: Object.keys(adapters),
     };

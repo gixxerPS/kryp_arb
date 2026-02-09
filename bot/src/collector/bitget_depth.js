@@ -78,7 +78,7 @@ module.exports = function startBitgetDepth(levels) {
       exState.onWsReconnect('bitget'); // zaehlt reconnects + speichert meta
     },
 
-    onClose: () => {
+    onClose: (code, reason) => {
       exState.onWsState('bitget', WS_STATE.CLOSED);
     },
 

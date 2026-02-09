@@ -36,7 +36,7 @@ function loadConfig() {
     db,
     ui,
   };
-  //console.log(cfg);
+  // console.log(cfg);
 
   cached = { cfg, fees: exchanges, symbolsFile, log };
   return cached;

@@ -83,7 +83,7 @@ module.exports = function startGateDepth(levels, updateMs) {
       exState.onWsReconnect('gate'); // zaehlt reconnects + speichert meta
     },
 
-    onClose: () => {
+    onClose: (code, reason) => {
       exState.onWsState('gate', WS_STATE.CLOSED);
     },
 

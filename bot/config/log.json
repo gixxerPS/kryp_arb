@@ -5,7 +5,7 @@
     "heartbeatpath": "./logs/heartbeat.log"
   },
   "levelsByName": {
-    "app": "info",
+    "app": "debug",
     "collector": "info",
     "strategy": "info",
     "executor": "debug",

@@ -53,7 +53,7 @@ module.exports = function startBinanceDepth(levels, updateMs) {
       exState.onWsReconnect('binance'); // zaehlt reconnects + speichert meta
     },
 
-    onClose: () => {
+    onClose: (code, reason) => {
       exState.onWsState('binance', WS_STATE.CLOSED);
     },
 

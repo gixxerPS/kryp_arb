@@ -3,6 +3,7 @@ const path = require('path');
 
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
+const { getPublicIp } = require('./common/util');
 const { loadConfig } = require('./common/config');
 const { initLogger, getLogger } = require('./common/logger');
 initLogger();
@@ -14,19 +15,32 @@ const db = require('./db');
 const startBinanceDepth = require('./collector/binance_depth');
 const startGateDepth = require('./collector/gate_depth');
 const startBitgetDepth = require('./collector/bitget_depth');
-
 const startDbIntentWriter = require('./db/intent_writer');
-
 const startExecutor = require('./executor');
-
 const startStrategy = require('./strategy');
-
 const { initTelegramBot } = require('./ui/telegram_bot');
+
+async function verifyPublicIp() {
+  const expectedIps = process.env.EXPECTED_PUBLIC_IPS;
+  if (!expectedIps) {
+    throw new Error('EXPECTED_PUBLIC_IPS not set in .env');
+  }
+  const allowed = expectedIps.split(',').map(s => s.trim());
+  const actualIp = await getPublicIp(); // fetched via 'https://api.ipify.org'
+  log.debug({ip:myPublicIp}, 'public ip');
+  if (!allowed.includes(actualIp)) {
+    throw new Error(
+      `public IP mismatch: expected=${expectedIps} actual=${actualIp}`
+    );
+  }
+}
 
 async function main() {
   const { cfg, fees } = loadConfig();
   log.debug({ cfg }, 'starting');
   log.info({  }, 'starting');
+
+  await verifyPublicIp();
 
   const pool = db.init();
   await db.ping();

@@ -35,11 +35,13 @@ sudo -u postgres psql -d arb -f queries/schema.sql
 * .env Datei in Projekt-Root-Verzeichnis legen mit Inhalt:
 
 ```bash
+NODE_ENV="development" # "production"
 POSTGRES_URL=postgresql://arbuser:pass@localhost:5432/arb
 TELEGRAM_BOT_TOKEN="<my_telegram_bot_token>"
 TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
 BINANCE_API_KEY="<my_binance_api_key>"
 BINANCE_API_SECRET="<my_binance_secret_key>"
+EXPECTED_PUBLIC_IPS=111.222.333.444,555.666.777.888
 ```
 
 * Pakete installieren
@@ -54,6 +56,20 @@ npm install
 ```bash
 cd src
 node index.js
+```
+
+### .pem Schlüsselpaar erzeugen
+
+1. Private Key erzeugen (PEM)
+
+```bash
+openssl genpkey -algorithm ED25519 -out binance-ed25519-prv.pem
+```
+
+2. Public Key ableiten (PEM)
+
+```bash
+openssl pkey -in binance-ed25519-prv.pem -pubout -out binance-ed25519-pub.pem
 ```
 
 ## postgreSQL
