@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "source": "https://api.binance.com/api/v3/exchangeInfo",
+    "fetchedAt": "2026-02-11T09:30:16.627Z",
+    "timezone": "UTC",
+    "symbolCountRequested": 2
+  },
+  "symbols": {
+    "AXSUSDC": {
+      "symbol": "AXSUSDC",
+      "baseAsset": "AXS",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "minQty": 0.01,
+      "maxQty": 900000,
+      "minNotional": 5
+    },
+    "METUSDC": {
+      "symbol": "METUSDC",
+      "baseAsset": "MET",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "minQty": 0.1,
+      "maxQty": 92141578,
+      "minNotional": 5
+    }
+  }
+}

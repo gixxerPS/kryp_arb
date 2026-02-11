@@ -31,8 +31,6 @@ module.exports = function startGateDepth(levels, updateMs) {
     heartbeatIntervalMs: 20000,
     connect: () => {
       const ws = new WebSocket(url);
-      // bitget erwartet alle 30s ping -> bisschen puffer
-      startHeartbeat(ws, 20000);
       return ws;
     },
 
@@ -60,7 +58,7 @@ module.exports = function startGateDepth(levels, updateMs) {
         const parsed = JSON.parse(msg.toString());
 
         if (parsed.event === 'subscribe') {
-          log.info({ channel: parsed.channel, payload: parsed.payload }, 'subscribed');
+          log.debug({ channel: parsed.channel, payload: parsed.payload }, 'subscribed');
           return;
         }
 

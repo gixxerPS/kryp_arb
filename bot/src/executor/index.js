@@ -69,15 +69,17 @@ module.exports = async function startExecutor({ cfg, fees}) {
     }
   }
 
+  log.debug({state}, 'initialized');
+
   //
-  // await adapters.binance.placeOrder(true, {
-  //   symbol: 'AXSUSDC',
-  //   side: 'BUY',
-  //   type: 'MARKET',
-  //   // qty/quoteQty je nach Ansatz
-  //   quantity:1,
-  //   orderId: '123456789',
-  // });
+  await adapters.binance.placeOrder(true, {
+    symbol: 'AXSUSDC',
+    side: 'BUY',
+    type: 'MARKET',
+    // qty/quoteQty je nach Ansatz
+    quantity:5,
+    orderId: '123456789',
+  });
 
   // später:
   // for (const [ex, ad] of Object.entries(adapters)) {

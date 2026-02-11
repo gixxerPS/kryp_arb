@@ -27,10 +27,10 @@ async function verifyPublicIp() {
   }
   const allowed = expectedIps.split(',').map(s => s.trim());
   const actualIp = await getPublicIp(); // fetched via 'https://api.ipify.org'
-  log.debug({ip:myPublicIp}, 'public ip');
+  log.debug({ip:actualIp}, 'public ip');
   if (!allowed.includes(actualIp)) {
     throw new Error(
-      `public IP mismatch: expected=${expectedIps} actual=${actualIp}`
+      `actual public IP not included in expected: expected=${expectedIps} actual=${actualIp}`
     );
   }
 }

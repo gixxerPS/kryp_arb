@@ -94,6 +94,12 @@ const { createReconnectWS } = require('../../common/ws_reconnect');
 const { getExState } = require('../../common/exchange_state');
 const { WS_STATE } = require('../../common/constants');
 
+function loadBinanceSymbolInfo(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  const data = JSON.parse(raw);
+  return data; // { meta, symbols: { AXSUSDC: {...} } }
+}
+
 function buildPayload(params) {
   return Object.keys(params)
     .filter(k => params[k] !== undefined && params[k] !== null)
@@ -106,10 +112,18 @@ function signHmacHex(secret, payload) {
   return crypto.createHmac('sha256', secret).update(payload, 'utf8').digest('hex');
 }
 
+function signEd25519Base64(privateKeyPem, payload) {
+  const sig = crypto.sign(
+    null,                       // Ed25519 => algorithm = null
+    Buffer.from(payload),       // payload = query string
+    privateKeyPem
+  );
+  return sig.toString('base64'); // Binance verlangt base64
+}
+
 function makeSignedParams(extra = {}) {
-  const apiKey = process.env.BINANCE_API_KEY;
-  const secret = process.env.BINANCE_API_SECRET;
-  if (!apiKey || !secret) throw new Error('Missing BINANCE_API_KEY or BINANCE_API_SECRET');
+  const apiKey = process.env.BINANCE_ED25519_PUBLIC_KEY;
+  if (!apiKey) throw new Error('Missing BINANCE_ED25519_PUBLIC_KEY');
 
   const params = {
     ...extra,
@@ -119,7 +133,8 @@ function makeSignedParams(extra = {}) {
   };
 
   const payload = buildPayload(params);
-  const signature = signHmacHex(secret, payload);
+  // const signature = signHmacHex(secret, payload); -> OLD, binance recommends Ed25519
+  const signature = signEd25519Base64(ed25519PrivateKeyPem, payload);
   return { ...params, signature };
 }
 
@@ -127,7 +142,7 @@ function makeSignedParams(extra = {}) {
 
 let mgr = null;
 let wsRef = null; // current websocket instance from mgr.connect()
-
+let ed25519PrivateKeyPem = null;     // string
 const pending = new Map(); // id -> { resolve, reject, tmr }
 
 /**
@@ -188,7 +203,10 @@ let openPromise;
 async function init( cfg ) {
   if (mgr) return openPromise; 
 
-  const privateKeyPem = fs.readFileSync(
+  if (!process.env.BINANCE_ED25519_PRIVATE_KEY_FILE) {
+    throw new Error('Binance Ed25519 credentials missing in .env');
+  }
+  ed25519PrivateKeyPem = fs.readFileSync(
     process.env.BINANCE_ED25519_PRIVATE_KEY_FILE,
     'utf8'
   );
@@ -214,7 +232,7 @@ async function init( cfg ) {
     onOpen: async (ws) => {
       wsRef = ws;
       exState.onWsState('binance-ws-api', WS_STATE.OPEN);
-      log.info({ url }, 'binance ws-api connected');
+      log.debug({ url }, 'binance ws-api connected');
       openResolve();
     },
 

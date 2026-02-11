@@ -58,7 +58,7 @@ module.exports = function startBitgetDepth(levels) {
         if (msgStr === 'pong') return;
         const parsed = JSON.parse(msgStr);
         if (parsed.event === 'subscribe') {
-          log.info({ arg: parsed.arg }, 'subscribed');
+          log.debug({ arg: parsed.arg }, 'subscribed');
           return;
         }
         if (parsed.event === 'error') {

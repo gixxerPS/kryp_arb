@@ -48,9 +48,9 @@
  */
 
 // src/collector/ws_reconnect.js
+const WebSocket = require('ws');
 
 const { clamp, sleep, withJitter } = require('../common/util');
-
 /**
  * @param {object} opts
  * @param {string} opts.name - label for logs
@@ -169,7 +169,7 @@ function createReconnectWS(opts) {
               try { ws.pong(d); } catch (e) { /* ignore */ }
             });
           }
-          log.info({ name }, 'ws open');
+          // log.info({ name }, 'ws open');
           await onOpen(ws);
         });
 
