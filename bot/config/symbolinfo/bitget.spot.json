@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.bitget.com/api/v2/spot/public/symbols",
-    "fetchedAt": "2026-02-11T09:30:19.770Z"
+    "fetchedAt": "2026-02-12T07:18:30.248Z"
   },
   "symbols": {
     "AXSUSDT": {
@@ -9,8 +9,13 @@
       "baseAsset": "AXS",
       "quoteAsset": "USDT",
       "status": "online",
+      "enabled": true,
       "pricePrecision": 3,
       "qtyPrecision": 4,
+      "priceTick": "0.001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.0001",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": 0,
       "maxQty": 900000000000000000000,
       "minNotional": 1
@@ -20,8 +25,13 @@
       "baseAsset": "MET",
       "quoteAsset": "USDT",
       "status": "online",
+      "enabled": true,
       "pricePrecision": 4,
       "qtyPrecision": 2,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": 0,
       "maxQty": 900000000000000000000,
       "minNotional": 1

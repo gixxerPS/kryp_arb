@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { pow10Tick, asInt, asNumber } = require("./normalize");
+const { pow10Tick, asInt, asNumber, precisionToStep } = require("./normalize");
 
 const BASE_URL = 'https://api.gateio.ws';
 const FETCH_URL = `${BASE_URL}/api/v4/spot/currency_pairs`;
@@ -61,9 +61,13 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
         baseAsset: p.base,
         quoteAsset: p.quote,
         status: p.trade_status,
-
+        enabled : p.trade_status === 'tradable' ? true : false,
         pricePrecision: pricePrec,
         qtyPrecision: qtyPrec,
+        priceTick: precisionToStep(p.precision),
+        priceTickDerivedFromPrecision:true, // selber berechnet nicht von boerse geliefert
+        qtyStep: precisionToStep(p.amount_precision),
+        qtyStepDerivedFromPrecision:true, // selber berechnet nicht von boerse geliefert
 
         minQty: asNumber(p.min_base_amount),
         maxQty: asNumber(p.max_base_amount ?? null),

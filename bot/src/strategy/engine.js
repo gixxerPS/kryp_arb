@@ -241,6 +241,8 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
         net:net2,
         buyAsk,
         sellBid,
+        buyPxWorst,
+        sellPxWorst
       };
       intents.push(intent);
     }

@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.binance.com/api/v3/exchangeInfo",
-    "fetchedAt": "2026-02-11T09:30:16.627Z",
+    "fetchedAt": "2026-02-12T07:18:26.795Z",
     "timezone": "UTC",
     "symbolCountRequested": 2
   },
@@ -11,6 +11,11 @@
       "baseAsset": "AXS",
       "quoteAsset": "USDC",
       "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00100000",
+      "qtyStep": "0.01000000",
       "minQty": 0.01,
       "maxQty": 900000,
       "minNotional": 5
@@ -20,6 +25,11 @@
       "baseAsset": "MET",
       "quoteAsset": "USDC",
       "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00010000",
+      "qtyStep": "0.10000000",
       "minQty": 0.1,
       "maxQty": 92141578,
       "minNotional": 5

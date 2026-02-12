@@ -7,7 +7,8 @@
   "slippage_pct": 0.05,
   "q_min_usdt": 100,
   "q_max_usdt": 5000,
-  "symbols": ["AXS_USDT", "MET_USDT", "AB_USDT"],
+  "balance_minimum_usdt": 100,
+  "symbols": ["AXS_USDT", "MET_USDT"],
   "exchanges": ["binance", "gate", "bitget"]
 }
 

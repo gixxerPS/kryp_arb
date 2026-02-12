@@ -63,8 +63,8 @@ function loadWantedSymbols(botPath) {
 
 async function main() {
   console.log("[symbolinfo] bot.json     :", BOT_CFG_PATH);
-  console.log("[symbolinfo] symbols.json     :", SYMBOLS_CFG_PATH);
-  console.log("[symbolinfo] output dir  :", SYMBOLINFO_DIR);
+  console.log("[symbolinfo] symbols.json :", SYMBOLS_CFG_PATH);
+  console.log("[symbolinfo] output dir   :", SYMBOLINFO_DIR);
 
   fs.mkdirSync(SYMBOLINFO_DIR, { recursive: true });
 

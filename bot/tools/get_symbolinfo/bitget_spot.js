@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { pow10Tick, asInt, asNumber } = require("./normalize");
+const { pow10Tick, asInt, asNumber, precisionToStep } = require("./normalize");
 
 const BASE_URL = "https://api.bitget.com";
 const FETCH_URL = `${BASE_URL}/api/v2/spot/public/symbols`;
@@ -55,6 +55,7 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
 
     try {
       const s = await fetchBitgetSymbol(symbol);
+      // console.log(s);
       if (!s) continue;
 
       if (s.status !== "online") continue;
@@ -67,13 +68,15 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
         baseAsset: s.baseCoin,
         quoteAsset: s.quoteCoin,
         status: s.status,
+        enabled : s.status === 'online' ? true : false,
 
         pricePrecision: pricePrec,
         qtyPrecision: qtyPrec,
 
-        // optional nur wenn du es behalten willst
-        // priceTick: pow10Tick(pricePrec),
-        // qtyStep: pow10Tick(qtyPrec),
+        priceTick: precisionToStep(pricePrec),
+        priceTickDerivedFromPrecision:true, // selber berechnet nicht von boerse geliefert
+        qtyStep: precisionToStep(qtyPrec),
+        qtyStepDerivedFromPrecision:true, // selber berechnet nicht von boerse geliefert
 
         minQty: asNumber(s.minTradeAmount),
         maxQty: asNumber(s.maxTradeAmount ?? null),

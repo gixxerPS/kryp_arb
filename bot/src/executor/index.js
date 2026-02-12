@@ -27,15 +27,18 @@ function getEnabledSymbols(cfg) {
   return [];
 }
 
-module.exports = async function startExecutor({ cfg, fees}) {
+module.exports = async function startExecutor({ cfg, fees }, deps = {}) {
+  const exState = deps.exState ?? getExState();
+  const adaptersFromDeps = deps.adapters; // optional
+  const nowFn = deps.nowFn ?? (() => Date.now());
+
   const enabledSymbols = getEnabledSymbols(cfg);
   const assetsWanted = assetsFromSymbols(enabledSymbols);
 
-  const exState = getExState();
   const exStateArr = exState.getAllExchangeStates();
   
   // adapters ermitteln fuer exchanges die bei start enabled sind
-  const adapters = {};
+  const adapters = adaptersFromDeps ?? {};
   for (const ex of exStateArr) {
     if (ex.enabled) {
       if (ex.exchange === 'binance') {
@@ -71,15 +74,15 @@ module.exports = async function startExecutor({ cfg, fees}) {
 
   log.debug({state}, 'initialized');
 
-  //
-  await adapters.binance.placeOrder(true, {
-    symbol: 'AXSUSDC',
-    side: 'BUY',
-    type: 'MARKET',
-    // qty/quoteQty je nach Ansatz
-    quantity:5,
-    orderId: '123456789',
-  });
+  // TEST
+  // await adapters.binance.placeOrder(true, {
+  //   symbol: 'AXSUSDC',
+  //   side: 'BUY',
+  //   type: 'MARKET',
+  //   // qty/quoteQty je nach Ansatz
+  //   quantity:5,
+  //   orderId: '123456789',
+  // });
 
   // später:
   // for (const [ex, ad] of Object.entries(adapters)) {
@@ -126,6 +129,8 @@ module.exports = async function startExecutor({ cfg, fees}) {
   // }
     // // subscription
     // bus.on('trade:intent', (intent) => {
+      // als erstes state aktualisieren: ist exchange noch enabled? oder von 
+      // ui (telegram / webserver) disabled worden?
     //   handleIntent(intent).catch((err) => {
     //     log.error({ err, intent }, 'executor intent failed');
     //   });
@@ -142,7 +147,7 @@ module.exports = async function startExecutor({ cfg, fees}) {
 
   
 
-  log.info({  }, 'executor started');
+  log.debug({ }, 'executor started');
   return { 
     state, 
     _state: state,      // optional (wenn du intern/Debug brauchst)

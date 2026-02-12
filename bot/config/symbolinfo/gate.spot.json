@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.gateio.ws/api/v4/spot/currency_pairs",
-    "fetchedAt": "2026-02-11T09:30:16.628Z"
+    "fetchedAt": "2026-02-12T07:18:26.796Z"
   },
   "symbols": {
     "AXS_USDT": {
@@ -9,8 +9,13 @@
       "baseAsset": "AXS",
       "quoteAsset": "USDT",
       "status": "tradable",
+      "enabled": true,
       "pricePrecision": 4,
       "qtyPrecision": 2,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": 0.01,
       "maxQty": null,
       "minNotional": 3
@@ -20,8 +25,13 @@
       "baseAsset": "MET",
       "quoteAsset": "USDT",
       "status": "tradable",
+      "enabled": true,
       "pricePrecision": 4,
       "qtyPrecision": 1,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.1",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": 0.1,
       "maxQty": null,
       "minNotional": 3

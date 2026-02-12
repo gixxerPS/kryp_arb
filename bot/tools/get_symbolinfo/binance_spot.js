@@ -99,6 +99,15 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
       baseAsset: s.baseAsset,
       quoteAsset: s.quoteAsset,
       status: s.status,
+      enabled : s.status === 'TRADING' ? true : false,
+
+      pricePrecision: asInt(s.quotePrecision),
+      qtyPrecision: asInt(s.baseAssetPrecision),
+
+      // nur binance liefert praezise priceTick / qtyStep informationen deshalb separat speichern.
+      // bitget / gate muss abgeleitet werden
+      priceTick: (priceFilter?.tickSize ?? null),
+      qtyStep: (lotSize?.stepSize ?? null),
 
       minQty: asNumber(lotSize?.minQty ?? null),
       maxQty: asNumber(lotSize?.maxQty ?? null),
