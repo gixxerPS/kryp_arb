@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 
 const bus = require('../bus');
 const { makeBitgetDepthHandler } = require('./parsers/bitget_depth');
-const { symToBitget } = require('../common/util');
+const { getSymbolInfo } = require('../common/symbolinfo');
 
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
@@ -45,7 +45,7 @@ module.exports = function startBitgetDepth(levels) {
         const args = chunk.map((s) => ({
           instType: 'SPOT',
           channel,
-          instId: symToBitget(s),
+          instId: getSymbolInfo(s)['bitget'].mdKey,
         }));
         ws.send(JSON.stringify({ op: 'subscribe', args }));
       }
@@ -57,6 +57,7 @@ module.exports = function startBitgetDepth(levels) {
         const msgStr = msg.toString();
         if (msgStr === 'pong') return;
         const parsed = JSON.parse(msgStr);
+        // log.debug({parsed});
         if (parsed.event === 'subscribe') {
           log.debug({ arg: parsed.arg }, 'subscribed');
           return;

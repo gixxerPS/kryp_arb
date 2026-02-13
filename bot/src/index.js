@@ -9,6 +9,7 @@ const { initLogger, getLogger } = require('./common/logger');
 initLogger();
 const log = getLogger('app');
 const { initExchangeState } = require('./common/exchange_state');
+const symbolinfo = require('./common/symbolinfo');
 
 const db = require('./db');
 
@@ -40,6 +41,15 @@ async function main() {
   log.debug({ cfg }, 'starting');
   log.info({  }, 'starting');
 
+  symbolinfo.init({
+    symbolsCanon: cfg.bot.symbols,
+    exchangesCfg: cfg.exchanges,
+    symbolInfoByEx : cfg.symbolInfoByEx,
+    log
+  });
+
+  log.info({symbolinfo:symbolinfo.getIndex()}, 'symbolinfo Index');
+
   await verifyPublicIp();
 
   const pool = db.init();
@@ -54,17 +64,17 @@ async function main() {
   if (cfg.exchanges.binance.enabled) {
     startBinanceDepth(10, 100);
   } else {
-    log.info({exchange:'binance'}, 'exchange disabled');
+    log.warn({exchange:'binance'}, 'exchange disabled');
   }
   if (cfg.exchanges.gate.enabled) {
     startGateDepth(10, 100);
   } else {
-    log.info({exchange:'gate'}, 'exchange disabled');
+    log.warn({exchange:'gate'}, 'exchange disabled');
   }
   if (cfg.exchanges.bitget.enabled) {
     startBitgetDepth(15);
   } else {
-    log.info({exchange:'bitget'}, 'exchange disabled');
+    log.warn({exchange:'bitget'}, 'exchange disabled');
   }
 
   startStrategy(cfg, fees);
@@ -72,7 +82,7 @@ async function main() {
   startDbIntentWriter(cfg, pool); // datenbank. trade ideen eintragen
 
   // executor (private exchange APIs: balances, user streams, orders)
-  const executor = await startExecutor({ cfg, fees });
+  const executor = await startExecutor({ cfg });
 
   const app = { cfg, executor}; // zentraler app-context für UI und andere Module
   

@@ -38,7 +38,7 @@ module.exports = function startGateDepth(levels, updateMs) {
       exState.onWsState('gate', WS_STATE.OPEN);
       log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
 
-      // spot.order_book: payload ["BTC_USDT", "10", "100ms"] for 10 levels snapshot. :contentReference[oaicite:2]{index=2}
+      // spot.order_book: payload ["BTC_USDT", "10", "100ms"] for 10 levels snapshot
       for (let i = 0; i < cfg.symbols.length; i += chunkSize) {
         const chunk = cfg.symbols.slice(i, i + chunkSize);
         for (const sym of chunk) {
@@ -56,7 +56,7 @@ module.exports = function startGateDepth(levels, updateMs) {
       exState.onWsMessage('gate');
       try {
         const parsed = JSON.parse(msg.toString());
-
+        // log.debug({parsed});
         if (parsed.event === 'subscribe') {
           log.debug({ channel: parsed.channel, payload: parsed.payload }, 'subscribed');
           return;

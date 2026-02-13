@@ -1,14 +1,10 @@
 // bot/src/config.js
-const fs = require('fs');
 const path = require('path');
 
-function readJson(fp) {
-  const raw = fs.readFileSync(fp, 'utf8');
-  return JSON.parse(raw);
-}
+const { readJson } = require('./util');
 
-function absConfigPath(rel) {
-  return path.join(__dirname, '../../config', rel);
+function absConfigPath(...parts) {
+  return path.join(__dirname, '../../config', ...parts);
 }
 
 let cached = null;
@@ -24,6 +20,16 @@ function loadConfig() {
   const ui = readJson(absConfigPath('ui.json'));
   const symbols = symbolsFile.symbols || [];
 
+  const symbolinfoBinance = readJson(absConfigPath('symbolinfo', 'binance.spot.json'));
+  const symbolinfoBitget  = readJson(absConfigPath('symbolinfo', 'bitget.spot.json'));
+  const symbolinfoGate    = readJson(absConfigPath('symbolinfo', 'gate.spot.json'));
+
+  const symbolInfoByEx = {
+    binance: symbolinfoBinance,
+    bitget: symbolinfoBitget,
+    gate: symbolinfoGate,
+  };
+
   // exchanges list: bot.json exchanges fallback alle keys aus exchanges.json
   const exchangeList = Array.isArray(bot.exchanges) && bot.exchanges.length > 0
     ? bot.exchanges
@@ -35,10 +41,11 @@ function loadConfig() {
     exchanges,
     db,
     ui,
+    symbolInfoByEx
   };
   // console.log(cfg);
 
-  cached = { cfg, fees: exchanges, symbolsFile, log };
+  cached = { cfg, exchanges, symbols, log, symbolInfoByEx };
   return cached;
 }
 
@@ -55,6 +62,10 @@ function getLogCfg() {
   return loadConfig().log;
 }
 
+function getSymbolInfoByEx() { 
+  return loadConfig().symbolInfoByEx; 
+}
+
 // optional für Tests / hot-reload
 function resetConfigCache() {
   cached = null;
@@ -66,5 +77,6 @@ module.exports = {
   getFees,
   getLogCfg,
   resetConfigCache,
+  getSymbolInfoByEx
 };
 

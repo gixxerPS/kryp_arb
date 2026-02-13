@@ -1,5 +1,5 @@
 \set my_interval '24 hours';
-
+\echo Auswerteinterval: :my_interval
 SELECT
   COUNT(*)                          AS trade_count,
   ROUND(SUM(expected_pnl_quote), 2) AS total_expected_pnl_quote,

@@ -1,3 +1,4 @@
+const fs = require('fs');
 
 // formattierung in ausgaben
 // bsp: log.debug(`net=${f(net)} buy=${f(buyPx, 2)} sell=${f(sellPx, 2)}`);
@@ -36,16 +37,26 @@ function symFromExchange(sym) {
   return s;
 }
 
-function symToBinance(sym) {
-  return String(sym).replace('_', '').toLowerCase();
-}
 
-function symToBitget(sym) {
-  return String(sym).replace('_', '').toUpperCase();
-}
+/**
+ * konvertiere canonical symbol zu exchange symbol fuer
+ * market data subscription.
+ * 
+ * canonical symbols sind die in symbol.json und bot.json
+ * 
+ * aber auf binance z.b. nur USDC paare handelbar, deshalb muss
+ * dort USDT auf USDC gemappt werden. entsprechend muss dann
+ * marktdaten abo und order execution richtig abgesetzt werden (z.b. in AXS_USDC und nicht AXS_USDT)!!!
+ */ 
+function canonToExSymMD(canonSym, ex, exCfg) {
+  const [base, quote] = String(canonSym).split('_');
+  const q2 = exCfg?.quote_map?.[quote] ?? quote;
+  const mapped = `${base}_${q2}`;
 
-function symToGate(sym) {
-  return String(sym).toLowerCase();
+  if (ex === 'binance') return symToBinance(mapped); // axsUSDC -> "axsusdc"
+  if (ex === 'bitget')  return symToBitget(mapped);  // "AXSUSDT"
+  if (ex === 'gate')    return symToGate(mapped);    // "axs_usdt"
+  return mapped;
 }
 
 function nowSec() {
@@ -87,11 +98,13 @@ async function getPublicIp() {
   return (await res.text()).trim();
 }
 
+function readJson(fp) {
+  const raw = fs.readFileSync(fp, 'utf8');
+  return JSON.parse(raw);
+}
+
 module.exports = {
   symFromExchange,
-  symToBinance,
-  symToBitget,
-  symToGate,
   nowSec,
   toNumLevels,
   tradeRouteKey,
@@ -101,6 +114,8 @@ module.exports = {
   withJitter,
   fmtNowLocal,
   fmtNowIsoLocal,
-  getPublicIp
+  getPublicIp,
+  canonToExSymMD,
+  readJson
 };
 

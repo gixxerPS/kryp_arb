@@ -103,7 +103,7 @@ module.exports = function startStrategy(cfg, deps = {}) { // deps machen es test
     tryComputeForSymbol(m.symbol);
   });
 
-  log.info({
+  log.debug({
       mode: 'event-driven',
       cooldownS,
       throttleMs,

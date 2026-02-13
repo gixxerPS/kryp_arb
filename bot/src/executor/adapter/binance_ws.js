@@ -222,6 +222,7 @@ async function init( cfg ) {
   mgr = createReconnectWS({
     name: 'binance-ws-api',
     log,
+    staleTimeoutMs : null, // executor bekommt keine regelmaessigen nachrichten sondern ist in lauerstellung
 
     connect: () => {
       const ws = new WebSocket(url);

@@ -21,7 +21,7 @@ function init() {
 
   pool.query('SELECT current_user, current_schema(), current_setting(\'search_path\') AS search_path')
   .then(res => {
-    log.info(res.rows[0], 'db session info');
+    log.debug(res.rows[0], 'db session info');
   })
   .catch(err => {
     log.error(err, 'db session info failed');

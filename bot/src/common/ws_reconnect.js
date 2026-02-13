@@ -118,6 +118,7 @@ function createReconnectWS(opts) {
   function startTimers(currentWs, heartbeatIntervalMs) {
     lastMsgTs = Date.now();
     // stale detection: if no messages for too long, kill socket
+    // log.debug({staleTimeoutMs}, 'timeout');
     if (staleTimeoutMs > 0) {
       staleTimer = setInterval(() => {
         const age = Date.now() - lastMsgTs;

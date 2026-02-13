@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
-const { symFromExchange, symToBinance, nowSec, sumQty } = require('../common/util');
+const { getSymbolInfo } = require('../common/symbolinfo');
 
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
@@ -23,7 +23,7 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   });
   
   const exState = getExState();
-  const streams = cfg.symbols.map((s) => `${symToBinance(s)}@depth${levels}@${updateMs}ms`);
+  const streams = cfg.symbols.map((s) => `${getSymbolInfo(s)['binance'].mdKey}@depth${levels}@${updateMs}ms`);
   const url = `wss://stream.binance.com:9443/stream?streams=${streams.join('/')}`;
 
   const mgr = createReconnectWS({
@@ -42,7 +42,6 @@ module.exports = function startBinanceDepth(levels, updateMs) {
       exState.onWsMessage('binance');
       try {
         const parsed = JSON.parse(msg.toString());
-        //log.info(parsed);
         handler(parsed);
       } catch (e) {
         log.error({ err: e }, 'message error');

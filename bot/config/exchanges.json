@@ -4,14 +4,15 @@
     "taker_fee_pct": 0.1,
     "timeout_no_msg_trade_warn_ms": 8000,
     "timeout_no_msg_trade_stop_ms": 20000,
-    "enabled": true
+    "enabled": false,
+    "quote_map": { "USDT" : "USDC"}
   },
   "gate": {
     "maker_fee_pct": 0.1,
     "taker_fee_pct": 0.1,
     "timeout_no_msg_trade_warn_ms": 8000,
     "timeout_no_msg_trade_stop_ms": 20000,
-    "enabled": true
+    "enabled": false
   },
   "bitget": {
     "maker_fee_pct": 0.1,
