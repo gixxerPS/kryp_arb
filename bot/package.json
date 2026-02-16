@@ -7,8 +7,9 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test",
+    "test:one": "node --test test/collector/*.test.js",
     "test_debug": "node --inspect-brk --test",
-    "test:debug:one": "node --inspect-brk --test test/strategy/*.test.js"
+    "test:debug:one": "node --inspect-brk --test test/collector/*.test.js"
   },
   "repository": {
     "type": "git",

@@ -1,5 +1,5 @@
 // bot/test/collector/gate_depth.test.js
-const { suite, test } = require('node:test');
+const { suite, test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
@@ -7,7 +7,42 @@ const {
   makeGateDepthHandler,
 } = require('../../src/collector/parsers/gate_depth');
 
+const symbolinfo = require('../../src/common/symbolinfo');
+
 suite('collector/gate_depth', () => {
+  const baseConfig = {
+    symbolsCanon: ['MET_USDT'],
+    exchangesCfg: { gate: { enabled: true, subscription:{levels:10, updateMs:100} } },
+    symbolInfoByEx: {
+      gate: {
+        symbols: {
+          METUSDC: {
+            symbol: 'METUSDC',
+            baseAsset: 'MET',
+            quoteAsset: 'USDC',
+            status: 'TRADING',
+            enabled: true,
+            qtyPrecision: 8,
+            qtyStep: '0.01',
+            minQty: 0.1,
+            maxQty: 100,
+            minNotional: 5,
+            priceTick: '0.001',
+          }
+        }
+      }
+    },
+  }
+
+  function initSymbolinfo(cfg = baseConfig) {
+    symbolinfo._resetForTests();
+    symbolinfo.init(cfg);
+  }
+
+  beforeEach(() => {
+    initSymbolinfo();
+  });
+
   test('parseGateDepthMessage extrahiert best bid/ask und l10 sums', () => {
     const msg = {
       time: 1710000000,
@@ -15,7 +50,7 @@ suite('collector/gate_depth', () => {
       event: 'update',
       result: {
         t: 1710000001,
-        s: 'met_usdt',
+        s: 'MET_USDT',
         bids: [
           ['0.2742', '4193.0'],
           ['0.2741', '12935.8'],

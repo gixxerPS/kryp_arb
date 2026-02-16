@@ -3,6 +3,9 @@
 const { getLogger } = require('../common/logger');
 const log = getLogger('executor');
 const { getExState } = require('../common/exchange_state');
+const { getEx } = require('../common/symbolinfo');
+const { getExchange, getBotCfg } = require('../common/config');
+const { safeCall } = require('../common/async');
 
 const appBus = require('../bus');
 
@@ -39,6 +42,8 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   const assetsWanted = assetsFromSymbols(enabledSymbols);
 
   const exStateArr = exState.getAllExchangeStates();
+
+  const CFG_AUTO_FIX_FAILED_ORDERS = getBotCfg().auto_fix_failed_orders;
   
   // adapters ermitteln fuer exchanges die bei start enabled sind
   const adapters = adaptersFromDeps ?? {};
@@ -65,6 +70,8 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   const state = {
     // binance : {
     //   balances : {BNB:0.177, USDC:1234, ...},
+    //   orderRateLimits: [{interval:'SECOND', intervalNum:10, limit:50, count:1}, 
+    //      {{interval:'DAY', intervalNum:1, limit:160000, count:1}}]
     // }
    };
    
@@ -101,50 +108,172 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
       return;
     }
     busy = true;
-
     try {
-      // 1) prechecks BUY+SELL (gegen den aktuellen snapshot)
-      // 2) place buy + sell (je nach späterer policy sequenziell/parallel)
-      // 3) balances snapshot invalidieren/refresh triggern
-
-
-      const { sym, buyEx, sellEx, targetQty } = intent;
+      const { sym, buyEx, sellEx, targetQty, q, id } = intent; // sym ist canonical
       const buyAd = adapters[buyEx];
       const sellAd = adapters[sellEx];
       if (!buyAd || !sellAd) {
         log.warn({ reason:'adapter missing', intent, buyEx, sellEx }, 'dropping intent');
         return;
       }
-
-      // 2) balance check (minimal)
-      //    - buy side braucht quote (USDT)
-      //    - sell side braucht base (z.B. BTC)
-      //    -> hier später sauber mit fees, reserved, open orders etc.
-      const [base, quote] = sym.split('_');
-      const buyBal = state.balancesByEx[buyEx]?.[quote]?.free ?? 0;
-      const sellBal = state.balancesByEx[sellEx]?.[base]?.free ?? 0;
-
-      if (buyBal <= 0 || sellBal <= 0) return;
-
-      // 3) orders schicken (minimal)
-      //    - normalerweise: erst BUY, dann SELL oder parallel (je nach Modell)
-      await buyAd.placeOrder({
-        symbol: sym,
+      
+      //=======================================================================
+      // 1.1) prechecks BUY (gegen den aktuellen bestands snapshot)
+      //=======================================================================
+      const resBuyCheck = marketOrderPrecheckOk({
         side: 'BUY',
-        type: 'MARKET',
-        // qty/quoteQty je nach Ansatz
         targetQty,
-        clientOrderId: intent.id,
+        q,
+        prepSymbolInfo: getEx(sym, buyEx),
+        exState:  state[buyEx],
+        feeRate: getExchange(buyEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
-
-      await sellAd.placeOrder({
-        symbol: sym,
+      if (!resBuyCheck.ok) {
+        log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason },
+          'dropping intent');
+        return;
+      }
+      //=======================================================================
+      // 1.2) prechecks SELL (gegen den aktuellen bestands snapshot)
+      //=======================================================================
+      const resSellCheck = marketOrderPrecheckOk({
         side: 'SELL',
-        type: 'MARKET',
         targetQty,
-        clientOrderId: intent.id,
+        q,
+        prepSymbolInfo: getEx(sym, sellEx),
+        exState:  state[sellEx],
+        feeRate: getExchange(sellEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
+      if (!resSellCheck.ok) {
+        log.warn({ reason:'precheck sell order failed', intent, sellEx, checkReason:resSellCheck.reason },
+          'dropping intent');
+        return;
+      }
+      //=======================================================================
+      // 2) orders schicken (parallel)
+      //=======================================================================
+      const buyParams = {
+        type: 'MARKET',
+        side: 'BUY',
+        symbol:getEx(sym, buyEx).orderKey,
+        quantity:targetQty,
+        orderId: id,
+      };
+      const buyPO  = buyAd.placeOrder(false, buyParams); 
+      const sellParams = {
+        type: 'MARKET',
+        side: 'SELL',
+        symbol:getEx(sym, sellEx).orderKey,
+        quantity:targetQty,
+        orderId: id,
+      };
+      const sellPO = sellAd.placeOrder(false, sellParams);
+      // Promises sofort starten (parallel), aber Fehler in op() abfangen
+      const [buyR, sellR] = await Promise.allSettled([buyPO, sellPO]);
+      
+      //=======================================================================
+      // 3) exchange antwort auswerten
+      //=======================================================================
+      const buyOk  = buyR.status === 'fulfilled' // promise result
+        && buyR.value?.status == 'FILLED';       // order result
+      const sellOk = sellR.status === 'fulfilled' // promise result
+        && sellR.value?.status == 'FILLED';      // order result
+      if (buyOk && sellOk) {
+        log.debug({
+            intentId: id,
+            sym,
+            buyEx,
+            sellEx,
+            buyQ               : buyR.cummulativeQuoteQty,
+            buyP               : buyR.price,
+            buyCommission      : buyR.commission,
+            buyCommissionAsset : buyR.commissionAsset,
+            sellQ              : sellR.cummulativeQuoteQty,
+            sellP              : sellR.price,
+            sellCommission     : sellR.commission,
+            sellCommissionAsset: sellR.commissionAsset,
+          },
+          'orders executed'
+        );
+        // TODO: monitor fills / reconcile, invalidate balances snapshot
+        log.warn({symbol:sym, intentId: id, buyEx, sellEx}, `need to update balances. not implemented yet`);
+      } else if (buyOk && !sellOk) {
+        log.error({
+          intentId: id,
+          sym,
+          buyEx,
+          sellEx,
+          sellErr: sellR.ok ? null : sellR.errObj,
+          sellRes: sellR.ok ? sellR.value : null,
+        }, 'sell failed after buy placed');
+        if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
+          return;
+        }
+        // Minimal: versuchen BUY zu canceln (wenn market sofort fillt, bringt cancel nichts, 
+        // aber bei rejected/partial schon)
+        const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
+          symbol: buyParams.symbol, origClientOrderId: buyParams.clientOrderId }) );
+        if (!resCancelBuy.ok) {
+          log.warn({ intentId: id, buyEx, sym, orderId: buyParams.clientOrderId, cancelErr: resCancelBuy.errObj,
+           }, 'cancel buy failed');
+          // wenn buy auch nicht mehr gecancelt werden konnte, dann wieder verkaufen, da sonst die
+          // bestaende weglaufen
+          const resResell = await safeCall(() => buyAd.placeOrder({
+              symbol: buyParams.symbol,
+              side: 'SELL',
+              type: 'MARKET',
+              quantity: buyParams.quantity,
+              orderId: `${buyParams.clientOrderId}-RS`,
+            })
+          );
+          if (!resResell.ok) {
+            log.warn({ intentId: id, buyEx, sym, orderId: buyParams.clientOrderId }, 'resell failed');
+          }
+        }
+      } else if (!buyOk && sellOk) {
+        log.error({
+          intentId: id,
+          sym,
+          buyEx,
+          sellEx,
+          buyErr: buyR.ok ? null : buyR.errObj,
+          buyRes: buyR.ok ? buyR.value : null,
+        }, 'buy failed after sell placed');
+        if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
+          return;
+        }
+        // Minimal: versuchen SELL zu canceln (wenn market sofort fillt, bringt cancel nichts, 
+        // aber bei rejected/partial schon)
+        const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
+          symbol: sellParams.symbol, origClientOrderId: sellParams.clientOrderId }) );
+        if (!resCancelSell.ok) {
+          log.warn({ intentId: id, sellEx, sym, orderId: sellParams.clientOrderId, cancelErr: resCancelSell.errObj }, 
+            'cancel sell failed');
 
+          // wenn sell auch nicht mehr gecancelt werden konnte, dann wieder kaufen, da sonst die
+          // bestaende weglaufen
+          const resRebuy = await safeCall(() => sellAd.placeOrder({
+              symbol: sellParams.symbol,
+              side: 'BUY',
+              type: 'MARKET',
+              quantity: sellParams.quantity,
+              orderId: `${sellParams.clientOrderId}-RB`,
+            }) );
+          if (!resRebuy.ok) {
+            log.warn({ intentId: id, sellEx, sym, orderId: sellParams.clientOrderId,  rebuyErr: resRebuy.errObj, }, 
+              'rebuy failed');
+          }
+        }
+      } else { // beide failed
+        log.warn({
+            intentId: id,
+            sym,
+            buyEx,
+            sellEx,
+            buyErr: buyR.reason,
+            sellErr: sellR.reason,
+          }, 'both orders failed');
+      }
     } catch (err) {
       log.error({ err, intent }, 'handle intent failed');
     } finally {

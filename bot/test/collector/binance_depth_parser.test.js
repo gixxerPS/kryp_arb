@@ -1,4 +1,4 @@
-const { suite, test } = require('node:test');
+const { suite, test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
@@ -6,11 +6,45 @@ const {
   makeBinanceDepthHandler,
 } = require('../../src/collector/parsers/binance_depth');
 
+const symbolinfo = require('../../src/common/symbolinfo');
+
 suite('collector/binance_depth', () => {
+  const baseConfig = {
+    symbolsCanon: ['MET_USDT'],
+    exchangesCfg: { binance: { enabled: true, quote_map: { USDT: 'USDC' }, subscription:{levels:10, updateMs:100} } },
+    symbolInfoByEx: {
+      binance: {
+        symbols: {
+          METUSDC: {
+            symbol: 'METUSDC',
+            baseAsset: 'MET',
+            quoteAsset: 'USDC',
+            status: 'TRADING',
+            enabled: true,
+            qtyPrecision: 8,
+            qtyStep: '0.01',
+            minQty: 0.1,
+            maxQty: 100,
+            minNotional: 5,
+            priceTick: '0.001',
+          }
+        }
+      }
+    },
+  }
+
+  function initSymbolinfo(cfg = baseConfig) {
+    symbolinfo._resetForTests();
+    symbolinfo.init(cfg);
+  }
+
+  beforeEach(() => {
+    initSymbolinfo();
+  });
 
   test('parseBinanceDepthMessage extrahiert bid/ask ', () => {
     const msg = {
-      stream: 'metusdt@depth10@100ms',
+      stream: 'metusdc@depth10@100ms',
       data: {
         bids: [
           ['0.27420000', '4193.0'],
@@ -33,7 +67,6 @@ suite('collector/binance_depth', () => {
 
   test('makeBinanceDepthHandler emits md:l2', () => {
     const events = [];
-
     const handler = makeBinanceDepthHandler({
       exchange: 'binance',
       emit: (name, payload) => events.push({ name, payload }),
@@ -41,7 +74,7 @@ suite('collector/binance_depth', () => {
     });
 
     const ok = handler({
-      stream: 'metusdt@depth10@100ms',
+      stream: 'metusdc@depth10@100ms',
       data: { bids: [['1.0', '2.0']], asks: [['1.1', '3.0']] },
     });
 

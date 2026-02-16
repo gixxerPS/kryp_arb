@@ -15,7 +15,7 @@ const { WS_STATE } = require('../common/constants');
 
 const { createReconnectWS } = require('../common/ws_reconnect');
 
-module.exports = function startBitgetDepth(levels) {
+module.exports = function startBitgetDepth() {
   const handler = makeBitgetDepthHandler({
     exchange: 'bitget',
     emit: bus.emit.bind(bus),
@@ -24,6 +24,7 @@ module.exports = function startBitgetDepth(levels) {
 
   const exState = getExState();
   const url = 'wss://ws.bitget.com/v2/ws/public';
+  const levels = cfg.exchanges.bitget.subscription.levels;
   const channel = levels >= 15 ? 'books15' : (levels >= 5 ? 'books5' : 'books1');
   const chunkSize = 20;
 

@@ -38,9 +38,11 @@ async function verifyPublicIp() {
 
 async function main() {
   const { cfg, fees } = loadConfig();
-  log.debug({ cfg }, 'starting');
+  log.debug({ cfg }, 'startup config');
   log.info({  }, 'starting');
 
+  // u.a. symbolinfo je exchange {AXS_USDT:{binance:{...}, gate:{...}, bitget:{...}}}
+  // und wieder reverse mapping je symbol und exchange
   symbolinfo.init({
     symbolsCanon: cfg.bot.symbols,
     exchangesCfg: cfg.exchanges,
@@ -48,7 +50,7 @@ async function main() {
     log
   });
 
-  log.info({symbolinfo:symbolinfo.getIndex()}, 'symbolinfo Index');
+  log.info({symInfoIdx:symbolinfo.getIndex(), symInfoRevIdx:symbolinfo.getReverseIndex()});
 
   await verifyPublicIp();
 
@@ -62,17 +64,17 @@ async function main() {
   // nur wenn in config/exchanges.json die exchange enabled ist werden daten gesammelt
   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   if (cfg.exchanges.binance.enabled) {
-    startBinanceDepth(10, 100);
+    startBinanceDepth();
   } else {
     log.warn({exchange:'binance'}, 'exchange disabled');
   }
   if (cfg.exchanges.gate.enabled) {
-    startGateDepth(10, 100);
+    startGateDepth();
   } else {
     log.warn({exchange:'gate'}, 'exchange disabled');
   }
   if (cfg.exchanges.bitget.enabled) {
-    startBitgetDepth(15);
+    startBitgetDepth();
   } else {
     log.warn({exchange:'bitget'}, 'exchange disabled');
   }

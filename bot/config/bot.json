@@ -8,6 +8,7 @@
   "q_min_usdt": 100,
   "q_max_usdt": 5000,
   "balance_minimum_usdt": 100,
+  "auto_fix_failed_orders": false,
   "symbols": ["AXS_USDT", "MET_USDT"],
   "exchanges": ["binance", "gate", "bitget"]
 }

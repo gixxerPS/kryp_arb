@@ -1,9 +1,10 @@
 // bot/src/collector/parsers/binance_depth.js
-const { symFromExchange, toNumLevels } = require('../../common/util');
+const { toNumLevels } = require('../../common/util');
 
 const { getLogger } = require('../../common/logger');
 const log = getLogger('collector').child({ exchange: 'binance', sub:'parser' });
 
+const { getCanonFromStreamSym } = require('../../common/symbolinfo');
 
 /**
  * sample raw:
@@ -29,14 +30,11 @@ function parseBinanceDepthMessage(raw) {
   const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (!parsed || !parsed.stream || !parsed.data) return null;
 
-  const stream = String(parsed.stream);
-  const at = stream.indexOf('@');
-  const base = at !== -1 ? stream.slice(0, at) : stream;
-  const symbol = symFromExchange(base);
-
   const bids = Array.isArray(parsed.data.bids) ? toNumLevels(parsed.data.bids) : [];
   const asks = Array.isArray(parsed.data.asks) ? toNumLevels(parsed.data.asks) : [];
   if (bids.length === 0 || asks.length === 0) return null;
+  const symbol = getCanonFromStreamSym(parsed.stream, 'binance');
+  if (!symbol) return null;
 
   return {
     symbol,
@@ -51,8 +49,9 @@ function makeBinanceDepthHandler({ exchange = 'binance', emit, nowMs }) {
 
   return function handle(raw) {
     const out = parseBinanceDepthMessage(raw);
+    // log.debug({out}, 'parsed binance msg');
     if (!out) {
-      log.warn({msg:`parse not successful for message: ${raw}`}, 'parse');
+      log.warn({msg:`parse not successful for message`,raw}, 'parse');
       return false;
     }
 

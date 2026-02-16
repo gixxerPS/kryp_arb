@@ -98,8 +98,8 @@ module.exports = function startStrategy(cfg, deps = {}) { // deps machen es test
 
   bus.on('md:l2', (m) => {
     latest.set(key(m.exchange, m.symbol), m);
-    //log.debug({ latest: Object.fromEntries(latest) }, 'latest dump');
-    //log.debug({latest:latest, m:m, key:key(m.exchange, m.symbol)}, 'md:l2');
+    // log.debug({ latest: Object.fromEntries(latest) }, 'latest dump');
+    // log.debug({latest:latest, m:m, key:key(m.exchange, m.symbol)}, 'md:l2');
     tryComputeForSymbol(m.symbol);
   });
 

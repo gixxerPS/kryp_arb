@@ -176,7 +176,13 @@ function sendReq(method, params, { timeoutMs = 10_000 } = {}) {
     pending.set(id, { resolve, reject, tmr });
 
     const msg = { id, method, params };
-    wsRef.send(JSON.stringify(msg));
+    try {
+      wsRef.send(JSON.stringify(msg));
+    } catch (e) {
+      clearTimeout(tmr);
+      pending.delete(id);
+      reject(e);
+    }
   });
 }
 
@@ -420,15 +426,13 @@ async function subscribeUserData(/* handler */) {
 }
 
 async function placeOrder(test = true, orderParams ) {
-  // const method = test ? 'order.test' : 'order.place';
-
   if (test) {
     log.debug({}, 'TEST ORDER!!!!');
   } else {
     log.debug({}, 'REAL ORDER!!!!');
   }
+  // const method = test ? 'order.test' : 'order.place';
   const method = 'order.test';
-
 
   const params = makeSignedParams({ 
     symbol  : orderParams.symbol,
@@ -442,11 +446,80 @@ async function placeOrder(test = true, orderParams ) {
   log.debug({ method, params }, `REQ placeOrder`);
   const result = await sendReq(method, params, { timeoutMs: 10_000 });
 
+  // beispielantwort von binance api:
+  //   FULL response type:
+  // {
+  //     "id": "56374a46-3061-486b-a311-99ee972eb648",
+  //     "status": 200,
+  //     "result": {
+  //         "symbol": "BTCUSDT",
+  //         "orderId": 12569099453,
+  //         "orderListId": -1,
+  //         "clientOrderId": "4d96324ff9d44481926157ec08158a40",
+  //         "transactTime": 1660801715793,
+  //         "price": "23416.10000000",
+  //         "origQty": "0.00847000",
+  //         "executedQty": "0.00847000",
+  //         "origQuoteOrderQty": "0.000000",
+  //         "cummulativeQuoteQty": "198.33521500",
+  //         "status": "FILLED",
+  //         "timeInForce": "GTC",
+  //         "type": "LIMIT",
+  //         "side": "SELL",
+  //         "workingTime": 1660801715793,
+  //         // FULL response is identical to RESULT response, with the same optional fields
+  //         // based on the order type and parameters. FULL response additionally includes
+  //         // the list of trades which immediately filled the order.
+  //         "fills": [
+  //             {
+  //                 "price": "23416.10000000",
+  //                 "qty": "0.00635000",
+  //                 "commission": "0.000000",
+  //                 "commissionAsset": "BNB",
+  //                 "tradeId": 1650422481
+  //             },
+  //             {
+  //                 "price": "23416.50000000",
+  //                 "qty": "0.00212000",
+  //                 "commission": "0.000000",
+  //                 "commissionAsset": "BNB",
+  //                 "tradeId": 1650422482
+  //             }
+  //         ]
+  //     },
+  //     "rateLimits": [
+  //         {
+  //             "rateLimitType": "ORDERS",
+  //             "interval": "SECOND",
+  //             "intervalNum": 10,
+  //             "limit": 50,
+  //             "count": 1
+  //         },
+  //         {
+  //             "rateLimitType": "ORDERS",
+  //             "interval": "DAY",
+  //             "intervalNum": 1,
+  //             "limit": 160000,
+  //             "count": 1
+  //         },
+  //         {
+  //             "rateLimitType": "REQUEST_WEIGHT",
+  //             "interval": "MINUTE",
+  //             "intervalNum": 1,
+  //             "limit": 6000,
+  //             "count": 1
+  //         }
+  //     ]
+  // }
   log.debug({ result }, `RES placeOrder`);
 }
 
-async function cancelOrder(/* id */) {
-  throw new Error('cancelOrder not implemented');
+async function cancelOrder({sym, origClientOrderId}) {
+  const params = makeSignedParams({ 
+    symbol  : sym,
+    origClientOrderId
+  });
+  return await sendReq('order.cancel', params, { timeoutMs: 10_000 });
 }
 
 module.exports = { 

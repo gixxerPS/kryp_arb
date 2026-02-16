@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 
 const bus = require('../bus');
 const { makeGateDepthHandler } = require('./parsers/gate_depth');
+const { getSymbolInfo } = require('../common/symbolinfo');
 
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
@@ -14,7 +15,7 @@ const { WS_STATE } = require('../common/constants');
 
 const { createReconnectWS } = require('../common/ws_reconnect');
 
-module.exports = function startGateDepth(levels, updateMs) {
+module.exports = function startGateDepth() {
   const handler = makeGateDepthHandler({
     exchange: 'gate',
     emit: bus.emit.bind(bus),
@@ -36,6 +37,9 @@ module.exports = function startGateDepth(levels, updateMs) {
 
     onOpen: async (ws) => {
       exState.onWsState('gate', WS_STATE.OPEN);
+      const levels = `${cfg.exchanges.gate.subscription.levels}`;
+      const updateMs = `${cfg.exchanges.gate.subscription.updateMs}ms`;
+  
       log.info({ symbols: cfg.symbols.length, levels, updateMs }, 'connected');
 
       // spot.order_book: payload ["BTC_USDT", "10", "100ms"] for 10 levels snapshot
@@ -46,7 +50,7 @@ module.exports = function startGateDepth(levels, updateMs) {
             time: Math.floor(Date.now() / 1000),
             channel: 'spot.order_book',
             event: 'subscribe',
-            payload: [sym, '10', '100ms'],
+            payload: [getSymbolInfo(sym)['gate'].mdKey, levels, updateMs],
           }));
         }
       }

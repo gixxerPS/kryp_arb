@@ -4,11 +4,12 @@
 // - parseGateDepthMessage(raw): parse/normalize a Gate spot.order_book update message
 // - makeGateDepthHandler({ exchange, emit, nowMs }): builds a handler that emits md:l2
 //
-const { symFromExchange, toNumLevels } = require('../../common/util');
+const { toNumLevels } = require('../../common/util');
 
 const { getLogger } = require('../../common/logger');
 const log = getLogger('collector').child({ exchange: 'gate', sub:'parser' });
 
+const { getCanonFromStreamSym, getEx } = require('../../common/symbolinfo');
 
 /**
  * sample parsed:
@@ -47,7 +48,8 @@ function parseGateDepthMessage(parsed) {
   const r = parsed.result;
   if (!r) return null;
 
-  const symbol = symFromExchange(r.s);
+  const symbol = getCanonFromStreamSym(r.s, 'gate');
+  if (!symbol) return null;
 
   const bids = Array.isArray(r.bids) ? toNumLevels(r.bids) : [];
   const asks = Array.isArray(r.asks) ? toNumLevels(r.asks) : [];
@@ -70,7 +72,10 @@ function makeGateDepthHandler({ exchange = 'gate', emit, nowMs }) {
 
   return function handle(raw) {
     const out = parseGateDepthMessage(raw);
-    if (!out) return false;
+    // log.debug({out}, 'parsed gate msg');
+    if (!out) {
+      log.warn({msg:`parse not successful for message`,raw}, 'parse');
+    }
 
     emit('md:l2', {
       tsMs: out.tsMs != null ? out.tsMs : nowMs(),

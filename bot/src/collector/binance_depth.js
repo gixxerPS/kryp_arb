@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 
 const bus = require('../bus');
-const { getSymbolInfo } = require('../common/symbolinfo');
+const { getEx } = require('../common/symbolinfo');
 
 const { getCfg } = require('../common/config');
 const cfg = getCfg();
@@ -15,7 +15,7 @@ const { WS_STATE } = require('../common/constants');
 
 const { createReconnectWS } = require('../common/ws_reconnect');
 
-module.exports = function startBinanceDepth(levels, updateMs) {
+module.exports = function startBinanceDepth() {
   const handler = makeBinanceDepthHandler({
     exchange: 'binance',
     emit: bus.emit.bind(bus),
@@ -23,7 +23,9 @@ module.exports = function startBinanceDepth(levels, updateMs) {
   });
   
   const exState = getExState();
-  const streams = cfg.symbols.map((s) => `${getSymbolInfo(s)['binance'].mdKey}@depth${levels}@${updateMs}ms`);
+  const levels = cfg.exchanges.binance.subscription.levels;
+  const updateMs = cfg.exchanges.binance.subscription.updateMs;
+  const streams = cfg.symbols.map((s) => getEx(s, 'binance').mdKey); /*e.g. axsusdc@depth@100ms*/
   const url = `wss://stream.binance.com:9443/stream?streams=${streams.join('/')}`;
 
   const mgr = createReconnectWS({

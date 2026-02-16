@@ -54,12 +54,16 @@ function getCfg() {
   return loadConfig().cfg;
 }
 
-function getFees() {
-  return loadConfig().fees;
+function getExchange(ex) {
+  return loadConfig().exchanges[ex];
 }
 
 function getLogCfg() {
   return loadConfig().log;
+}
+
+function getBotCfg() {
+  return loadConfig().cfg.bot;
 }
 
 function getSymbolInfoByEx() { 
@@ -74,9 +78,10 @@ function resetConfigCache() {
 module.exports = {
   loadConfig,
   getCfg,
-  getFees,
   getLogCfg,
   resetConfigCache,
-  getSymbolInfoByEx
+  getSymbolInfoByEx,
+  getExchange,
+  getBotCfg
 };
 

@@ -1,5 +1,5 @@
 // bot/test/collector/bitget_depth.test.js
-const {suite, test } = require('node:test');
+const {suite, test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
@@ -7,13 +7,48 @@ const {
   makeBitgetDepthHandler,
 } = require('../../src/collector/parsers/bitget_depth');
 
+const symbolinfo = require('../../src/common/symbolinfo');
+
 suite('collector/bitget_depth', () => {
+  const baseConfig = {
+    symbolsCanon: ['MET_USDT'],
+    exchangesCfg: { bitget: { enabled: true, subscription:{levels:15, updateMs:100} } },
+    symbolInfoByEx: {
+      bitget: {
+        symbols: {
+          METUSDT: {
+            symbol: 'METUSDT',
+            baseAsset: 'MET',
+            quoteAsset: 'USDT',
+            status: 'TRADING',
+            enabled: true,
+            qtyPrecision: 8,
+            qtyStep: '0.01',
+            minQty: 0.1,
+            maxQty: 100,
+            minNotional: 5,
+            priceTick: '0.001',
+          }
+        }
+      }
+    },
+  }
+
+  function initSymbolinfo(cfg = baseConfig) {
+    symbolinfo._resetForTests();
+    symbolinfo.init(cfg);
+  }
+
+  beforeEach(() => {
+    initSymbolinfo();
+  });
+
   test('parseBitgetDepthMessage extrahiert best bid/ask und l10 sums', () => {
     const msg = {
       action: 'update',
       arg: {
         instType: 'SPOT',
-        channel: 'books',
+        channel: 'books15',
         instId: 'METUSDT',
       },
       data: [{
@@ -28,7 +63,6 @@ suite('collector/bitget_depth', () => {
         ],
       }],
     };
-
     const out = parseBitgetDepthMessage(msg);
     assert.ok(out);
 
@@ -74,7 +108,7 @@ suite('collector/bitget_depth', () => {
       action: 'update',
       arg: {
         instType: 'SPOT',
-        channel: 'books',
+        channel: 'books15',
         instId: 'METUSDT',
       },
       data: [{

@@ -24,20 +24,6 @@ function fmtNowIsoLocal() {
   return d.toISOString().replace('T', ' ').slice(0, 19);
 }
 
-function symFromExchange(sym) {
-  if (!sym) return sym;
-  const s = String(sym).toUpperCase();
-
-  if (s.includes('_')) return s;
-
-  if (s.endsWith('USDT')) {
-    return s.slice(0, -4) + '_USDT';
-  }
-
-  return s;
-}
-
-
 /**
  * konvertiere canonical symbol zu exchange symbol fuer
  * market data subscription.
@@ -48,16 +34,16 @@ function symFromExchange(sym) {
  * dort USDT auf USDC gemappt werden. entsprechend muss dann
  * marktdaten abo und order execution richtig abgesetzt werden (z.b. in AXS_USDC und nicht AXS_USDT)!!!
  */ 
-function canonToExSymMD(canonSym, ex, exCfg) {
-  const [base, quote] = String(canonSym).split('_');
-  const q2 = exCfg?.quote_map?.[quote] ?? quote;
-  const mapped = `${base}_${q2}`;
+// function canonToExSymMD(canonSym, ex, exCfg) {
+//   const [base, quote] = String(canonSym).split('_');
+//   const q2 = exCfg?.quote_map?.[quote] ?? quote;
+//   const mapped = `${base}_${q2}`;
 
-  if (ex === 'binance') return symToBinance(mapped); // axsUSDC -> "axsusdc"
-  if (ex === 'bitget')  return symToBitget(mapped);  // "AXSUSDT"
-  if (ex === 'gate')    return symToGate(mapped);    // "axs_usdt"
-  return mapped;
-}
+//   if (ex === 'binance') return symToBinance(mapped); // axsUSDC -> "axsusdc"
+//   if (ex === 'bitget')  return symToBitget(mapped);  // "AXSUSDT"
+//   if (ex === 'gate')    return symToGate(mapped);    // "axs_usdt"
+//   return mapped;
+// }
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
@@ -104,7 +90,6 @@ function readJson(fp) {
 }
 
 module.exports = {
-  symFromExchange,
   nowSec,
   toNumLevels,
   tradeRouteKey,
@@ -115,7 +100,7 @@ module.exports = {
   fmtNowLocal,
   fmtNowIsoLocal,
   getPublicIp,
-  canonToExSymMD,
-  readJson
+  // canonToExSymMD,
+  readJson,
 };
 

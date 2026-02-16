@@ -4,16 +4,12 @@
 // - parseBitgetDepthMessage(raw): parse/normalize a Bitget books (L2) update message
 // - makeBitgetDepthHandler({ exchange, emit, nowMs }): builds a handler that emits md:l2
 //
-const { symFromExchange, toNumLevels } = require('../../common/util');
+const { toNumLevels } = require('../../common/util');
 
 const { getLogger } = require('../../common/logger');
 const log = getLogger('collector').child({ exchange: 'bitget', sub:'parser' });
 
-function isBooksChannel(ch) {
-  if (typeof ch !== 'string') return false;
-  // Bitget commonly uses: books / books5 / books15
-  return ch === 'books' || ch === 'books5' || ch === 'books15' || ch.startsWith('books');
-}
+const { getCanonFromStreamSym, getEx } = require('../../common/symbolinfo');
 
 /**
  * sample parsed:
@@ -40,8 +36,6 @@ function parseBitgetDepthMessage(parsed) {
   const arg = parsed.arg;
   if (!arg) return null;
 
-  if (!isBooksChannel(arg.channel)) return null;
-
   // Bitget uses action: "snapshot" | "update" (sometimes other values)
   if (parsed.action !== 'snapshot' && parsed.action !== 'update') return null;
 
@@ -59,7 +53,10 @@ function parseBitgetDepthMessage(parsed) {
   const asks = Array.isArray(d.asks) ? toNumLevels(d.asks) : [];
   if (bids.length === 0 || asks.length === 0) return null;
 
-  const symbol = symFromExchange(instId);
+  const symbol = getCanonFromStreamSym(instId, 'bitget');
+  if (!symbol) return null;
+  const expectedChannel = getEx(symbol, 'bitget').extra.channel; // 'books15'
+  if (arg.channel !== expectedChannel) return null;
 
   // Bitget provides ms timestamps as string in d.ts
   const tsMs = Number.isFinite(Number(d.ts)) ? Number(d.ts) : null;
@@ -78,7 +75,10 @@ function makeBitgetDepthHandler({ exchange = 'bitget', emit, nowMs }) {
 
   return function handle(raw) {
     const out = parseBitgetDepthMessage(raw);
-    if (!out) return false;
+    if (!out) {
+      log.warn({msg:`parse not successful for message`,raw}, 'parse');
+      return false;
+    }
 
     emit('md:l2', {
       tsMs: out.tsMs != null ? out.tsMs : nowMs(),
