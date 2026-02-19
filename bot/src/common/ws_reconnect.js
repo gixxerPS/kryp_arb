@@ -54,10 +54,14 @@ const { clamp, sleep, withJitter } = require('../common/util');
 /**
  * @param {object} opts
  * @param {string} opts.name - label for logs
+ * @param {object} opts.log
  * @param {() => import('ws')} opts.connect - must create and return a new ws instance
  * @param {(ws: any) => (void|Promise<void>)} opts.onOpen - subscribe/resync logic
  * @param {(data: any, ws: any) => void} [opts.onMessage] - optional message hook
- * @param {(err: any) => void} opts.onLog - logger fn (e.g. (o,msg)=>log.info(o,msg))
+ * @param {function} opts.onReconnect
+ * @param {function} opts.onClose
+ * @param {function} opts.onMessage
+ * @param {function} opts.onError
  * @param {number} [opts.baseDelayMs=1000] initial reconnect delay after first disconnect.
 //             Example: 1000ms => first retry happens quickly for transient drops.
  * @param {number} [opts.maxDelayMs=30000] upper bound for backoff delay.
@@ -67,10 +71,15 @@ const { clamp, sleep, withJitter } = require('../common/util');
 //               attempt counter resets only after a successful 'open'.
  * @param {number} [opts.jitterPct=0.3] randomization to avoid reconnect storms across many sockets.
 //           0.3 => multiply delay by random factor in [0.7 .. 1.3].
- * @param {number} [opts.staleTimeoutMs=60000] - if no message for this long => terminate
+ * @param {number | null} [opts.staleTimeoutMs=60000] - if no message for this long => terminate
  * @param {number} [opts.heartbeatIntervalMs=0] - application side heartbeat (=ping msg) to server. 0 means disabled
  * @param {number} [opts.autoAppPingPong] - application side ping replies (i.e. pong) to server
- * @param {(ctx: {code?: number, reason?: string, err?: any}) => number|null} [opts.delayOverrideMs]
+ * @param {(ctx: {
+ *   type: 'close' | 'error',
+ *   code?: number,
+ *   reason?: string | Buffer,
+ *   err?: Error
+ * }) => number|null} [opts.delayOverrideMs]
  *        Return a number to override delay, or null/undefined for default backoff.
  */
 function createReconnectWS(opts) {

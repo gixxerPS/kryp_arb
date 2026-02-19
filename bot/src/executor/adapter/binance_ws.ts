@@ -83,24 +83,102 @@
  *     * gleiche Inputs → gleiche WS Requests
  */
 'use strict';
-const crypto = require('crypto');
-const WebSocket = require('ws');
-const fs = require('fs');
+import crypto from 'crypto';
+import WebSocket from 'ws';
+import fs from 'fs';
 
-const { getLogger } = require('../../common/logger');
+import { getLogger } from '../../common/logger';
 const log = getLogger('executor').child({ exchange: 'binance' });
 
-const { createReconnectWS } = require('../../common/ws_reconnect');
-const { getExState } = require('../../common/exchange_state');
-const { WS_STATE } = require('../../common/constants');
+import { createReconnectWS } from '../../common/ws_reconnect';
+import { getExState } from '../../common/exchange_state';
+import { WS_STATE } from '../../common/constants';
 
-function loadBinanceSymbolInfo(filePath) {
-  const raw = fs.readFileSync(filePath, "utf8");
-  const data = JSON.parse(raw);
-  return data; // { meta, symbols: { AXSUSDC: {...} } }
+import type { 
+  Balances, 
+  CommonOrderResult, 
+  PlaceOrderParams, 
+  CancelOrderParams,
+  PendingEntry } from '../../types/executor_adapter';
+import type { AppConfig } from '../../types/config';
+import type { WsParams, ExchangeId } from '../../types/common';
+
+type BinanceBalance = { asset: string; free: string; locked: string };
+
+type BinanceAccountStatusResult = {
+  timestamp?: number;
+  updateTime?: number;
+  balances?: BinanceBalance[];
+};
+
+type BinanceOrderFill = {
+  price: string;
+  qty: string;
+  commission?: string;
+  commissionAsset?: string;
+  tradeId?: number | string;
+};
+
+type BinancePlaceOrderResult = {
+  symbol: string;
+  orderId?: number;
+  clientOrderId?: string;
+  transactTime?: number;
+  price?: string;
+  executedQty?: string;
+  cummulativeQuoteQty?: string;
+  status?: string;
+  fills?: BinanceOrderFill[];
+};
+
+type BinanceCancelOrderResult = {
+  symbol: string;
+  orderId?: number;
+  clientOrderId?: string;
+  origClientOrderId?: string;
+  status?: string;
+};
+
+type SignedParams = WsParams & {
+  apiKey: string;
+  timestamp: number;
+  recvWindow: number;
+  signature: string;
+};
+
+type ReconnectDelayOverrideArgs = {
+  type: 'close' | 'error';
+  code?: number;
+  reason?: string | Buffer;
+  err?: Error;
+};
+
+type BinanceAccountCommissionResult = {
+  symbol: string;
+
+  standardCommission?: {
+    maker?: string;
+    taker?: string;
+    buyer?: string;
+    seller?: string;
+  };
+
+  commissionRates?: {
+    maker?: string;
+    taker?: string;
+    buyer?: string;
+    seller?: string;
+  };
+
+  discount?: {
+    enabledForAccount?: boolean;
+    enabledForSymbol?: boolean;
+    discountAsset?: string;
+    discount?: string;
+  };
 }
 
-function buildPayload(params) {
+function buildPayload(params: Record<string, string | number | boolean | undefined | null>): string {
   return Object.keys(params)
     .filter(k => params[k] !== undefined && params[k] !== null)
     .sort()
@@ -108,11 +186,7 @@ function buildPayload(params) {
     .join('&');
 }
 
-function signHmacHex(secret, payload) {
-  return crypto.createHmac('sha256', secret).update(payload, 'utf8').digest('hex');
-}
-
-function signEd25519Base64(privateKeyPem, payload) {
+function signEd25519Base64(privateKeyPem: string, payload: string): string {
   const sig = crypto.sign(
     null,                       // Ed25519 => algorithm = null
     Buffer.from(payload),       // payload = query string
@@ -121,7 +195,7 @@ function signEd25519Base64(privateKeyPem, payload) {
   return sig.toString('base64'); // Binance verlangt base64
 }
 
-function makeSignedParams(extra = {}) {
+function makeSignedParams(extra: WsParams = {}): SignedParams {
   const apiKey = process.env.BINANCE_ED25519_PUBLIC_KEY;
   if (!apiKey) throw new Error('Missing BINANCE_ED25519_PUBLIC_KEY');
 
@@ -140,10 +214,10 @@ function makeSignedParams(extra = {}) {
 
 // --- Adapter factory (singleton-ish) ---
 
-let mgr = null;
-let wsRef = null; // current websocket instance from mgr.connect()
-let ed25519PrivateKeyPem = null;     // string
-const pending = new Map(); // id -> { resolve, reject, tmr }
+let mgr : ReturnType<typeof createReconnectWS> | null = null;
+let wsRef : WebSocket | null = null; // current websocket instance from mgr.connect()
+let ed25519PrivateKeyPem : string  = '';     // string
+const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject, tmr }
 
 /**
  * @brief Send a WS-API request and await response by id.
@@ -160,14 +234,13 @@ const pending = new Map(); // id -> { resolve, reject, tmr }
  *   Resolvt mit `result` der Binance-Response oder rejectet bei Timeout,
  *   Verbindungsabbruch oder Fehlerstatus.
  */
-function sendReq(method, params, { timeoutMs = 10_000 } = {}) {
+function sendReq<T>(method: string, params: Record<string, unknown>, 
+  { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     return Promise.reject(new Error(`binance ws not open (method=${method})`));
   }
-
   const id = crypto.randomUUID();
-
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const tmr = setTimeout(() => {
       pending.delete(id);
       reject(new Error(`binance ws timeout method=${method} id=${id}`));
@@ -175,9 +248,8 @@ function sendReq(method, params, { timeoutMs = 10_000 } = {}) {
 
     pending.set(id, { resolve, reject, tmr });
 
-    const msg = { id, method, params };
     try {
-      wsRef.send(JSON.stringify(msg));
+      wsRef?.send(JSON.stringify({ id, method, params }));
     } catch (e) {
       clearTimeout(tmr);
       pending.delete(id);
@@ -186,7 +258,7 @@ function sendReq(method, params, { timeoutMs = 10_000 } = {}) {
   });
 }
 
-function rejectAllPending(err) {
+function rejectAllPending(err: unknown): void {
   for (const [id, p] of pending.entries()) {
     clearTimeout(p.tmr);
     p.reject(err);
@@ -203,11 +275,12 @@ function rejectAllPending(err) {
  * - placeOrder()
  * - cancelOrder()
  */
-let openResolve;
-let openReject;
-let openPromise;
-async function init( cfg ) {
-  if (mgr) return openPromise; 
+let openResolve: (() => void) | null = null;
+let openReject: ((err: unknown) => void) | null = null;
+let openPromise: Promise<void> | undefined;
+
+async function init(cfg: AppConfig): Promise<void> {
+  if (openPromise) return openPromise; 
 
   if (!process.env.BINANCE_ED25519_PRIVATE_KEY_FILE) {
     throw new Error('Binance Ed25519 credentials missing in .env');
@@ -217,7 +290,7 @@ async function init( cfg ) {
     'utf8'
   );
 
-  openPromise = new Promise((res, rej) => {
+  openPromise = new Promise<void>((res, rej) => {
     openResolve = res;
     openReject = rej;
   });
@@ -236,16 +309,20 @@ async function init( cfg ) {
       return ws;
     },
 
-    onOpen: async (ws) => {
+    onOpen: async (ws: WebSocket) => {
       wsRef = ws;
       exState.onWsState('binance-ws-api', WS_STATE.OPEN);
       log.debug({ url }, 'binance ws-api connected');
-      openResolve();
+      if (openResolve) {
+        openResolve();
+        openResolve = null;
+        openReject = null;
+      }
     },
 
-    onMessage: (msg) => {
+    onMessage: (msg: Buffer) => {
       exState.onWsMessage('binance-ws-api');
-      let parsed;
+      let parsed: any;
       try {
         parsed = JSON.parse(msg.toString());
         log.debug({msg:parsed}, 'onMessage');
@@ -254,20 +331,18 @@ async function init( cfg ) {
         return;
       }
 
+      if (!parsed?.id) return;
       // Correlated WS-API response (has id)
-      if (parsed.id) {
-        const p = pending.get(parsed.id);
-        if (!p) return;
+      const p = pending.get(parsed.id);
+      if (!p) return;
 
-        clearTimeout(p.tmr);
-        pending.delete(parsed.id);
+      clearTimeout(p.tmr);
+      pending.delete(parsed.id);
 
-        if (parsed.status !== 200) {
-          p.reject(new Error(`binance ws-api error: ${JSON.stringify(parsed)}`));
-        } else {
-          p.resolve(parsed.result);
-        }
-        return;
+      if (parsed.status !== 200) {
+        p.reject(new Error(`binance ws-api error: ${JSON.stringify(parsed)}`));
+      } else {
+        p.resolve(parsed.result);
       }
 
       // Later: user-stream / async events handling here
@@ -278,7 +353,7 @@ async function init( cfg ) {
       exState.onWsReconnect('binance-ws-api');
     },
 
-    onClose: ( code, reason ) => {
+    onClose: ( code: number, reason: Buffer ) => {
       exState.onWsState('binance-ws-api', WS_STATE.CLOSED);
       // log.warn({code, reason}, 'ws closed');
       wsRef = null;
@@ -286,15 +361,15 @@ async function init( cfg ) {
       openReject?.(new Error('ws closed during init'));
     },
 
-    onError: (err) => {
+    onError: (err: Error) => {
       exState.onWsError('binance-ws-api', err);
       openReject?.(err);
     },
 
-    delayOverrideMs: ({ type, code, reason, err }) => {
+    delayOverrideMs: ({ type, code, reason, err }: ReconnectDelayOverrideArgs): number | null => {
       if (type === 'close' && code === 1006) return 1000;
 
-      const r = (reason || '').toLowerCase();
+      const r = (reason || '');
       const e = (err?.message || '').toLowerCase();
 
       if (code === 1008 || r.includes('policy')) return 120_000;
@@ -315,14 +390,6 @@ async function init( cfg ) {
  * @param {object} cfg 
  * @returns {object} - {BNB:0.177, USDC:1234, ...}
  */
-async function getStartupBalances( cfg ) {
-  const params = makeSignedParams({ omitZeroBalances: true });
-  // log.debug({params}, `REQ account.status`);
-  const result = await sendReq(
-    'account.status',
-    params,
-    { timeoutMs: 10_000 }
-  );
   // log.debug({result}, `RES account.status`);
   // [2026-02-08 09:36:14.859 +0100] DEBUG (executor): RES account.status
   //   exchange: "binance"
@@ -367,22 +434,25 @@ async function getStartupBalances( cfg ) {
   //     ],
   //     "uid": 1212042824
   //   }
-  const out = {};
-  for (const b of (result?.balances ?? [])) {
-    out[b.asset] = Number(b.free ?? 0);
-  }
+export async function getStartupBalances(): Promise<Balances> {
+  const params = makeSignedParams({ omitZeroBalances: true });
+
+  const result = await sendReq<BinanceAccountStatusResult>('account.status', params, { timeoutMs: 10_000 });
+
+  const out: Balances = {};
+  for (const b of result?.balances ?? []) out[b.asset] = Number(b.free ?? 0);
   return out;
 }
 
 // test um zu pruefen ob rabatte auch wirklich hinterlegt sind
-async function getAccountCommission(sym) {
+async function getAccountCommission(sym : string) {
   // convert "BTC_USDT" -> "BTCUSDT" (if you already have symToBinance(), use that)
   const symbol = sym;
 
   const params = makeSignedParams({ symbol });
   log.debug({ params }, `REQ account.commission ${symbol}`);
 
-  const result = await sendReq('account.commission', params, { timeoutMs: 10_000 });
+  const result = await sendReq<BinanceAccountCommissionResult>('account.commission', params, { timeoutMs: 10_000 });
   //[2026-02-08 09:46:31.758 +0100] DEBUG (executor): RES account.commission AXSUSDC exchange: "binance" result: 
   // { "symbol": "AXSUSDC", 
   //   "standardCommission": 
@@ -425,7 +495,8 @@ async function subscribeUserData(/* handler */) {
   throw new Error('subscribeUserData not implemented');
 }
 
-async function placeOrder(test = true, orderParams ) {
+
+export async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
   if (test) {
     log.debug({}, 'TEST ORDER!!!!');
   } else {
@@ -433,18 +504,19 @@ async function placeOrder(test = true, orderParams ) {
   }
   // const method = test ? 'order.test' : 'order.place';
   const method = 'order.test';
-
-  const params = makeSignedParams({ 
-    symbol  : orderParams.symbol,
-    side    : orderParams.side,
-    type    : orderParams.type,
+  
+  const params = makeSignedParams({
+    symbol: orderParams.symbol,
+    side: orderParams.side,
+    type: orderParams.type,
     quantity: orderParams.quantity,
-    newClientOrderId : orderParams.orderId ? String(orderParams.orderId) : undefined,
-    computeCommissionRates:true // test
+    price: orderParams.price,
+    newClientOrderId: orderParams.orderId ? String(orderParams.orderId) : undefined,
+    computeCommissionRates: true
   });
 
-  log.debug({ method, params }, `REQ placeOrder`);
-  const result = await sendReq(method, params, { timeoutMs: 10_000 });
+  const r = await sendReq<BinancePlaceOrderResult>(method, params, { timeoutMs: 10_000 });
+
 
   // beispielantwort von binance api:
   //   FULL response type:
@@ -511,15 +583,37 @@ async function placeOrder(test = true, orderParams ) {
   //         }
   //     ]
   // }
-  log.debug({ result }, `RES placeOrder`);
+  const out : CommonOrderResult = {
+    exchange: 'binance',
+    symbol: r.symbol,
+    status: r.status,
+    orderId: r.orderId,
+    clientOrderId: r.clientOrderId,
+    transactTime: r.transactTime,
+    executedQty: r.executedQty,
+    cummulativeQuoteQty: r.cummulativeQuoteQty,
+    price: r.price,
+    fills: r.fills,
+  };
+  return out;
 }
 
-async function cancelOrder({sym, origClientOrderId}) {
-  const params = makeSignedParams({ 
-    symbol  : sym,
-    origClientOrderId
+export async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
+  const params = makeSignedParams({
+    symbol: p.symbol,
+    origClientOrderId: p.origClientOrderId,
+    orderId: p.orderId
   });
-  return await sendReq('order.cancel', params, { timeoutMs: 10_000 });
+
+  const r = await sendReq<BinanceCancelOrderResult>('order.cancel', params, { timeoutMs: 10_000 });
+
+  return {
+    exchange: 'binance',
+    symbol: r.symbol,
+    status: r.status,
+    orderId: r.orderId,
+    clientOrderId: r.clientOrderId ?? r.origClientOrderId,
+  };
 }
 
 module.exports = { 

@@ -57,3 +57,36 @@ CREATE UNIQUE INDEX uq_fill_dedupe
 ON trade_fill(exchange, trade_id)
 WHERE trade_id IS NOT NULL;
 
+
+
+CREATE TABLE IF NOT EXISTS public.trade_order_pair (
+  id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  intent_id  uuid        NOT NULL REFERENCES trade_intent(id),
+  ts         timestamptz NOT NULL DEFAULT now(),
+  symbol     text        NOT NULL,
+
+  buy_ex     text        NOT NULL,
+  buy_order_id text,
+  buy_status text,
+  buy_raw    jsonb,
+
+  sell_ex     text       NOT NULL,
+  sell_order_id text,
+  sell_status text,
+  sell_raw    jsonb,
+
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trade_order_pair_intent
+  ON public.trade_order_pair(intent_id);
+
+CREATE INDEX IF NOT EXISTS idx_trade_order_pair_ts
+  ON public.trade_order_pair(ts DESC);
+
+CREATE INDEX IF NOT EXISTS idx_trade_order_pair_buy
+  ON public.trade_order_pair(buy_ex, buy_order_id)
+  WHERE buy_order_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_trade_order_pair_sell
+  ON public.trade_order_pair(sell_ex, sell_order_id)
+  WHERE sell_order_id IS NOT NULL;

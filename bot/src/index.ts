@@ -1,25 +1,24 @@
-const fs = require('fs');
-const path = require('path');
+import path from 'path';
 
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
-const { getPublicIp } = require('./common/util');
-const { loadConfig } = require('./common/config');
-const { initLogger, getLogger } = require('./common/logger');
+import { getPublicIp } from './common/util';
+import { loadConfig } from './common/config';
+import { initLogger, getLogger } from './common/logger';
 initLogger();
 const log = getLogger('app');
-const { initExchangeState } = require('./common/exchange_state');
-const symbolinfo = require('./common/symbolinfo');
+import { initExchangeState } from './common/exchange_state';
+import * as symbolinfo from './common/symbolinfo';
 
-const db = require('./db');
+import db from './db';
 
-const startBinanceDepth = require('./collector/binance_depth');
-const startGateDepth = require('./collector/gate_depth');
-const startBitgetDepth = require('./collector/bitget_depth');
-const startDbIntentWriter = require('./db/intent_writer');
-const startExecutor = require('./executor');
-const startStrategy = require('./strategy');
-const { initTelegramBot } = require('./ui/telegram_bot');
+import startBinanceDepth from './collector/binance_depth';
+import startGateDepth from './collector/gate_depth';
+import startBitgetDepth from './collector/bitget_depth';
+import startDbIntentWriter from './db/intent_writer';
+import startExecutor from './executor';
+import startStrategy from './strategy';
+import { initTelegramBot } from './ui/telegram_bot';
 
 async function verifyPublicIp() {
   const expectedIps = process.env.EXPECTED_PUBLIC_IPS;

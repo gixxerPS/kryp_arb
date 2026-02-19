@@ -62,15 +62,36 @@ node index.js
 
 1. Private Key erzeugen (PEM)
 
+ED25519:
 ```bash
 openssl genpkey -algorithm ED25519 -out binance-ed25519-prv.pem
 ```
 
+RSA:
+```bash
+openssl genrsa -out bitget_rsa_private.pem 2048
+```
+
+
 2. Public Key ableiten (PEM)
 
+ED25519:
 ```bash
 openssl pkey -in binance-ed25519-prv.pem -pubout -out binance-ed25519-pub.pem
 ```
+
+RSA:
+```bash
+openssl rsa -in bitget_rsa_private.pem -pubout -out bitget_rsa_public.pem
+```
+
+3. Rechte absichern
+
+```bash
+chmod 600 bitget_rsa_private.pem
+chmod 644 bitget_rsa_public.pem
+```
+
 
 ## postgreSQL
 

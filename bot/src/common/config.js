@@ -4,7 +4,7 @@ const path = require('path');
 const { readJson } = require('./util');
 
 function absConfigPath(...parts) {
-  return path.join(__dirname, '../../config', ...parts);
+  return path.resolve(process.cwd(), 'config', ...parts);
 }
 
 let cached = null;

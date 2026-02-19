@@ -11,16 +11,6 @@ const appBus = require('../bus');
 
 const binanceAdapter = require('./adapter/binance_ws');
 
-function assetsFromSymbols(symbols) {
-  const s = new Set(['USDT']);
-  for (const sym of symbols) {
-    const [base, quote] = sym.split('_');
-    if (base) s.add(base);
-    if (quote) s.add(quote);
-  }
-  return [...s];
-}
-
 function getEnabledSymbols(cfg) {
   if (Array.isArray(cfg.symbols)) return cfg.symbols;
   if (cfg.pairs && typeof cfg.pairs === 'object') {
@@ -39,7 +29,6 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   const nowFn = deps.nowFn ?? (() => Date.now());
 
   const enabledSymbols = getEnabledSymbols(cfg);
-  const assetsWanted = assetsFromSymbols(enabledSymbols);
 
   const exStateArr = exState.getAllExchangeStates();
 
@@ -78,7 +67,7 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   // startup balances
   for (const [ex, ad] of Object.entries(adapters)) {
     state[ex] = {
-      balances : await ad.getStartupBalances(cfg )
+      balances : await ad.getStartupBalances( )
     }
   }
 
@@ -94,7 +83,7 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   //   orderId: '123456789',
   // });
 
-  // später:
+  // spaeter:
   // for (const [ex, ad] of Object.entries(adapters)) {
   //   await ad.subscribeUserData((evt) => onUserEvent(ex, evt));
   // }
@@ -184,19 +173,36 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
             sym,
             buyEx,
             sellEx,
-            buyQ               : buyR.cummulativeQuoteQty,
-            buyP               : buyR.price,
-            buyCommission      : buyR.commission,
-            buyCommissionAsset : buyR.commissionAsset,
-            sellQ              : sellR.cummulativeQuoteQty,
-            sellP              : sellR.price,
-            sellCommission     : sellR.commission,
-            sellCommissionAsset: sellR.commissionAsset,
+            buyQ               : buyR.value.cummulativeQuoteQty,
+            buyP               : buyR.value.price,
+            buyCommission      : buyR.value.commission,
+            buyCommissionAsset : buyR.value.commissionAsset,
+            sellQ              : sellR.value.cummulativeQuoteQty,
+            sellP              : sellR.value.price,
+            sellCommission     : sellR.value.commission,
+            sellCommissionAsset: sellR.value.commissionAsset,
           },
           'orders executed'
         );
         // TODO: monitor fills / reconcile, invalidate balances snapshot
-        log.warn({symbol:sym, intentId: id, buyEx, sellEx}, `need to update balances. not implemented yet`);
+        const buyExQuoteKey = getEx(sym, buyEx).quote; // USDC
+        state[buyEx].balances[buyExQuoteKey] -= intent.q; // bought 350 AXS for 500 USDC
+        const buyExBaseKey = getEx(sym, buyEx).base; // AXS
+        state[buyEx].balances[buyExBaseKey] += targetQty; // bought 350 AXS for 500 USDC
+
+        const sellExQuoteKey = getEx(sym, sellEx).quote; // USDC
+        state[sellEx].balances[sellExQuoteKey] += intent.q; // sold 350 AXS for 500 USDC
+        const sellExBaseKey = getEx(sym, buyEx).base; // AXS
+        state[sellEx].balances[sellExBaseKey] -= targetQty; // sold 350 AXS for 500 USDC
+      
+        bus.emit('trade:orders_ok', {
+          intent_id: id,
+          ts: new Date().toISOString(),
+          symbol: symCanon,
+          buy:  normalizeOrderResult(buyR.value, 'buy',  buyEx,  symCanon),
+          sell: normalizeOrderResult(sellR.value, 'sell', sellEx, symCanon),
+        });
+      
       } else if (buyOk && !sellOk) {
         log.error({
           intentId: id,
@@ -212,9 +218,9 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
         // Minimal: versuchen BUY zu canceln (wenn market sofort fillt, bringt cancel nichts, 
         // aber bei rejected/partial schon)
         const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
-          symbol: buyParams.symbol, origClientOrderId: buyParams.clientOrderId }) );
+          symbol: buyParams.symbol, origClientOrderId: buyParams.orderId }) );
         if (!resCancelBuy.ok) {
-          log.warn({ intentId: id, buyEx, sym, orderId: buyParams.clientOrderId, cancelErr: resCancelBuy.errObj,
+          log.warn({ intentId: id, buyEx, sym, orderId: buyParams.orderId, cancelErr: resCancelBuy.errObj,
            }, 'cancel buy failed');
           // wenn buy auch nicht mehr gecancelt werden konnte, dann wieder verkaufen, da sonst die
           // bestaende weglaufen
@@ -227,7 +233,7 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
             })
           );
           if (!resResell.ok) {
-            log.warn({ intentId: id, buyEx, sym, orderId: buyParams.clientOrderId }, 'resell failed');
+            log.warn({ intentId: id, buyEx, sym, orderId: buyParams.orderId }, 'resell failed');
           }
         }
       } else if (!buyOk && sellOk) {
@@ -245,9 +251,9 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
         // Minimal: versuchen SELL zu canceln (wenn market sofort fillt, bringt cancel nichts, 
         // aber bei rejected/partial schon)
         const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
-          symbol: sellParams.symbol, origClientOrderId: sellParams.clientOrderId }) );
+          symbol: sellParams.symbol, origClientOrderId: sellParams.orderId }) );
         if (!resCancelSell.ok) {
-          log.warn({ intentId: id, sellEx, sym, orderId: sellParams.clientOrderId, cancelErr: resCancelSell.errObj }, 
+          log.warn({ intentId: id, sellEx, sym, orderId: sellParams.orderId, cancelErr: resCancelSell.errObj }, 
             'cancel sell failed');
 
           // wenn sell auch nicht mehr gecancelt werden konnte, dann wieder kaufen, da sonst die
@@ -257,10 +263,10 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
               side: 'BUY',
               type: 'MARKET',
               quantity: sellParams.quantity,
-              orderId: `${sellParams.clientOrderId}-RB`,
+              orderId: `${sellParams.orderId}-RB`,
             }) );
           if (!resRebuy.ok) {
-            log.warn({ intentId: id, sellEx, sym, orderId: sellParams.clientOrderId,  rebuyErr: resRebuy.errObj, }, 
+            log.warn({ intentId: id, sellEx, sym, orderId: sellParams.orderId,  rebuyErr: resRebuy.errObj, }, 
               'rebuy failed');
           }
         }
