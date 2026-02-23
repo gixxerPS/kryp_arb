@@ -6,7 +6,8 @@ SELECT
   size_quote,
   target_qty,
   theoretical_buy_px,
-  theoretical_sell_px
+  theoretical_sell_px,
+  created_at
 FROM trade_intent
 WHERE created_at >= now() - INTERVAL '24 hours'
 ORDER BY created_at DESC;

@@ -1,5 +1,6 @@
 import type { AppConfig } from './config';
 import type { ExchangeId, OrderSide, OrderType } from './common';
+import type { ExSymbolInfo } from './symbolinfo';
 
 export type Balances = Record<string, number>;
 
@@ -10,7 +11,7 @@ export type PendingEntry = {
 };
 
 export interface PlaceOrderParams {
-  symbol: string;          // exchange orderKey (AXSUSDC)
+  symbol: string | null;          // exchange orderKey (AXSUSDC)
   side: OrderSide;
   type: OrderType;
   quantity: number | string; // du gibst aktuell number; später besser string
@@ -19,7 +20,7 @@ export interface PlaceOrderParams {
 }
 
 export interface CancelOrderParams {
-  symbol: string;
+  symbol: string | null;
   origClientOrderId?: string;
   orderId?: number | string;
 }
@@ -47,7 +48,7 @@ export interface CommonOrderResult {
 export interface ExecutorAdapter {
   init(cfg: AppConfig): Promise<void>;
 
-  getStartupBalances(cfg: AppConfig): Promise<Balances>;
+  getStartupBalances(): Promise<Balances>;
 
   placeOrder(
     test: boolean,
@@ -58,3 +59,10 @@ export interface ExecutorAdapter {
     params: CancelOrderParams
   ): Promise<CommonOrderResult>;
 }
+
+export type ExchangeRuntimeState = {
+  balances: Balances;
+};
+
+export type RuntimeState = Partial<Record<ExchangeId, ExchangeRuntimeState>>;
+

@@ -2,8 +2,17 @@ export type ExchangeId = 'binance' | 'gate' | 'bitget';
 
 export type StrategyName = 'arbitrage_v1';
 
-export type OrderSide = 'BUY' | 'SELL';
-export type OrderType = 'LIMIT' | 'MARKET';
+export const OrderSides = {
+    BUY: 'BUY',
+    SELL: 'SELL'
+} as const;
+export type OrderSide = typeof OrderSides[keyof typeof OrderSides];
+
+export const OrderTypes = {
+    LIMIT: 'LIMIT',
+    MARKET: 'MARKET'
+} as const;
+export type OrderType = typeof OrderTypes[keyof typeof OrderTypes];
 
 export type WsParamValue = string | number | boolean | undefined | null;
 export type WsParams = Record<string, WsParamValue>;

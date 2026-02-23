@@ -1,8 +1,11 @@
 import path from 'path';
 
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
 
 import { getPublicIp } from './common/util';
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
+
 import { loadConfig } from './common/config';
 import { initLogger, getLogger } from './common/logger';
 initLogger();
@@ -37,7 +40,7 @@ async function verifyPublicIp() {
 
 async function main() {
   const { cfg, fees } = loadConfig();
-  log.debug({ cfg }, 'startup config');
+  // log.debug({ cfg }, 'startup config');
   log.info({  }, 'starting');
 
   // u.a. symbolinfo je exchange {AXS_USDT:{binance:{...}, gate:{...}, bitget:{...}}}
@@ -49,7 +52,7 @@ async function main() {
     log
   });
 
-  log.info({symInfoIdx:symbolinfo.getIndex(), symInfoRevIdx:symbolinfo.getReverseIndex()});
+  // log.info({symInfoIdx:symbolinfo.getIndex(), symInfoRevIdx:symbolinfo.getReverseIndex()});
 
   await verifyPublicIp();
 
@@ -65,17 +68,17 @@ async function main() {
   if (cfg.exchanges.binance.enabled) {
     startBinanceDepth();
   } else {
-    log.warn({exchange:'binance'}, 'exchange disabled');
+    log.warn({exchange:'binance'}, 'exchange disabled. no data collection');
   }
   if (cfg.exchanges.gate.enabled) {
     startGateDepth();
   } else {
-    log.warn({exchange:'gate'}, 'exchange disabled');
+    log.warn({exchange:'gate'}, 'exchange disabled. no data collection');
   }
   if (cfg.exchanges.bitget.enabled) {
     startBitgetDepth();
   } else {
-    log.warn({exchange:'bitget'}, 'exchange disabled');
+    log.warn({exchange:'bitget'}, 'exchange disabled. no data collection');
   }
 
   startStrategy(cfg, fees);

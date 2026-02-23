@@ -1,62 +1,77 @@
-'use strict';
-
-const { getLogger } = require('../common/logger');
+import { getLogger } from '../common/logger';
 const log = getLogger('executor');
-const { getExState } = require('../common/exchange_state');
-const { getEx } = require('../common/symbolinfo');
-const { getExchange, getBotCfg } = require('../common/config');
-const { safeCall } = require('../common/async');
+import { getExState } from '../common/exchange_state';
+import { getEx } from '../common/symbolinfo';
+import { getExchange, getBotCfg } from '../common/config';
+import { safeCall, isFulfilled } from '../common/async';
+import { marketOrderPrecheckOk } from './order_precheck';
 
-const appBus = require('../bus');
+import * as appBus from '../bus';
+import { adapter as binanceAdapter } from './adapter/binance_ws';
+import { adapter as gateAdapter } from './adapter/gate_ws';
 
-const binanceAdapter = require('./adapter/binance_ws');
+import type { AppConfig } from '../types/config';
+import type { ExchangeId, Balances } from '../types/common';
+import { OrderTypes, OrderSides } from '../types/common';
+import type { ExecutorAdapter, RuntimeState, PlaceOrderParams } from '../types/executor';
+import type { TradeIntent } from '../types/strategy';
 
-function getEnabledSymbols(cfg) {
-  if (Array.isArray(cfg.symbols)) return cfg.symbols;
-  if (cfg.pairs && typeof cfg.pairs === 'object') {
-    return Object.entries(cfg.pairs).filter(([, v]) => v?.enabled !== false).map(([k]) => k);
-  }
-  if (Array.isArray(cfg.routes)) {
-    return cfg.routes.filter(r => r?.enabled !== false).map(r => r.sym).filter(Boolean);
-  }
-  return [];
-}
+type Deps = {
+  bus?: any;
+  exState?: any;
+  adapters?: Partial<Record<ExchangeId, ExecutorAdapter>>;
+  nowFn?: () => number;
+};
 
-module.exports = async function startExecutor({ cfg }, deps = {}) {
+
+
+// function getEnabledSymbols(cfg: AppConfig) {
+//   if (Array.isArray(cfg.symbols)) return cfg.symbols;
+//   if (cfg.pairs && typeof cfg.pairs === 'object') {
+//     return Object.entries(cfg.pairs).filter(([, v]) => v?.enabled !== false).map(([k]) => k);
+//   }
+//   if (Array.isArray(cfg.routes)) {
+//     return cfg.routes.filter(r => r?.enabled !== false).map(r => r.sym).filter(Boolean);
+//   }
+//   return [];
+// }
+
+export default async function startExecutor(
+  { cfg }: { cfg: AppConfig },
+  deps: Deps = {}
+) {
   const bus = deps.bus ?? appBus;
   const exState = deps.exState ?? getExState();
   const adaptersFromDeps = deps.adapters;
   const nowFn = deps.nowFn ?? (() => Date.now());
 
-  const enabledSymbols = getEnabledSymbols(cfg);
+  // const enabledSymbols = getEnabledSymbols(cfg);
 
   const exStateArr = exState.getAllExchangeStates();
 
   const CFG_AUTO_FIX_FAILED_ORDERS = getBotCfg().auto_fix_failed_orders;
   
   // adapters ermitteln fuer exchanges die bei start enabled sind
-  const adapters = adaptersFromDeps ?? {};
+  const adapters: Partial<Record<ExchangeId, ExecutorAdapter>> = deps.adapters ?? {};
   for (const ex of exStateArr) {
-    if (ex.enabled) {
-      if (ex.exchange === 'binance') {
-        adapters.binance = binanceAdapter;
-      } else if (ex.exchange === 'bitget') {
-        ;//adapters.bitget = binanceAdapter;
-      } else if (ex.exchange === 'gate') {
-        ;//adapters.gate = binanceAdapter;
-      }
+    if (!ex.enabled) {
+      return;
     }
-  }
-
-  // init adapters
-  for (const [ex, ad] of Object.entries(adapters)) {
-    await ad.init(cfg);
+    if (ex.exchange === 'binance') {
+      adapters.binance = binanceAdapter;
+      await adapters.binance.init(cfg);
+    } else if (ex.exchange === 'bitget') {
+      ;//adapters.bitget = binanceAdapter;
+    } else if (ex.exchange === 'gate') {
+      adapters.gate = gateAdapter;
+      await adapters.gate.init(cfg);
+    }
   }
 
   // test um zu pruefen ob rabatte auch wirklich hinterlegt sind
   // adapters.binance.getAccountCommission('AXSUSDC');
 
-  const state = {
+  const state: RuntimeState = {
     // binance : {
     //   balances : {BNB:0.177, USDC:1234, ...},
     //   orderRateLimits: [{interval:'SECOND', intervalNum:10, limit:50, count:1}, 
@@ -66,11 +81,10 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
    
   // startup balances
   for (const [ex, ad] of Object.entries(adapters)) {
-    state[ex] = {
+    state[ex as ExchangeId] = {
       balances : await ad.getStartupBalances( )
     }
   }
-
   log.debug({state}, 'initialized');
 
   // TEST
@@ -91,18 +105,24 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   // TODO: so soll die architektur spaeter aussehen:
   let busy = false;
 
-  async function handleIntent(intent) {
+  async function handleIntent(intent: TradeIntent) {
     if (busy) {
       log.warn({ reason:'executor busy', intent }, 'dropping intent');
       return;
     }
     busy = true;
     try {
-      const { sym, buyEx, sellEx, targetQty, q, id } = intent; // sym ist canonical
+      const { symbol, buyEx, sellEx, targetQty, q, id } = intent; // sym ist canonical
       const buyAd = adapters[buyEx];
       const sellAd = adapters[sellEx];
       if (!buyAd || !sellAd) {
-        log.warn({ reason:'adapter missing', intent, buyEx, sellEx }, 'dropping intent');
+        log.error({ reason:'adapter missing', intent, buyEx, sellEx }, 'dropping intent');
+        return;
+      }
+      const buyExSymInfo = getEx(symbol, buyEx);
+      const sellExSymInfo = getEx(symbol, sellEx);
+      if (!buyExSymInfo || !sellExSymInfo) {
+        log.error({ symbol, buyEx, sellEx }, 'symbolinfo missing');
         return;
       }
       
@@ -113,8 +133,9 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
         side: 'BUY',
         targetQty,
         q,
-        prepSymbolInfo: getEx(sym, buyEx),
+        prepSymbolInfo: buyExSymInfo,
         exState:  state[buyEx],
+        balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
         feeRate: getExchange(buyEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
       if (!resBuyCheck.ok) {
@@ -129,8 +150,9 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
         side: 'SELL',
         targetQty,
         q,
-        prepSymbolInfo: getEx(sym, sellEx),
+        prepSymbolInfo: sellExSymInfo,
         exState:  state[sellEx],
+        balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
         feeRate: getExchange(sellEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
       if (!resSellCheck.ok) {
@@ -141,18 +163,18 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
       //=======================================================================
       // 2) orders schicken (parallel)
       //=======================================================================
-      const buyParams = {
-        type: 'MARKET',
-        side: 'BUY',
-        symbol:getEx(sym, buyEx).orderKey,
+      const buyParams: PlaceOrderParams = {
+        type: OrderTypes.MARKET,
+        side: OrderSides.BUY,
+        symbol: buyExSymInfo.orderKey,
         quantity:targetQty,
         orderId: id,
       };
       const buyPO  = buyAd.placeOrder(false, buyParams); 
-      const sellParams = {
-        type: 'MARKET',
-        side: 'SELL',
-        symbol:getEx(sym, sellEx).orderKey,
+      const sellParams: PlaceOrderParams = {
+        type: OrderTypes.MARKET,
+        side: OrderSides.SELL,
+        symbol:sellExSymInfo.orderKey,
         quantity:targetQty,
         orderId: id,
       };
@@ -163,54 +185,70 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
       //=======================================================================
       // 3) exchange antwort auswerten
       //=======================================================================
-      const buyOk  = buyR.status === 'fulfilled' // promise result
-        && buyR.value?.status == 'FILLED';       // order result
-      const sellOk = sellR.status === 'fulfilled' // promise result
-        && sellR.value?.status == 'FILLED';      // order result
+      const buyOk  = isFulfilled(buyR) // promise result
+        && buyR.value.status === 'FILLED';       // order result
+      const sellOk = isFulfilled(sellR) // promise result
+        && sellR.value.status === 'FILLED';      // order result
       if (buyOk && sellOk) {
         log.debug({
-            intentId: id,
-            sym,
+            id,
+            symbol,
             buyEx,
             sellEx,
             buyQ               : buyR.value.cummulativeQuoteQty,
             buyP               : buyR.value.price,
-            buyCommission      : buyR.value.commission,
-            buyCommissionAsset : buyR.value.commissionAsset,
+            // buyCommission      : buyR.value.commission,
+            // buyCommissionAsset : buyR.value.commissionAsset,
             sellQ              : sellR.value.cummulativeQuoteQty,
             sellP              : sellR.value.price,
-            sellCommission     : sellR.value.commission,
-            sellCommissionAsset: sellR.value.commissionAsset,
+            // sellCommission     : sellR.value.commission,
+            // sellCommissionAsset: sellR.value.commissionAsset,
           },
           'orders executed'
         );
         // TODO: monitor fills / reconcile, invalidate balances snapshot
-        const buyExQuoteKey = getEx(sym, buyEx).quote; // USDC
-        state[buyEx].balances[buyExQuoteKey] -= intent.q; // bought 350 AXS for 500 USDC
-        const buyExBaseKey = getEx(sym, buyEx).base; // AXS
-        state[buyEx].balances[buyExBaseKey] += targetQty; // bought 350 AXS for 500 USDC
+        const buyExQuoteKey = buyExSymInfo.quote; // USDC
+        const buyExBaseKey = buyExSymInfo.base; // AXS
+        let buyExBalanceQuote = state[buyEx]?.balances[buyExQuoteKey];
+        let buyExBalanceBase = state[buyEx]?.balances[buyExBaseKey];
+        if (!buyExBalanceQuote || !buyExBalanceBase) { // shoult not happen
+          log.error({buyEx, buyExQuoteKey, buyExBaseKey}, 'invalid buy ex');
+          return;
+        }
+        buyExBalanceQuote -= intent.q; // bought 350 AXS for 500 USDC
+        buyExBalanceBase += targetQty; // bought 350 AXS for 500 USDC
 
-        const sellExQuoteKey = getEx(sym, sellEx).quote; // USDC
-        state[sellEx].balances[sellExQuoteKey] += intent.q; // sold 350 AXS for 500 USDC
-        const sellExBaseKey = getEx(sym, buyEx).base; // AXS
-        state[sellEx].balances[sellExBaseKey] -= targetQty; // sold 350 AXS for 500 USDC
+        const sellExQuoteKey = sellExSymInfo.quote; // USDC
+        const sellExBaseKey = sellExSymInfo.base; // AXS
+        let sellExBalanceQuote = state[sellEx]?.balances[sellExQuoteKey];
+        let sellExBalanceBase = state[sellEx]?.balances[sellExBaseKey];
+        if (!sellExBalanceQuote || !sellExBalanceBase) { // shoult not happen
+          log.error({buyEx, sellExQuoteKey, sellExBaseKey}, 'invalid sell ex');
+          return;
+        }
+        sellExBalanceQuote += intent.q; // sold 350 AXS for 500 USDC
+        sellExBalanceBase -= targetQty; // sold 350 AXS for 500 USDC
       
         bus.emit('trade:orders_ok', {
-          intent_id: id,
+          id,
           ts: new Date().toISOString(),
-          symbol: symCanon,
-          buy:  normalizeOrderResult(buyR.value, 'buy',  buyEx,  symCanon),
-          sell: normalizeOrderResult(sellR.value, 'sell', sellEx, symCanon),
+          symbol,
+          buyEx,
+          buyQ               : buyR.value.cummulativeQuoteQty,
+          buyP               : buyR.value.price,
+          sellQ              : sellR.value.cummulativeQuoteQty,
+          sellP              : sellR.value.price,
+          sellEx
         });
       
       } else if (buyOk && !sellOk) {
         log.error({
-          intentId: id,
-          sym,
+          id,
+          symbol,
           buyEx,
           sellEx,
-          sellErr: sellR.ok ? null : sellR.errObj,
-          sellRes: sellR.ok ? sellR.value : null,
+          // sellErr: sellR.ok ? null : sellR.errObj,
+          // sellRes: sellR.ok ? sellR.value : null,
         }, 'sell failed after buy placed');
         if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
           return;
@@ -220,30 +258,30 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
         const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
           symbol: buyParams.symbol, origClientOrderId: buyParams.orderId }) );
         if (!resCancelBuy.ok) {
-          log.warn({ intentId: id, buyEx, sym, orderId: buyParams.orderId, cancelErr: resCancelBuy.errObj,
+          log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId,
            }, 'cancel buy failed');
           // wenn buy auch nicht mehr gecancelt werden konnte, dann wieder verkaufen, da sonst die
           // bestaende weglaufen
-          const resResell = await safeCall(() => buyAd.placeOrder({
-              symbol: buyParams.symbol,
-              side: 'SELL',
-              type: 'MARKET',
-              quantity: buyParams.quantity,
-              orderId: `${buyParams.clientOrderId}-RS`,
-            })
-          );
+          const resellParams : PlaceOrderParams = {
+            symbol: buyParams.symbol,
+            side: OrderSides.SELL,
+            type: OrderTypes.MARKET,
+            quantity: buyParams.quantity,
+            orderId: `${buyParams.orderId}-RS`,
+          }
+          const resResell = await safeCall(() => buyAd.placeOrder(false, resellParams) );
           if (!resResell.ok) {
-            log.warn({ intentId: id, buyEx, sym, orderId: buyParams.orderId }, 'resell failed');
+            log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId }, 'resell failed');
           }
         }
       } else if (!buyOk && sellOk) {
         log.error({
-          intentId: id,
-          sym,
+          id,
+          symbol,
           buyEx,
           sellEx,
-          buyErr: buyR.ok ? null : buyR.errObj,
-          buyRes: buyR.ok ? buyR.value : null,
+          // buyErr: buyR.ok ? null : buyR.errObj,
+          // buyRes: buyR.ok ? buyR.value : null,
         }, 'buy failed after sell placed');
         if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
           return;
@@ -253,31 +291,32 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
         const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
           symbol: sellParams.symbol, origClientOrderId: sellParams.orderId }) );
         if (!resCancelSell.ok) {
-          log.warn({ intentId: id, sellEx, sym, orderId: sellParams.orderId, cancelErr: resCancelSell.errObj }, 
+          log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId }, 
             'cancel sell failed');
 
           // wenn sell auch nicht mehr gecancelt werden konnte, dann wieder kaufen, da sonst die
           // bestaende weglaufen
-          const resRebuy = await safeCall(() => sellAd.placeOrder({
-              symbol: sellParams.symbol,
-              side: 'BUY',
-              type: 'MARKET',
-              quantity: sellParams.quantity,
-              orderId: `${sellParams.orderId}-RB`,
-            }) );
+          const reBuyParams : PlaceOrderParams = {
+            symbol: sellParams.symbol,
+            side: OrderSides.BUY,
+            type: OrderTypes.MARKET,
+            quantity: sellParams.quantity,
+            orderId: `${sellParams.orderId}-RB`,
+          }
+          const resRebuy = await safeCall(() => sellAd.placeOrder(false, reBuyParams) );
           if (!resRebuy.ok) {
-            log.warn({ intentId: id, sellEx, sym, orderId: sellParams.orderId,  rebuyErr: resRebuy.errObj, }, 
+            log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId, }, 
               'rebuy failed');
           }
         }
       } else { // beide failed
         log.warn({
-            intentId: id,
-            sym,
+            id,
+            symbol,
             buyEx,
             sellEx,
-            buyErr: buyR.reason,
-            sellErr: sellR.reason,
+            // buyErr: buyR.reason,
+            // sellErr: sellR.reason,
           }, 'both orders failed');
       }
     } catch (err) {
@@ -296,17 +335,10 @@ module.exports = async function startExecutor({ cfg }, deps = {}) {
   //   });
   // });
 
-  function getStatus() {
-    return {
-      startedAtMs: state.startedAtMs,
-      balancesByEx: state.balancesByEx,
-    };
-  }
   log.debug({ }, 'executor started');
   return { 
     state, 
     _state: state,      // optional (wenn du intern/Debug brauchst)
     _adapters: adapters, // optional (für Debug/Tests)
-    getStatus 
   };
 }

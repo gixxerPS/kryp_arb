@@ -1,84 +1,9 @@
-/**
- * Binance Spot Executor Adapter (WebSocket, HMAC)
- * ===============================================
- *
- * Rolle im System
- * ---------------
- * Dieses Modul kapselt **alle Binance-spezifischen Executor-Funktionen**
- * für den Spot-Handel.
- *
- * Es ist die **einzige Stelle**, die:
- *   - private Binance WebSocket APIs nutzt
- *   - Orders platziert / verwaltet
- *   - User-State (Balances, Fills) von Binance entgegennimmt
- *
- * Authentifizierung (ED25519 – aktuell)
- *
- * Signatur-Regeln (Binance WS API):
- * 1) Alle params OHNE `signature`
- * 2) Alphabetisch nach Key sortieren
- * 3) UTF-8 Payload: key=value&key2=value2
- * 4) ED25519-SHA256 mit API_SECRET
- * 5) Ergebnis als HEX-String → `signature`
- *
- * Aktuelle Features (Phase 1)
- * ---------------------------
- * ✔ Einmaliger Balance-Snapshot beim Executor-Start
- *   - WS API: `account.status`
- *   - Liefert: free / locked pro Asset
- *   - Reduziert auf:
- *       * USDT
- *       * Base-Assets aktiver Symbolpaare
- *
- * Geplante Features (Phase 2)
- * ---------------------------
- *
- * 1) User Data Streams (WebSocket)
- *    - Account Updates (Balance Changes)
- *    - Execution Reports (Trades / Fills)
- *    - Order State Transitions
- *
- *    Ziel:
- *    - Lokalen Executor-State **event-basiert** pflegen
- *    - Kein periodisches Balance-Polling
- *
- * 2) Order Management
- *    - placeOrder (LIMIT / MARKET)
- *    - cancelOrder
- *    - optional: batchOrders
- *
- *    Anforderungen:
- *    - idempotente Client-Order-IDs
- *    - saubere Zuordnung zu Trade-Intents
- *    - deterministische Error-Behandlung
- *
- * 3) Exchange-interner State
- *    - openOrders
- *    - lastFillTs
- *    - pendingQty pro Symbol
- *
- *    → wird vom globalen Executor-State konsumiert,
- *      aber **hier gepflegt**
- *
- * Architektur-Leitlinien
- * ----------------------
- * - EIN WebSocket pro Zweck:
- *     * Control / Orders / account.status
- *     * User-Data-Stream
- *
- * - Backpressure-fähig:
- *     * WS reconnect
- *     * Sequenz-IDs / event ordering
- *
- * - Deterministisch:
- *     * gleiche Inputs → gleiche WS Requests
- */
+
 import crypto from 'crypto';
 import WebSocket from 'ws';
-import fs from 'fs';
 
 import { getLogger } from '../../common/logger';
-const log = getLogger('executor').child({ exchange: 'binance' });
+const log = getLogger('executor').child({ exchange: 'gate' });
 
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
@@ -90,10 +15,13 @@ import type {
   PlaceOrderParams, 
   CancelOrderParams,
   PendingEntry, 
-  ExecutorAdapter} from '../../types/executor';
+  ExecutorAdapter } from '../../types/executor';
 import type { AppConfig } from '../../types/config';
-import type { WsParams, ExchangeId } from '../../types/common';
+import type { WsParams } from '../../types/common';
 import type { ReconnectDelayOverrideArgs } from '../../types/ws_reconnect';
+
+type GateSpotAccount = { currency: string; available: string; locked: string };
+
 
 type BinanceBalance = { asset: string; free: string; locked: string };
 
@@ -138,30 +66,35 @@ type SignedParams = WsParams & {
   signature: string;
 };
 
-type BinanceAccountCommissionResult = {
-  symbol: string;
-
-  standardCommission?: {
-    maker?: string;
-    taker?: string;
-    buyer?: string;
-    seller?: string;
-  };
-
-  commissionRates?: {
-    maker?: string;
-    taker?: string;
-    buyer?: string;
-    seller?: string;
-  };
-
-  discount?: {
-    enabledForAccount?: boolean;
-    enabledForSymbol?: boolean;
-    discountAsset?: string;
-    discount?: string;
-  };
+function sha512Hex(data: string): string {
+    return crypto.createHash('sha512').update(data).digest('hex');
 }
+
+function hmacSha512Hex(secret: string, data: string): string {
+    return crypto.createHmac('sha512', secret).update(data).digest('hex');
+}
+
+function gateRestHeaders(opts: {
+    apiKey: string;
+    apiSecret: string;
+    method: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH';
+    prefix: string;          // usually '/api/v4'
+    path: string;            // e.g. '/spot/accounts'
+    query: string;           // e.g. 'currency=USDT' or ''
+    body: string;            // '' for GET
+    timestampSec?: number;
+  }) {
+    const ts = opts.timestampSec ?? Math.floor(Date.now() / 1000);
+    const bodyHash = sha512Hex(opts.body ?? '');
+    const signStr = `${opts.method}\n${opts.prefix}${opts.path}\n${opts.query}\n${bodyHash}\n${ts}`;
+    const sign = hmacSha512Hex(opts.apiSecret, signStr);
+  
+    return {
+      KEY: opts.apiKey,
+      Timestamp: String(ts),
+      SIGN: sign,
+    };
+  }
 
 function buildPayload(params: Record<string, string | number | boolean | undefined | null>): string {
   return Object.keys(params)
@@ -203,6 +136,9 @@ let mgr : ReturnType<typeof createReconnectWS> | null = null;
 let wsRef : WebSocket | null = null; // current websocket instance from mgr.connect()
 let ed25519PrivateKeyPem : string  = '';     // string
 const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject, tmr }
+const apiKey = process.env.GATE_API_KEY!;
+const apiSecret = process.env.GATE_API_SECRET!;
+if (!apiKey || !apiSecret) throw new Error('Missing Gate API credentials');
 
 /**
  * @brief Send a WS-API request and await response by id.
@@ -222,13 +158,13 @@ const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject
 function sendReq<T>(method: string, params: Record<string, unknown>, 
   { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
-    return Promise.reject(new Error(`binance ws not open (method=${method})`));
+    return Promise.reject(new Error(`gate ws not open (method=${method})`));
   }
   const id = crypto.randomUUID();
   return new Promise<T>((resolve, reject) => {
     const tmr = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`binance ws timeout method=${method} id=${id}`));
+      reject(new Error(`gate ws timeout method=${method} id=${id}`));
     }, timeoutMs);
 
     pending.set(id, { resolve, reject, tmr });
@@ -267,24 +203,16 @@ let openPromise: Promise<void> | undefined;
 async function init(cfg: AppConfig): Promise<void> {
   if (openPromise) return openPromise; 
 
-  if (!process.env.BINANCE_ED25519_PRIVATE_KEY_FILE) {
-    throw new Error('Binance Ed25519 credentials missing in .env');
-  }
-  ed25519PrivateKeyPem = fs.readFileSync(
-    process.env.BINANCE_ED25519_PRIVATE_KEY_FILE,
-    'utf8'
-  );
-
   openPromise = new Promise<void>((res, rej) => {
     openResolve = res;
     openReject = rej;
   });
 
   const exState = getExState();
-  const url = process.env.BINANCE_WS_URL ?? 'wss://ws-api.binance.com:443/ws-api/v3';
+  const url = process.env.GATE_WS_URL ?? 'wss://api.gateio.ws/ws/v4/';
 
   mgr = createReconnectWS({
-    name: 'binance-ws-api',
+    name: 'gate-ws-api',
     log,
     staleTimeoutMs : null, // executor bekommt keine regelmaessigen nachrichten sondern ist in lauerstellung
 
@@ -296,8 +224,8 @@ async function init(cfg: AppConfig): Promise<void> {
 
     onOpen: async (ws: WebSocket) => {
       wsRef = ws;
-      exState.onWsState('binance-ws-api', WS_STATE.OPEN);
-      log.debug({ url }, 'binance ws-api connected');
+      exState.onWsState('gate-ws-api', WS_STATE.OPEN);
+      log.debug({ url }, 'gate ws-api connected');
       if (openResolve) {
         openResolve();
         openResolve = null;
@@ -306,48 +234,44 @@ async function init(cfg: AppConfig): Promise<void> {
     },
 
     onMessage: (msg: Buffer) => {
-      exState.onWsMessage('binance-ws-api');
+      exState.onWsMessage('gate-ws-api');
       let parsed: any;
       try {
         parsed = JSON.parse(msg.toString());
         log.debug({msg:parsed}, 'onMessage');
       } catch (e) {
-        log.error({ err: e }, 'binance ws-api message parse error');
+        log.error({ err: e }, 'gate ws-api message parse error');
         return;
       }
 
+      if (parsed?.error) {
+        log.warn({ msg: parsed }, 'gate ws-api error frame');
+      }
+
+      // Keep the correlation path for future request/response style calls
       if (!parsed?.id) return;
-      // Correlated WS-API response (has id)
       const p = pending.get(parsed.id);
       if (!p) return;
 
       clearTimeout(p.tmr);
       pending.delete(parsed.id);
-
-      if (parsed.status !== 200) {
-        p.reject(new Error(`binance ws-api error: ${JSON.stringify(parsed)}`));
-      } else {
-        p.resolve(parsed.result);
-      }
-
-      // Later: user-stream / async events handling here
-      // handler(parsed)
+      p.resolve(parsed.result);
     },
 
     onReconnect: () => {
-      exState.onWsReconnect('binance-ws-api');
+      exState.onWsReconnect('gate-ws-api');
     },
 
-    onClose: ( code: number, reason: Buffer ) => {
-      exState.onWsState('binance-ws-api', WS_STATE.CLOSED);
+    onClose: ( code: number, reason: string ) => {
+      exState.onWsState('gate-ws-api', WS_STATE.CLOSED);
       // log.warn({code, reason}, 'ws closed');
       wsRef = null;
-      rejectAllPending(new Error(`binance ws closed code=${code} reason=${reason || ''}`));
+      rejectAllPending(new Error(`gate ws closed code=${code} reason=${reason || ''}`));
       openReject?.(new Error('ws closed during init'));
     },
 
     onError: (err: Error) => {
-      exState.onWsError('binance-ws-api', err);
+      exState.onWsError('gate-ws-api', err);
       openReject?.(err);
     },
 
@@ -365,7 +289,7 @@ async function init(cfg: AppConfig): Promise<void> {
     },
   });
 
-  mgr.start();
+  mgr?.start();
   return openPromise;
 }
 
@@ -420,60 +344,33 @@ async function init(cfg: AppConfig): Promise<void> {
   //     "uid": 1212042824
   //   }
 async function getStartupBalances(): Promise<Balances> {
-  const params = makeSignedParams({ omitZeroBalances: true });
+  const host = process.env.GATE_REST_HOST ?? 'https://api.gateio.ws';
+  const prefix = '/api/v4';
+  const path = '/spot/accounts';
+  const query = '';     // optionally: 'currency=USDT'
+  const body = '';
 
-  const result = await sendReq<BinanceAccountStatusResult>('account.status', params, { timeoutMs: 10_000 });
+  
 
-  const out: Balances = {};
-  for (const b of result?.balances ?? []) out[b.asset] = Number(b.free ?? 0);
+  const headers = {
+    Accept: 'application/json',
+    ...gateRestHeaders({ apiKey, apiSecret, method: 'GET', prefix, path, query, body }),
+  };
+
+  const url = `${host}${prefix}${path}${query ? `?${query}` : ''}`;
+  const res = await fetch(url, { method: 'GET', headers });
+  if (!res.ok) {
+    log.error({status:res.status, text:await res.text()},
+    `gate GET /spot/accounts failed`);
+  }
+  
+  const rows = (await res.json()) as GateSpotAccount[];
+  log.debug({rows}, 'gate getStartupBalances response');
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.currency] = Number(r.available ?? 0);
   return out;
 }
 
-// test um zu pruefen ob rabatte auch wirklich hinterlegt sind
-async function getAccountCommission(sym : string) {
-  // convert "BTC_USDT" -> "BTCUSDT" (if you already have symToBinance(), use that)
-  const symbol = sym;
-
-  const params = makeSignedParams({ symbol });
-  log.debug({ params }, `REQ account.commission ${symbol}`);
-
-  const result = await sendReq<BinanceAccountCommissionResult>('account.commission', params, { timeoutMs: 10_000 });
-  //[2026-02-08 09:46:31.758 +0100] DEBUG (executor): RES account.commission AXSUSDC exchange: "binance" result: 
-  // { "symbol": "AXSUSDC", 
-  //   "standardCommission": 
-  //     { "maker": "0.00100000", "taker": "0.00095000", "buyer": "0.00000000", "seller": "0.00000000" }, 
-  //   "specialCommission": 
-  //     { "maker": "0.00000000", "taker": "0.00000000", "buyer": "0.00000000", "seller": "0.00000000" }, 
-  //   "taxCommission": 
-  //     { "maker": "0.00000000", "taker": "0.00000000", "buyer": "0.00000000", "seller": "0.00000000" }, 
-  //   "discount": { "enabledForAccount": true, "enabledForSymbol": true, "discountAsset": "BNB", "discount": "0.75000000" } }
-  log.debug({ result }, `RES account.commission ${symbol}`);
-
-  // Typical fields (keep it tolerant; Binance may add/change fields):
-  // - standardCommission: { maker, taker, buyer, seller }
-  // - taxCommission: ...
-  // - discount: { enabledForAccount, enabledForSymbol, discountAsset, discount }
-  // - symbol: "BTCUSDT"
-  const std = result?.standardCommission ?? result?.commissionRates ?? {};
-  const discount = result?.discount ?? {};
-
-  return {
-    symbol: result?.symbol ?? symbol,
-    standard: {
-      maker: Number(std.maker ?? 0),
-      taker: Number(std.taker ?? 0),
-      buyer: Number(std.buyer ?? 0),
-      seller: Number(std.seller ?? 0),
-    },
-    discount: {
-      enabledForAccount: Boolean(discount.enabledForAccount),
-      enabledForSymbol: Boolean(discount.enabledForSymbol),
-      asset: discount.discountAsset ?? null,      // e.g. "BNB"
-      rate: Number(discount.discount ?? 0),       // e.g. 0.25
-    },
-    raw: result, // optional: keep for debugging
-  };
-}
 
 // Phase-2 stubs
 async function subscribeUserData(/* handler */) {

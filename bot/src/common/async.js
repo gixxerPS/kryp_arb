@@ -91,9 +91,28 @@ async function safeCall(input) {
   }
 }
 
+/**
+ * @template T
+ * @param {PromiseSettledResult<T>} r
+ * @returns {r is PromiseFulfilledResult<T>}
+ */
+function isFulfilled(r) {
+  return r.status === 'fulfilled';
+}
+
+/**
+ * @template T
+ * @param {PromiseSettledResult<T>} r
+ * @returns {r is PromiseRejectedResult}
+ */
+function isRejected(r) {
+  return r.status === 'rejected';
+}
 
 module.exports = {
   op,
   errToObj,
   safeCall,
+  isFulfilled,
+  isRejected
 };

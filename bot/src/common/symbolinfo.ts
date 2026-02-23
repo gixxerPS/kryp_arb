@@ -12,6 +12,8 @@ import type {
   ReverseIndex,
   ReverseIndexPerEx,
   SymbolIndex,
+  SymbolInfoRow, 
+  ExSymbolInfo
 } from "../types/symbolinfo";
 
 import type { ExchangeId } from "../types/common";
@@ -296,11 +298,11 @@ export function getReverseIndex(): ReverseIndex {
   return _reverseIdx;
 }
 
-export function getSymbolInfo(symbolCanon: string) {
+export function getSymbolInfo(symbolCanon: string): SymbolInfoRow | null {
   return getIndex()[symbolCanon] ?? null;
 }
 
-export function getEx(symbolCanon: string, ex: ExchangeId) {
+export function getEx(symbolCanon: string, ex: ExchangeId): ExSymbolInfo | null {
   const v = getSymbolInfo(symbolCanon);
   return v ? ((v as any)[ex] ?? null) : null;
 }

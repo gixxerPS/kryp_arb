@@ -207,9 +207,9 @@ function computeIntentsForSym({ sym, latest,fees, nowMs, cfg, exState }) {
       const qSell = getQWithinSlippage({levels:sell.bids, slippagePct: slippage, qMax: qMax});
       
       if (qBuy.q < qMin || qSell.q < qMin) {
-        log.debug({reason:'not enough liquidity on orderbook',
-          qBuy:qBuy.q, qSell:qSell.q, qMin, buyEx, sellEx, buyAsks:buy.asks, sellBids:sell.bids},
-          'dropped trade');
+        // log.debug({reason:'not enough liquidity on orderbook',
+        //   qBuy:qBuy.q, qSell:qSell.q, qMin, buyEx, sellEx, buyAsks:buy.asks, sellBids:sell.bids},
+        //   'dropped trade');
         continue;
       }
       const qEff = Math.min(qBuy.q, qSell.q);

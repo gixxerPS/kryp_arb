@@ -41,6 +41,8 @@ TELEGRAM_BOT_TOKEN=<my_telegram_bot_token>
 TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
 BINANCE_ED25519_PUBLIC_KEY=<my_binance_api_key>
 BINANCE_ED25519_PRIVATE_KEY_FILE=/etc/krypto_arbitrage/secrets/binance-ed25519-prv.pem
+GATE_API_KEY=<my_gate_api_key>
+GATE_API_SECRET=<my_gate_api_secret>
 EXPECTED_PUBLIC_IPS=111.222.333.444,555.666.777.888
 ```
 
