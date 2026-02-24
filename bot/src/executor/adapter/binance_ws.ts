@@ -535,8 +535,8 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
   } else {
     log.debug({}, 'REAL ORDER!!!!');
   }
-  // const method = test ? 'order.test' : 'order.place';
-  const method = 'order.test';
+  const method = test ? 'order.test' : 'order.place';
+  // const method = 'order.test';
   
   const params = makeSignedParams({
     symbol: orderParams.symbol,
@@ -545,78 +545,46 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     quantity: String(orderParams.quantity),
     price: orderParams.price !== undefined ? String(orderParams.price) : undefined,
     newClientOrderId: orderParams.orderId ? String(orderParams.orderId) : undefined,
-    computeCommissionRates: true
+    // computeCommissionRates: true
   });
 
+  log.debug({params}, 'ORDER!!!!');
+
   const r = await sendReq<BinancePlaceOrderResult>(method, params, { timeoutMs: 10_000 });
-  log.debug({ params, rawOrderResponse: r }, 'placeOrder raw response');
+  log.debug({ rawOrderResponse: r }, 'placeOrder raw response');
 
 
   // beispielantwort von binance api:
-  //   FULL response type:
-  // {
-  //     "id": "56374a46-3061-486b-a311-99ee972eb648",
-  //     "status": 200,
-  //     "result": {
-  //         "symbol": "BTCUSDT",
-  //         "orderId": 12569099453,
-  //         "orderListId": -1,
-  //         "clientOrderId": "4d96324ff9d44481926157ec08158a40",
-  //         "transactTime": 1660801715793,
-  //         "price": "23416.10000000",
-  //         "origQty": "0.00847000",
-  //         "executedQty": "0.00847000",
-  //         "origQuoteOrderQty": "0.000000",
-  //         "cummulativeQuoteQty": "198.33521500",
-  //         "status": "FILLED",
-  //         "timeInForce": "GTC",
-  //         "type": "LIMIT",
-  //         "side": "SELL",
-  //         "workingTime": 1660801715793,
-  //         // FULL response is identical to RESULT response, with the same optional fields
-  //         // based on the order type and parameters. FULL response additionally includes
-  //         // the list of trades which immediately filled the order.
-  //         "fills": [
-  //             {
-  //                 "price": "23416.10000000",
-  //                 "qty": "0.00635000",
-  //                 "commission": "0.000000",
-  //                 "commissionAsset": "BNB",
-  //                 "tradeId": 1650422481
-  //             },
-  //             {
-  //                 "price": "23416.50000000",
-  //                 "qty": "0.00212000",
-  //                 "commission": "0.000000",
-  //                 "commissionAsset": "BNB",
-  //                 "tradeId": 1650422482
-  //             }
-  //         ]
-  //     },
-  //     "rateLimits": [
-  //         {
-  //             "rateLimitType": "ORDERS",
-  //             "interval": "SECOND",
-  //             "intervalNum": 10,
-  //             "limit": 50,
-  //             "count": 1
-  //         },
-  //         {
-  //             "rateLimitType": "ORDERS",
-  //             "interval": "DAY",
-  //             "intervalNum": 1,
-  //             "limit": 160000,
-  //             "count": 1
-  //         },
-  //         {
-  //             "rateLimitType": "REQUEST_WEIGHT",
-  //             "interval": "MINUTE",
-  //             "intervalNum": 1,
-  //             "limit": 6000,
-  //             "count": 1
-  //         }
-  //     ]
-  // }
+// [2026-02-24 19:08:44.610 +0100] DEBUG (executor): placeOrder raw response
+//     exchange: "binance"
+//     rawOrderResponse: {
+//       "symbol": "AXSUSDC",
+//       "orderId": 29416377,
+//       "orderListId": -1,
+//       "clientOrderId": "123456789",
+//       "transactTime": 1771956524486,
+//       "price": "0.00000000",
+//       "origQty": "10.00000000",
+//       "executedQty": "10.00000000",
+//       "origQuoteOrderQty": "0.00000000",
+//       "cummulativeQuoteQty": "12.36000000",
+//       "status": "FILLED",
+//       "timeInForce": "GTC",
+//       "type": "MARKET",
+//       "side": "BUY",
+//       "workingTime": 1771956524486,
+//       "fills": [
+//         {
+//           "price": "1.23600000",
+//           "qty": "10.00000000",
+//           "commission": "0.00001500",
+//           "commissionAsset": "BNB",
+//           "tradeId": 973520
+//         }
+//       ],
+//       "selfTradePreventionMode": "EXPIRE_MAKER"
+//     }
+
   const out : CommonOrderResult = {
     exchange: 'binance',
     symbol: r.symbol,

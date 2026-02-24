@@ -14,6 +14,7 @@ import type { AppConfig } from '../types/config';
 import type { ExchangeId } from '../types/common';
 import { OrderTypes, OrderSides } from '../types/common';
 import type { ExecutorAdapter, PlaceOrderParams } from '../types/executor';
+import type { TradeOrdersOkEvent } from '../types/events';
 import type { TradeIntent } from '../types/strategy';
 
 type Deps = {
@@ -77,15 +78,17 @@ export default async function startExecutor(
   }
   log.debug({ initialBalances }, 'initialized');
 
-  // TEST
-  // await adapters.binance.placeOrder(true, {
-  //   symbol: 'AXSUSDC',
-  //   side: 'BUY',
-  //   type: 'MARKET',
-  //   // qty/quoteQty je nach Ansatz
-  //   quantity:5,
-  //   orderId: '123456789',
-  // });
+  // TEST FUNKTIONIEEEERT :)
+  // if (adapters.binance) {
+  //   await adapters.binance.placeOrder(false, {
+  //     symbol: 'AXSUSDC',
+  //     side: 'BUY',
+  //     type: 'MARKET',
+  //     // qty/quoteQty je nach Ansatz
+  //     quantity:10,
+  //     orderId: '123456789',
+  //   });
+  // }
 
   // spaeter:
   // for (const [ex, ad] of Object.entries(adapters)) {
@@ -220,17 +223,15 @@ export default async function startExecutor(
           'orders executed'
         );
       
-        bus.emit('trade:orders_ok', {
-          id,
+        const ordersOkEvent: TradeOrdersOkEvent = {
+          id, // intent_id
           ts: new Date().toISOString(),
           symbol,
-          buyEx,
-          buyQ               : buyR.value.cummulativeQuoteQty,
-          buyP               : buyR.value.price,
-          sellQ              : sellR.value.cummulativeQuoteQty,
-          sellP              : sellR.value.price,
-          sellEx
-        });
+          buy: buyR.value,
+          sell: sellR.value,
+        };
+
+        bus.emit('trade:orders_ok', ordersOkEvent);
       
       } else if (buyOk && !sellOk) {
         log.error({

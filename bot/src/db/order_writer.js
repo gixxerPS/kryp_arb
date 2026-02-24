@@ -5,6 +5,8 @@ const bus = require('../bus');
 const { getLogger } = require('../common/logger');
 const log = getLogger('db').child({ module:'trade_orders' });
 
+/** @typedef {import('../types/events').TradeOrdersOkEvent} TradeOrdersOkEvent */
+
 module.exports = function startOrderWriter(cfg, pool) {
   const flushIntervalMs = Number(cfg.db.flushIntervalMs) ?? 1000;
   const maxBatch = Number(cfg.db.maxBatch) ?? 200;
@@ -12,7 +14,7 @@ module.exports = function startOrderWriter(cfg, pool) {
   const q = [];
   let flushing = false;
 
-  bus.on('trade:orders_ok', (ev) => {
+  bus.on('trade:orders_ok', /** @param {TradeOrdersOkEvent} ev */ (ev) => {
     q.push(ev);
   });
 
@@ -26,9 +28,8 @@ module.exports = function startOrderWriter(cfg, pool) {
     try {
       const cols = [
         'intent_id','ts','symbol',
-        'buy_ex','buy_order_id','buy_status','buy_raw',
-        'sell_ex','sell_order_id','sell_status','sell_raw',
-        'meta'
+        'buy_ex','buy_order_id','buy_status','buy_price','buy_qty','buy_quote',
+        'sell_ex','sell_order_id','sell_status','sell_price','sell_qty','sell_quote'
       ];
 
       const params = [];
@@ -36,24 +37,29 @@ module.exports = function startOrderWriter(cfg, pool) {
       let p = 1;
 
       for (const it of batch) {
-        params.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+        params.push(
+          `($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`
+        );
 
         values.push(
-          it.intent_id,
+          it.id,
           it.ts ? new Date(it.ts) : new Date(),
           it.symbol,
 
           it.buy.exchange,
-          it.buy.order_id,
+          it.buy.orderId == null ? null : String(it.buy.orderId),
           it.buy.status,
-          it.buy.raw ? JSON.stringify(it.buy.raw) : null,
+          it.buy.price ?? -1,
+          it.buy.executedQty ?? -1,
+          it.buy.cummulativeQuoteQty ?? -1,
 
           it.sell.exchange,
-          it.sell.order_id,
+          it.sell.orderId == null ? null : String(it.sell.orderId),
           it.sell.status,
-          it.sell.raw ? JSON.stringify(it.sell.raw) : null,
+          it.sell.price ?? -1,
+          it.sell.executedQty ?? -1,
+          it.sell.cummulativeQuoteQty ?? -1,
 
-          it.meta ? JSON.stringify(it.meta) : null
         );
       }
 

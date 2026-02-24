@@ -68,12 +68,16 @@ CREATE TABLE IF NOT EXISTS public.trade_order_pair (
   buy_ex     text        NOT NULL,
   buy_order_id text,
   buy_status text,
-  buy_raw    jsonb,
+  buy_price  NUMERIC(18,12) NOT NULL,
+  buy_qty    NUMERIC(28,12) NOT NULL,
+  buy_quote  NUMERIC(18,8) NOT NULL, 
 
   sell_ex     text       NOT NULL,
   sell_order_id text,
   sell_status text,
-  sell_raw    jsonb,
+  sell_price  NUMERIC(18,12) NOT NULL,
+  sell_qty    NUMERIC(28,12) NOT NULL,
+  sell_quote  NUMERIC(18,8) NOT NULL 
 
 );
 

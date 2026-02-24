@@ -343,7 +343,7 @@ async function fetchBalances(): Promise<Balances> {
   }
 
   const rows = (await res.json()) as GateSpotAccount[];
-  log.debug({ rows }, 'gate getBalances response');
+  // log.debug({ rows }, 'gate getBalances response');
   const out: Record<string, number> = {};
   for (const r of rows) out[r.currency] = Number(r.available ?? 0);
   return out;
