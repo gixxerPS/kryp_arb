@@ -19,11 +19,9 @@
 // - exchanges[]
 // - symbols[]
 //
-const crypto = require('crypto');
-
 const appBus = require('../bus');
 const { computeIntentsForSym: appCompute } = require('./engine');
-const { tradeRouteKey } = require('../common/util');
+const { tradeRouteKey, makeClientId } = require('../common/util');
 
 const { getLogger } = require('../common/logger');
 const log = getLogger('strategy');
@@ -39,7 +37,7 @@ module.exports = function startStrategy(cfg, deps = {}) { // deps machen es test
   const getExStateFct = deps.getExState ?? appGetExState; 
   const computeIntentsForSym = deps.computeIntentsForSymbol ?? appCompute;
   const nowFn = deps.nowFn ?? (() => Date.now());
-  const uuidFn = deps.uuidFn ?? (() => crypto.randomUUID());
+  const uuidFn = deps.uuidFn ?? makeClientId;
   const exState = getExStateFct();
 
   const cooldownS = Number(cfg.bot.cooldown_s);

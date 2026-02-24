@@ -89,10 +89,11 @@ import type {
   CommonOrderResult, 
   PlaceOrderParams, 
   CancelOrderParams,
+  UpdateBalancesParams,
   PendingEntry, 
   ExecutorAdapter} from '../../types/executor';
 import type { AppConfig } from '../../types/config';
-import type { WsParams, ExchangeId } from '../../types/common';
+import type { WsParams } from '../../types/common';
 import type { ReconnectDelayOverrideArgs } from '../../types/ws_reconnect';
 
 type BinanceBalance = { asset: string; free: string; locked: string };
@@ -203,6 +204,8 @@ let mgr : ReturnType<typeof createReconnectWS> | null = null;
 let wsRef : WebSocket | null = null; // current websocket instance from mgr.connect()
 let ed25519PrivateKeyPem : string  = '';     // string
 const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject, tmr }
+let balances: Balances = {};
+let balancesLoaded = false;
 
 /**
  * @brief Send a WS-API request and await response by id.
@@ -265,7 +268,14 @@ let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
 
 async function init(cfg: AppConfig): Promise<void> {
-  if (openPromise) return openPromise; 
+  if (openPromise) {
+    await openPromise;
+    if (!balancesLoaded) {
+      balances = await fetchBalancesWs();
+      balancesLoaded = true;
+    }
+    return;
+  }
 
   if (!process.env.BINANCE_ED25519_PRIVATE_KEY_FILE) {
     throw new Error('Binance Ed25519 credentials missing in .env');
@@ -281,7 +291,7 @@ async function init(cfg: AppConfig): Promise<void> {
   });
 
   const exState = getExState();
-  const url = process.env.BINANCE_WS_URL ?? 'wss://ws-api.binance.com:443/ws-api/v3';
+  const url = 'wss://ws-api.binance.com:443/ws-api/v3';
 
   mgr = createReconnectWS({
     name: 'binance-ws-api',
@@ -366,7 +376,11 @@ async function init(cfg: AppConfig): Promise<void> {
   });
 
   mgr.start();
-  return openPromise;
+  await openPromise;
+  if (!balancesLoaded) {
+    balances = await fetchBalancesWs();
+    balancesLoaded = true;
+  }
 }
 
 /**
@@ -419,7 +433,7 @@ async function init(cfg: AppConfig): Promise<void> {
   //     ],
   //     "uid": 1212042824
   //   }
-async function getStartupBalances(): Promise<Balances> {
+async function fetchBalancesWs(): Promise<Balances> {
   const params = makeSignedParams({ omitZeroBalances: true });
 
   const result = await sendReq<BinanceAccountStatusResult>('account.status', params, { timeoutMs: 10_000 });
@@ -427,6 +441,40 @@ async function getStartupBalances(): Promise<Balances> {
   const out: Balances = {};
   for (const b of result?.balances ?? []) out[b.asset] = Number(b.free ?? 0);
   return out;
+}
+
+function getBalances(): Balances {
+  if (!balancesLoaded) {
+    log.warn({}, 'getBalances called before balances were loaded');
+  }
+  return { ...balances };
+}
+
+function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
+  const baseDelta = Number(params.executedQty ?? 0);
+  const quoteDelta = Number(params.cummulativeQuoteQty ?? 0);
+  if (!Number.isFinite(baseDelta) || !Number.isFinite(quoteDelta)) {
+    log.warn({ params }, 'skip updateBalances: invalid numeric input');
+    return;
+  }
+  const base = params.baseAsset;
+  const quote = params.quoteAsset;
+  balances[base] = balances[base] ?? 0;
+  balances[quote] = balances[quote] ?? 0;
+
+  if (params.side === 'BUY') {
+    balances[quote] -= quoteDelta;
+    balances[base] += baseDelta;
+    return;
+  }
+
+  if (params.side === 'SELL') {
+    balances[quote] += quoteDelta;
+    balances[base] -= baseDelta;
+    return;
+  }
+
+  log.warn({ side: params.side }, 'skip updateBalances: unsupported side');
 }
 
 // test um zu pruefen ob rabatte auch wirklich hinterlegt sind
@@ -494,13 +542,14 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     symbol: orderParams.symbol,
     side: orderParams.side,
     type: orderParams.type,
-    quantity: orderParams.quantity,
-    price: orderParams.price,
+    quantity: String(orderParams.quantity),
+    price: orderParams.price !== undefined ? String(orderParams.price) : undefined,
     newClientOrderId: orderParams.orderId ? String(orderParams.orderId) : undefined,
     computeCommissionRates: true
   });
 
   const r = await sendReq<BinancePlaceOrderResult>(method, params, { timeoutMs: 10_000 });
+  log.debug({ params, rawOrderResponse: r }, 'placeOrder raw response');
 
 
   // beispielantwort von binance api:
@@ -575,10 +624,16 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     orderId: r.orderId,
     clientOrderId: r.clientOrderId,
     transactTime: r.transactTime,
-    executedQty: r.executedQty,
-    cummulativeQuoteQty: r.cummulativeQuoteQty,
-    price: r.price,
-    fills: r.fills,
+    executedQty: r.executedQty !== undefined ? Number(r.executedQty) : undefined,
+    cummulativeQuoteQty: r.cummulativeQuoteQty !== undefined ? Number(r.cummulativeQuoteQty) : undefined,
+    price: r.price !== undefined ? Number(r.price) : undefined,
+    fills: r.fills?.map((f) => ({
+      price: Number(f.price),
+      qty: Number(f.qty),
+      commission: f.commission !== undefined ? Number(f.commission) : undefined,
+      commissionAsset: f.commissionAsset,
+      tradeId: f.tradeId,
+    })),
   };
   return out;
 }
@@ -586,7 +641,7 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
 async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
   const params = makeSignedParams({
     symbol: p.symbol,
-    origClientOrderId: p.origClientOrderId,
+    origClientOrderId: p.orderId,
     orderId: p.orderId
   });
 
@@ -603,7 +658,8 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
 
 export const adapter : ExecutorAdapter = {
   init,
-  getStartupBalances,
+  getBalances,
+  updateBalancesFromOrderData,
   placeOrder,
   cancelOrder
 }

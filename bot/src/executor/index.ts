@@ -11,9 +11,9 @@ import { adapter as binanceAdapter } from './adapter/binance_ws';
 import { adapter as gateAdapter } from './adapter/gate_ws';
 
 import type { AppConfig } from '../types/config';
-import type { ExchangeId, Balances } from '../types/common';
+import type { ExchangeId } from '../types/common';
 import { OrderTypes, OrderSides } from '../types/common';
-import type { ExecutorAdapter, RuntimeState, PlaceOrderParams } from '../types/executor';
+import type { ExecutorAdapter, PlaceOrderParams } from '../types/executor';
 import type { TradeIntent } from '../types/strategy';
 
 type Deps = {
@@ -71,21 +71,11 @@ export default async function startExecutor(
   // test um zu pruefen ob rabatte auch wirklich hinterlegt sind
   // adapters.binance.getAccountCommission('AXSUSDC');
 
-  const state: RuntimeState = {
-    // binance : {
-    //   balances : {BNB:0.177, USDC:1234, ...},
-    //   orderRateLimits: [{interval:'SECOND', intervalNum:10, limit:50, count:1}, 
-    //      {{interval:'DAY', intervalNum:1, limit:160000, count:1}}]
-    // }
-   };
-   
-  // startup balances
+  const initialBalances: Partial<Record<ExchangeId, Record<string, number>>> = {};
   for (const [ex, ad] of Object.entries(adapters)) {
-    state[ex as ExchangeId] = {
-      balances : await ad.getStartupBalances( )
-    }
+    initialBalances[ex as ExchangeId] = ad.getBalances();
   }
-  log.debug({state}, 'initialized');
+  log.debug({ initialBalances }, 'initialized');
 
   // TEST
   // await adapters.binance.placeOrder(true, {
@@ -102,7 +92,6 @@ export default async function startExecutor(
   //   await ad.subscribeUserData((evt) => onUserEvent(ex, evt));
   // }
 
-  // TODO: so soll die architektur spaeter aussehen:
   let busy = false;
 
   async function handleIntent(intent: TradeIntent) {
@@ -125,16 +114,20 @@ export default async function startExecutor(
         log.error({ symbol, buyEx, sellEx }, 'symbolinfo missing');
         return;
       }
+      const buyExchangeState = exState.getExchangeState(buyEx);
+      const sellExchangeState = exState.getExchangeState(sellEx);
+      const buyBalances = buyAd.getBalances();
+      const sellBalances = sellAd.getBalances();
       
       //=======================================================================
       // 1.1) prechecks BUY (gegen den aktuellen bestands snapshot)
       //=======================================================================
       const resBuyCheck = marketOrderPrecheckOk({
-        side: 'BUY',
+        side: OrderSides.BUY,
         targetQty,
         q,
         prepSymbolInfo: buyExSymInfo,
-        exState:  state[buyEx],
+        exState:  { enabled: buyExchangeState?.enabled ?? true, balances: buyBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
         feeRate: getExchange(buyEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
@@ -147,11 +140,11 @@ export default async function startExecutor(
       // 1.2) prechecks SELL (gegen den aktuellen bestands snapshot)
       //=======================================================================
       const resSellCheck = marketOrderPrecheckOk({
-        side: 'SELL',
+        side: OrderSides.SELL,
         targetQty,
         q,
         prepSymbolInfo: sellExSymInfo,
-        exState:  state[sellEx],
+        exState:  { enabled: sellExchangeState?.enabled ?? true, balances: sellBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
         feeRate: getExchange(sellEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
@@ -168,6 +161,7 @@ export default async function startExecutor(
         side: OrderSides.BUY,
         symbol: buyExSymInfo.orderKey,
         quantity:targetQty,
+        q,
         orderId: id,
       };
       const buyPO  = buyAd.placeOrder(false, buyParams); 
@@ -176,6 +170,7 @@ export default async function startExecutor(
         side: OrderSides.SELL,
         symbol:sellExSymInfo.orderKey,
         quantity:targetQty,
+        q,
         orderId: id,
       };
       const sellPO = sellAd.placeOrder(false, sellParams);
@@ -189,6 +184,24 @@ export default async function startExecutor(
         && buyR.value.status === 'FILLED';       // order result
       const sellOk = isFulfilled(sellR) // promise result
         && sellR.value.status === 'FILLED';      // order result
+      if (buyOk) {
+        buyAd.updateBalancesFromOrderData({
+          side: OrderSides.BUY,
+          baseAsset: buyExSymInfo.base,
+          quoteAsset: buyExSymInfo.quote,
+          executedQty: buyR.value.executedQty ?? targetQty,
+          cummulativeQuoteQty: buyR.value.cummulativeQuoteQty ?? q,
+        });
+      }
+      if (sellOk) {
+        sellAd.updateBalancesFromOrderData({
+          side: OrderSides.SELL,
+          baseAsset: sellExSymInfo.base,
+          quoteAsset: sellExSymInfo.quote,
+          executedQty: sellR.value.executedQty ?? targetQty,
+          cummulativeQuoteQty: sellR.value.cummulativeQuoteQty ?? q,
+        });
+      }
       if (buyOk && sellOk) {
         log.debug({
             id,
@@ -206,28 +219,6 @@ export default async function startExecutor(
           },
           'orders executed'
         );
-        // TODO: monitor fills / reconcile, invalidate balances snapshot
-        const buyExQuoteKey = buyExSymInfo.quote; // USDC
-        const buyExBaseKey = buyExSymInfo.base; // AXS
-        let buyExBalanceQuote = state[buyEx]?.balances[buyExQuoteKey];
-        let buyExBalanceBase = state[buyEx]?.balances[buyExBaseKey];
-        if (!buyExBalanceQuote || !buyExBalanceBase) { // shoult not happen
-          log.error({buyEx, buyExQuoteKey, buyExBaseKey}, 'invalid buy ex');
-          return;
-        }
-        buyExBalanceQuote -= intent.q; // bought 350 AXS for 500 USDC
-        buyExBalanceBase += targetQty; // bought 350 AXS for 500 USDC
-
-        const sellExQuoteKey = sellExSymInfo.quote; // USDC
-        const sellExBaseKey = sellExSymInfo.base; // AXS
-        let sellExBalanceQuote = state[sellEx]?.balances[sellExQuoteKey];
-        let sellExBalanceBase = state[sellEx]?.balances[sellExBaseKey];
-        if (!sellExBalanceQuote || !sellExBalanceBase) { // shoult not happen
-          log.error({buyEx, sellExQuoteKey, sellExBaseKey}, 'invalid sell ex');
-          return;
-        }
-        sellExBalanceQuote += intent.q; // sold 350 AXS for 500 USDC
-        sellExBalanceBase -= targetQty; // sold 350 AXS for 500 USDC
       
         bus.emit('trade:orders_ok', {
           id,
@@ -256,7 +247,7 @@ export default async function startExecutor(
         // Minimal: versuchen BUY zu canceln (wenn market sofort fillt, bringt cancel nichts, 
         // aber bei rejected/partial schon)
         const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
-          symbol: buyParams.symbol, origClientOrderId: buyParams.orderId }) );
+          symbol: buyParams.symbol, orderId: buyParams.orderId }) );
         if (!resCancelBuy.ok) {
           log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId,
            }, 'cancel buy failed');
@@ -289,7 +280,7 @@ export default async function startExecutor(
         // Minimal: versuchen SELL zu canceln (wenn market sofort fillt, bringt cancel nichts, 
         // aber bei rejected/partial schon)
         const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
-          symbol: sellParams.symbol, origClientOrderId: sellParams.orderId }) );
+          symbol: sellParams.symbol, orderId: sellParams.orderId }) );
         if (!resCancelSell.ok) {
           log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId }, 
             'cancel sell failed');
@@ -337,8 +328,8 @@ export default async function startExecutor(
 
   log.debug({ }, 'executor started');
   return { 
-    state, 
-    _state: state,      // optional (wenn du intern/Debug brauchst)
+    state: initialBalances,
+    _state: initialBalances,      // optional (wenn du intern/Debug brauchst)
     _adapters: adapters, // optional (für Debug/Tests)
   };
 }

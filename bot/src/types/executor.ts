@@ -1,6 +1,5 @@
 import type { AppConfig } from './config';
 import type { ExchangeId, OrderSide, OrderType } from './common';
-import type { ExSymbolInfo } from './symbolinfo';
 
 export type Balances = Record<string, number>;
 
@@ -10,36 +9,45 @@ export type PendingEntry = {
   tmr: NodeJS.Timeout;
 };
 
-export interface PlaceOrderParams {
+export type PlaceOrderParams = {
   symbol: string | null;          // exchange orderKey (AXSUSDC)
   side: OrderSide;
   type: OrderType;
-  quantity: number | string; // du gibst aktuell number; später besser string
-  price?: number | string;
+  quantity: number;
+  q?: number; // quote notional (for exchanges where MARKET BUY uses quote amount)
+  price?: number;
   orderId?: string;        // euer client order id
 }
 
-export interface CancelOrderParams {
+export type CancelOrderParams = {
   symbol: string | null;
-  origClientOrderId?: string;
   orderId?: number | string;
 }
 
+export type UpdateBalancesParams = {
+  side: OrderSide;
+  baseAsset: string;
+  quoteAsset: string;
+  executedQty?: number;
+  cummulativeQuoteQty?: number;
+}
+
 /** Minimal “common subset”, den Gate/Bitget auch liefern können */
-export interface CommonOrderResult {
+export type CommonOrderResult = {
   exchange: ExchangeId;
   symbol: string;
   status?: string;
   orderId?: number | string;
   clientOrderId?: string;
   transactTime?: number;
-  executedQty?: string;
-  cummulativeQuoteQty?: string;
-  price?: string;
+  executedQty?: number;
+  cummulativeQuoteQty?: number;
+  price?: number;
+  slippage?: number;
   fills?: Array<{
-    price: string;
-    qty: string;
-    commission?: string;
+    price: number;
+    qty: number;
+    commission?: number;
     commissionAsset?: string;
     tradeId?: number | string;
   }>;
@@ -48,7 +56,9 @@ export interface CommonOrderResult {
 export interface ExecutorAdapter {
   init(cfg: AppConfig): Promise<void>;
 
-  getStartupBalances(): Promise<Balances>;
+  getBalances(): Balances;
+
+  updateBalancesFromOrderData(params: UpdateBalancesParams): void;
 
   placeOrder(
     test: boolean,
@@ -59,10 +69,3 @@ export interface ExecutorAdapter {
     params: CancelOrderParams
   ): Promise<CommonOrderResult>;
 }
-
-export type ExchangeRuntimeState = {
-  balances: Balances;
-};
-
-export type RuntimeState = Partial<Record<ExchangeId, ExchangeRuntimeState>>;
-
