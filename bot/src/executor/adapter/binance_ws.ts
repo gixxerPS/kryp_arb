@@ -83,17 +83,18 @@ const log = getLogger('executor').child({ exchange: 'binance' });
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
-import { OrderSides, ExchangeIds } from '../../types/common';
+import { OrderSides, ExchangeIds  } from '../../types/common';
 
-import type { 
-  Balances, 
-  CommonOrderResult, 
-  PlaceOrderParams, 
-  CancelOrderParams,
-  UpdateBalancesParams,
-  PendingEntry, 
-  ExecutorAdapter,
-  FeePriceData } from '../../types/executor';
+import { 
+  type Balances, 
+  type CommonOrderResult, 
+  type PlaceOrderParams, 
+  type CancelOrderParams,
+  type UpdateBalancesParams,
+  type PendingEntry, 
+  type ExecutorAdapter,
+  type FeePriceData, 
+  OrderStates} from '../../types/executor';
 import type { AppConfig } from '../../types/config';
 import type { WsParams } from '../../types/common';
 import type { ReconnectDelayOverrideArgs } from '../../types/ws_reconnect';
@@ -116,22 +117,23 @@ type BinanceOrderFill = {
 
 type BinancePlaceOrderResult = {
   symbol: string;
-  orderId?: number;
-  clientOrderId?: string;
-  transactTime?: number;
-  price?: string;
-  executedQty?: string;
-  cummulativeQuoteQty?: string;
-  status?: string;
+  orderId: number;
+  clientOrderId: string;
+  transactTime: number;
+  price: string;
+  executedQty: string;
+  cummulativeQuoteQty: string;
+  status: string;
   fills?: BinanceOrderFill[];
 };
 
 type BinanceCancelOrderResult = {
   symbol: string;
-  orderId?: number;
+  orderId: number;
   clientOrderId?: string;
-  origClientOrderId?: string;
-  status?: string;
+  origClientOrderId: string;
+  transactTime: number;
+  status: string;
 };
 
 type SignedParams = WsParams & {
@@ -459,6 +461,10 @@ async function fetchBalancesWs(): Promise<Balances> {
   return out;
 }
 
+function isReady(): boolean {
+  return wsRef !== null && wsRef.readyState === WebSocket.OPEN;
+}
+
 function getBalances(): Balances {
   if (!balancesLoaded) {
     log.warn({}, 'getBalances called before balances were loaded');
@@ -631,7 +637,7 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
   const out : CommonOrderResult = {
     exchange: ExchangeIds.binance,
     symbol: r.symbol,
-    status: r.status,
+    status: r.status === 'FILLED' ? OrderStates.FILLED : OrderStates.UNKNOWN,
     orderId: r.orderId,
     clientOrderId: r.clientOrderId,
     transactTime: r.transactTime,
@@ -639,7 +645,7 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     cummulativeQuoteQty: cumQuote,
     priceVwap: priceVwap,
     fee_amount: Number(totalCommission),
-    fee_currency: commissionAsset,
+    fee_currency: commissionAsset ? commissionAsset : 'UNKNOWN',
     fee_usd: feeUsd,
   };
   return out;
@@ -655,11 +661,18 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
   const r = await sendReq<BinanceCancelOrderResult>('order.cancel', params, { timeoutMs: 10_000 });
 
   return {
-    exchange: 'binance',
+    exchange: ExchangeIds.binance,
     symbol: r.symbol,
-    status: r.status,
+    status: r.status === 'CANCELLED' ? OrderStates.CANCELLED : OrderStates.UNKNOWN,
     orderId: r.orderId,
-    clientOrderId: r.clientOrderId ?? r.origClientOrderId,
+    clientOrderId: r.origClientOrderId,
+    transactTime: r.transactTime,
+    executedQty: 0,
+    cummulativeQuoteQty: 0,
+    priceVwap: 0,
+    fee_amount: 0,
+    fee_currency: '',
+    fee_usd: 0,
   };
 }
 
@@ -701,6 +714,7 @@ function startFeePriceRefreshLoop(): void {
 
 export const adapter : ExecutorAdapter = {
   init,
+  isReady,
   getBalances,
   updateBalancesFromOrderData,
   placeOrder,

@@ -95,6 +95,8 @@ function makeClientId() {
   return `${ts}${rnd}`;   // ~18–22 Zeichen
 }
 
+const DAY_MS = 24 * 3600 * 1000;
+
 module.exports = {
   nowSec,
   toNumLevels,
@@ -108,5 +110,6 @@ module.exports = {
   getPublicIp,
   makeClientId,
   readJson,
+  DAY_MS
 };
 

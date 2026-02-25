@@ -2,7 +2,6 @@ const TelegramBot = require('node-telegram-bot-api');
 
 const { fmtNowIsoLocal } = require('../common/util');
 const { getExState } = require('../common/exchange_state');
-const { EXCHANGE_QUALITY } = require('../common/constants'); // ggf. Pfad anpassen
 
 const { getLogger } = require('../common/logger');
 const log = getLogger('ui').child({ type: 'telegram' });
@@ -72,7 +71,56 @@ function buildStatusTable({ exState, exchanges }) {
   ]);
 }
 
-function initTelegramBot(cfg) {
+function buildAccountTable({ exchanges, accountStatus }) {
+  const rows = [];
+
+  for (const [ex, exCfg] of Object.entries(exchanges)) {
+    if (exCfg.enabled === false) continue;
+    const s = accountStatus?.[ex] ?? {};
+    rows.push({
+      exchange: ex,
+      ws: s.ws ?? 'CLOSED',
+      totalBalance: Number(s.totalBalance ?? 0).toFixed(2),
+    });
+  }
+
+  return buildTable(rows, [
+    { key: 'exchange', label: 'EXCHANGE', width: 9 },
+    { key: 'ws', label: 'WS', width: 6 },
+    { key: 'totalBalance', label: 'TOTAL_BALANCE', width: 14 },
+  ]);
+}
+
+function buildRuntimeTable(runtimeState) {
+  const rt = runtimeState ?? {
+    today: { pnlSum: 0, successCount: 0, failedCount: 0 },
+    yesterday: { pnlSum: 0, successCount: 0, failedCount: 0 },
+  };
+
+  const rows = [
+    {
+      time: 'TODAY',
+      pnl: Number(rt.today?.pnlSum ?? 0).toFixed(2),
+      success: rt.today?.successCount ?? 0,
+      failed: rt.today?.failedCount ?? 0,
+    },
+    {
+      time: 'YESTERDAY',
+      pnl: Number(rt.yesterday?.pnlSum ?? 0).toFixed(2),
+      success: rt.yesterday?.successCount ?? 0,
+      failed: rt.yesterday?.failedCount ?? 0,
+    },
+  ];
+
+  return buildTable(rows, [
+    { key: 'time', label: 'TIME', width: 10 },
+    { key: 'pnl', label: 'PNL', width: 12 },
+    { key: 'success', label: 'TRADES_SUCCESS', width: 15 },
+    { key: 'failed', label: 'TRADES_FAILED', width: 14 },
+  ]);
+}
+
+function initTelegramBot({cfg, app}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     log.error({reason:'TELEGRAM_BOT_TOKEN missing'}, 'telegram disabled');
@@ -126,9 +174,23 @@ function initTelegramBot(cfg) {
     }
     try {
       const header = `trading=${runtimestate.tradingEnabled ? 'ON' : 'OFF'}  @ ${fmtNowIsoLocal()}`;
+      const accountStatus = app?.executor?.getAccountStatus ? app.executor.getAccountStatus() : {};
+      const runtimeState = app?.executor?.getRuntimeState ? app.executor.getRuntimeState() : null;
+      const body = [
+        header,
+        '',
+        '========= collector =========',
+        buildStatusTable({ exState, exchanges }),
+        '',
+        '========= account =========',
+        buildAccountTable({ exchanges, accountStatus }),
+        '',
+        '========= runtime =========',
+        buildRuntimeTable(runtimeState),
+      ].join('\n');
 
       bot.sendMessage(msg.chat.id,
-        `<pre>${header}\n\n${buildStatusTable({ exState, exchanges })}</pre>`,
+        `<pre>${body}</pre>`,
         { parse_mode: 'HTML' }
       );
     } catch (err) {
@@ -158,5 +220,4 @@ function initTelegramBot(cfg) {
 }
 
 module.exports = { initTelegramBot };
-
 

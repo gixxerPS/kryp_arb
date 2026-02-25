@@ -4,6 +4,7 @@ import { getExState } from '../common/exchange_state';
 import { getEx } from '../common/symbolinfo';
 import { getExchange, getBotCfg } from '../common/config';
 import { safeCall, isFulfilled } from '../common/async';
+import { DAY_MS } from '../common/util';
 import { marketOrderPrecheckOk } from './order_precheck';
 
 import appBus from '../bus';
@@ -13,7 +14,17 @@ import { adapter as gateAdapter } from './adapter/gate_ws';
 import type { AppConfig } from '../types/config';
 import type { ExchangeId } from '../types/common';
 import { OrderTypes, OrderSides } from '../types/common';
-import type { ExecutorAdapter, PlaceOrderParams } from '../types/executor';
+import {
+  type ExecutorAdapter,
+  type PlaceOrderParams,
+  type ExecutorDayStats,
+  type ExecutorRuntimeState,
+  type UpdateRuntimeStateParams,
+  type ExecutorHandle,
+  type ExecutorBalancesByExchange,
+  type ExecutorAccountStatusByExchange,
+  OrderStates
+} from '../types/executor';
 import type { TradeOrdersOkEvent } from '../types/events';
 import type { TradeIntent } from '../types/strategy';
 
@@ -38,7 +49,7 @@ type Deps = {
 export default async function startExecutor(
   { cfg }: { cfg: AppConfig },
   deps: Deps = {}
-) {
+): Promise<ExecutorHandle> {
   const bus = deps.bus ?? appBus;
   const exState = deps.exState ?? getExState();
   const adaptersFromDeps = deps.adapters;
@@ -54,7 +65,7 @@ export default async function startExecutor(
   const adapters: Partial<Record<ExchangeId, ExecutorAdapter>> = deps.adapters ?? {};
   for (const ex of exStateArr) {
     if (!ex.enabled) {
-      return;
+      continue;
     }
     if (ex.exchange === 'binance') {
       adapters.binance = binanceAdapter;
@@ -70,11 +81,58 @@ export default async function startExecutor(
   // test um zu pruefen ob rabatte auch wirklich hinterlegt sind
   // adapters.binance.getAccountCommission('AXSUSDC');
 
-  const initialBalances: Partial<Record<ExchangeId, Record<string, number>>> = {};
+  const initialBalances: ExecutorBalancesByExchange = {};
   for (const [ex, ad] of Object.entries(adapters)) {
     initialBalances[ex as ExchangeId] = ad.getBalances();
   }
   log.debug({ initialBalances }, 'initialized');
+
+  const runtimeState: ExecutorRuntimeState = { 
+    today     : { tsMs:nowFn(), pnlSum: 0, successCount: 0, failedCount: 0 },
+    yesterday : { tsMs:0, pnlSum: 0, successCount: 0, failedCount: 0 }
+  };
+
+  function updateRuntimeState(params: UpdateRuntimeStateParams): void {
+    const tsMs = nowFn();
+
+    // rollen noetig weil 1 tag vergangen ?
+    if (tsMs - runtimeState.today.tsMs > DAY_MS) {
+      runtimeState.yesterday = runtimeState.today;
+      runtimeState.today = { tsMs, pnlSum: 0, successCount: 0, failedCount: 0 };
+    }
+    if (params.buyOk && params.sellOk) {
+      runtimeState.today.successCount += 1;
+      runtimeState.today.pnlSum += Number(params.pnl ?? 0);
+      return;
+    }
+    runtimeState.today.failedCount += 1;
+  }
+
+  function getBalances(): ExecutorBalancesByExchange {
+    const out: ExecutorBalancesByExchange = {};
+    for (const [ex, ad] of Object.entries(adapters)) {
+      out[ex as ExchangeId] = ad.getBalances();
+    }
+    return out;
+  }
+
+  function getRuntimeState(): ExecutorRuntimeState {
+    return {
+      today: { ...runtimeState.today },
+      yesterday: { ...runtimeState.yesterday },
+    };
+  }
+
+  function getAccountStatus(): ExecutorAccountStatusByExchange {
+    const out: ExecutorAccountStatusByExchange = {};
+    for (const [ex, ad] of Object.entries(adapters)) {
+      out[ex as ExchangeId] = {
+        ws: ad.isReady() ? 'OPEN' : 'CLOSED',
+        totalBalance: 0,
+      };
+    }
+    return out;
+  }
 
   // TEST FUNKTIONIEEEERT :)
   // if (adapters.binance) {
@@ -110,10 +168,14 @@ export default async function startExecutor(
         log.error({ reason:'adapter missing', intent, buyEx, sellEx }, 'dropping intent');
         return;
       }
+      if (!buyAd.isReady() || !sellAd.isReady()) {
+        log.error({ reason:'adapter not ready (ws not open / not logged in)', intent, buyEx, sellEx, buyAdReady:buyAd.isReady(), sellAdReady: sellAd.isReady() }, 'dropping intent');
+        return;
+      }
       const buyExSymInfo = getEx(symbol, buyEx);
       const sellExSymInfo = getEx(symbol, sellEx);
       if (!buyExSymInfo || !sellExSymInfo) {
-        log.error({ symbol, buyEx, sellEx }, 'symbolinfo missing');
+        log.error({ reason:'symbolinfo missing', symbol, buyEx, sellEx }, 'dropping intent');
         return;
       }
       const buyExchangeState = exState.getExchangeState(buyEx);
@@ -183,9 +245,13 @@ export default async function startExecutor(
       // 3) exchange antwort auswerten
       //=======================================================================
       const buyOk  = isFulfilled(buyR) // promise result
-        && buyR.value.status === 'FILLED';       // order result
+        && buyR.value.status === OrderStates.FILLED;       // order result
       const sellOk = isFulfilled(sellR) // promise result
-        && sellR.value.status === 'FILLED';      // order result
+        && sellR.value.status === OrderStates.FILLED;      // order result
+      const pnl = (buyOk && sellOk)
+        ? sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
+        : 0.0;
+      updateRuntimeState({ buyOk, sellOk, pnl });
       if (buyOk) {
         buyAd.updateBalancesFromOrderData({
           side: OrderSides.BUY,
@@ -210,14 +276,13 @@ export default async function startExecutor(
             symbol,
             buyEx,
             sellEx,
+            PnL: pnl,
             buyQ               : buyR.value.cummulativeQuoteQty,
             buyP               : buyR.value.priceVwap,
-            // buyCommission      : buyR.value.commission,
-            // buyCommissionAsset : buyR.value.commissionAsset,
+            buyFeeUsd          : buyR.value.fee_usd,
             sellQ              : sellR.value.cummulativeQuoteQty,
             sellP              : sellR.value.priceVwap,
-            // sellCommission     : sellR.value.commission,
-            // sellCommissionAsset: sellR.value.commissionAsset,
+            sellFeeUsd         : sellR.value.fee_usd,
           },
           'orders executed'
         );
@@ -327,9 +392,9 @@ export default async function startExecutor(
   // });
 
   log.debug({ }, 'executor started');
-  return { 
-    state: initialBalances,
-    _state: initialBalances,      // optional (wenn du intern/Debug brauchst)
-    _adapters: adapters, // optional (für Debug/Tests)
+  return {
+    getBalances,
+    getAccountStatus,
+    getRuntimeState,
   };
 }

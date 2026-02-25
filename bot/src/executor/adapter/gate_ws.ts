@@ -13,15 +13,16 @@ import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { makeClientId } from '../../common/util';
 
-import type {
-  Balances,
-  CommonOrderResult,
-  PlaceOrderParams,
-  CancelOrderParams,
-  UpdateBalancesParams,
-  PendingEntry,
-  ExecutorAdapter,
-  FeePriceData
+import {
+  type Balances,
+  type CommonOrderResult,
+  type PlaceOrderParams,
+  type CancelOrderParams,
+  type UpdateBalancesParams,
+  type PendingEntry,
+  type ExecutorAdapter,
+  type FeePriceData,
+  OrderStates
 } from '../../types/executor';
 import type { AppConfig } from '../../types/config';
 import { OrderSides, ExchangeIds } from '../../types/common';
@@ -31,23 +32,24 @@ type GateSpotAccount = { currency: string; available: string; locked: string };
 
 type GatePlaceOrderResult = {
   id: string;
-  text?: string;
-  create_time_ms?: number;
-  status?: string;
+  text: string;
+  create_time_ms: number;
+  status: string;
   currency_pair: string;
-  avg_deal_price?: string;
-  filled_amount?: string;
-  filled_total?: string;
-  fee?: string;
-  fee_currency?: string;
+  avg_deal_price: string;
+  filled_amount: string;
+  filled_total: string;
+  fee: string;
+  fee_currency: string;
   slippage?: string;
 };
 
 type GateCancelOrderResult = {
   id: string;
-  text?: string;
-  status?: string;
+  text: string;
+  status: string;
   currency_pair: string;
+  create_time_ms: number;
 };
 
 type GateTickerRow = {
@@ -369,6 +371,10 @@ async function fetchBalances(): Promise<Balances> {
   return out;
 }
 
+function isReady(): boolean {
+  return wsRef !== null && wsRef.readyState === WebSocket.OPEN && isLoggedIn;
+}
+
 function getBalances(): Balances {
   if (!balancesLoaded) {
     log.warn({}, 'getBalances called before balances were loaded');
@@ -453,7 +459,7 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
   const out : CommonOrderResult = {
     exchange: ExchangeIds.gate,
     symbol: r.currency_pair,
-    status: r.status,
+    status: r.status === 'closed' ? OrderStates.FILLED : OrderStates.UNKNOWN,
     orderId: r.id,
     clientOrderId: idFromGateText(r.text),
     transactTime: Number(r.create_time_ms),
@@ -486,11 +492,18 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
   const r = await sendReq<GateCancelOrderResult>('spot.order_cancel', reqParam, { timeoutMs: 10_000 });
 
   return {
-    exchange: 'gate',
+    exchange: ExchangeIds.gate,
     symbol: r.currency_pair,
-    status: r.status,
+    status: r.status === 'cancelled' ? OrderStates.CANCELLED : OrderStates.UNKNOWN,
     orderId: r.id,
     clientOrderId: r.text,
+    transactTime: r.create_time_ms,
+    executedQty: 0,
+    cummulativeQuoteQty: 0,
+    priceVwap: 0,
+    fee_amount: 0,
+    fee_currency: '',
+    fee_usd: 0,
   };
 }
 
@@ -538,6 +551,7 @@ function startFeePriceRefreshLoop(): void {
 
 export const adapter: ExecutorAdapter = {
   init,
+  isReady,
   getBalances,
   updateBalancesFromOrderData,
   placeOrder,

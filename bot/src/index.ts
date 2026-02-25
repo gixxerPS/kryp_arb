@@ -93,7 +93,7 @@ async function main() {
   const app = { cfg, executor}; // zentraler app-context für UI und andere Module
   
   if (cfg.ui.telegram_enabled) {
-    initTelegramBot(cfg); // TODO: noch in (app) umbauen
+    initTelegramBot({cfg, app}); // TODO: noch in (app) umbauen
   }
 }
 
