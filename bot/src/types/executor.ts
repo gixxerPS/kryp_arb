@@ -42,15 +42,11 @@ export type CommonOrderResult = {
   transactTime?: number;
   executedQty?: number;
   cummulativeQuoteQty?: number;
-  price?: number;
+  priceVwap?: number;
   slippage?: number;
-  fills?: Array<{
-    price: number;
-    qty: number;
-    commission?: number;
-    commissionAsset?: string;
-    tradeId?: number | string;
-  }>;
+  fee_amount?: number;
+  fee_currency?: string;
+  fee_usd?: number;
 }
 
 export interface ExecutorAdapter {
@@ -68,4 +64,12 @@ export interface ExecutorAdapter {
   cancelOrder(
     params: CancelOrderParams
   ): Promise<CommonOrderResult>;
+}
+
+export type FeePriceData = {
+  asset: string;              // z.B. "BNB"
+  price: number;              // z.B. 640.12
+  tsMs: number;               // wann vom Exchange geholt
+  sourceExchange: ExchangeId; // binance | gate
+  sourceSymbol: string;       // z.B. BNBUSDT
 }

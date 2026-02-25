@@ -6,7 +6,7 @@ import { getExchange, getBotCfg } from '../common/config';
 import { safeCall, isFulfilled } from '../common/async';
 import { marketOrderPrecheckOk } from './order_precheck';
 
-import * as appBus from '../bus';
+import appBus from '../bus';
 import { adapter as binanceAdapter } from './adapter/binance_ws';
 import { adapter as gateAdapter } from './adapter/gate_ws';
 
@@ -23,8 +23,6 @@ type Deps = {
   adapters?: Partial<Record<ExchangeId, ExecutorAdapter>>;
   nowFn?: () => number;
 };
-
-
 
 // function getEnabledSymbols(cfg: AppConfig) {
 //   if (Array.isArray(cfg.symbols)) return cfg.symbols;
@@ -89,6 +87,7 @@ export default async function startExecutor(
   //     orderId: '123456789',
   //   });
   // }
+
 
   // spaeter:
   // for (const [ex, ad] of Object.entries(adapters)) {
@@ -212,11 +211,11 @@ export default async function startExecutor(
             buyEx,
             sellEx,
             buyQ               : buyR.value.cummulativeQuoteQty,
-            buyP               : buyR.value.price,
+            buyP               : buyR.value.priceVwap,
             // buyCommission      : buyR.value.commission,
             // buyCommissionAsset : buyR.value.commissionAsset,
             sellQ              : sellR.value.cummulativeQuoteQty,
-            sellP              : sellR.value.price,
+            sellP              : sellR.value.priceVwap,
             // sellCommission     : sellR.value.commission,
             // sellCommissionAsset: sellR.value.commissionAsset,
           },

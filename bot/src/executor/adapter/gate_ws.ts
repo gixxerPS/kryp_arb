@@ -21,9 +21,10 @@ import type {
   UpdateBalancesParams,
   PendingEntry,
   ExecutorAdapter,
+  FeePriceData
 } from '../../types/executor';
 import type { AppConfig } from '../../types/config';
-import { OrderSides } from '../../types/common';
+import { OrderSides, ExchangeIds } from '../../types/common';
 import type { ReconnectDelayOverrideArgs } from '../../types/ws_reconnect';
 
 type GateSpotAccount = { currency: string; available: string; locked: string };
@@ -31,6 +32,7 @@ type GateSpotAccount = { currency: string; available: string; locked: string };
 type GatePlaceOrderResult = {
   id: string;
   text?: string;
+  create_time_ms?: number;
   status?: string;
   currency_pair: string;
   avg_deal_price?: string;
@@ -46,6 +48,11 @@ type GateCancelOrderResult = {
   text?: string;
   status?: string;
   currency_pair: string;
+};
+
+type GateTickerRow = {
+  currency_pair?: string;
+  last?: string; // letzter Preis
 };
 
 function sha512Hex(data: string): string {
@@ -113,6 +120,14 @@ const apiSecret = process.env.GATE_API_SECRET!;
 let balances: Balances = {};
 let balancesLoaded = false;
 let isLoggedIn = false;
+let feePriceData: FeePriceData = {
+  asset: 'GT',
+  price: 0,
+  tsMs: 0,
+  sourceExchange: ExchangeIds.gate,
+  sourceSymbol: 'GT_USDT',
+};
+const FEE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
 function sendFrame<T>(channel: string, payload: Record<string, unknown>,
   { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
@@ -186,10 +201,13 @@ function rejectAllPending(err: unknown): void {
 let openResolve: (() => void) | null = null;
 let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
+let feeRefreshTmr: NodeJS.Timeout | null = null;
+let feeRefreshInFlight: Promise<void> | null = null;
 
 async function init(cfg: AppConfig): Promise<void> {
-  if (openPromise) {
+  if (openPromise) { // should not happen
     await openPromise;
+    
     if (!balancesLoaded) {
       balances = await fetchBalances();
       balancesLoaded = true;
@@ -314,6 +332,8 @@ async function init(cfg: AppConfig): Promise<void> {
 
   mgr.start();
   await openPromise;
+  await refreshFeePriceData(); // initialer BNB preis holen fuer fee preisberechnung  beim Start
+  startFeePriceRefreshLoop();  // danach alle 15 min
 
   if (!balancesLoaded) {
     balances = await fetchBalances();
@@ -412,29 +432,40 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
   } else {
     throw new Error(`unsupported side for gate placeOrder: ${String(orderParams.side)}`);
   }
-
+  log.debug({reqParam}, 'ORDER!!!!');
   const r = await sendReq<GatePlaceOrderResult>('spot.order_place', reqParam, { timeoutMs: 10_000 });
   log.debug({ reqParam, rawOrderResponse: r }, 'placeOrder raw response');
 
-  return {
-    exchange: 'gate',
+  const cumQuote : number = Number(r.filled_total);
+  const totalCommission = Number(r.fee);
+  let feeUsd = 0.0;
+  if (r.fee_currency === feePriceData.asset) {
+    // should not happen! order wurde abgesetzt bevor preis daten vom fee token geholt wurden?
+    // Optional spaeter: alter / gueltigkeit des preises pruefen
+    if (!feePriceData.tsMs) { 
+      log.error({}, 'no price data of fee currency yet');
+    }
+    feeUsd = feePriceData.price * totalCommission;
+  } else {
+    log.warn({currency:r.fee_currency}, 'unknown fee currency');
+    feeUsd = 0.0;
+  }
+  const out : CommonOrderResult = {
+    exchange: ExchangeIds.gate,
     symbol: r.currency_pair,
     status: r.status,
     orderId: r.id,
     clientOrderId: idFromGateText(r.text),
-    executedQty: r.filled_amount !== undefined ? Number(r.filled_amount) : undefined,
-    cummulativeQuoteQty: r.filled_total !== undefined ? Number(r.filled_total) : undefined,
-    price: r.avg_deal_price !== undefined ? Number(r.avg_deal_price) : undefined,
-    slippage: r.slippage !== undefined ? Number(r.slippage) : undefined,
-    fills: r.fee !== undefined
-      ? [{
-          price: Number(r.avg_deal_price ?? 0),
-          qty: Number(r.filled_amount ?? 0),
-          commission: Number(r.fee),
-          commissionAsset: r.fee_currency,
-        }]
-      : undefined,
+    transactTime: Number(r.create_time_ms),
+    executedQty: Number(r.filled_amount),
+    cummulativeQuoteQty: cumQuote,
+    priceVwap: Number(r.avg_deal_price),
+    slippage: Number(r.slippage),
+    fee_amount: totalCommission,
+    fee_currency: r.fee_currency,
+    fee_usd: feeUsd,
   };
+  return out;
 }
 
 async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
@@ -461,6 +492,48 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
     orderId: r.id,
     clientOrderId: r.text,
   };
+}
+
+
+async function fetchSpotLastPrice(pair: string): Promise<number> {
+  const host = process.env.GATE_REST_HOST ?? 'https://api.gateio.ws';
+  const url = `${host}/api/v4/spot/tickers?currency_pair=${pair}`;
+
+  // public endpoint, keine Signatur nötig
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`gate ticker failed status=${res.status} pair=${pair}`);
+
+  const rows = (await res.json()) as GateTickerRow[];
+  const p = Number(rows?.[0]?.last ?? NaN);
+  if (!Number.isFinite(p) || p <= 0) throw new Error(`invalid gate price pair=${pair}`);
+  return p;
+}
+
+async function refreshFeePriceData(): Promise<void> {
+  if (feeRefreshInFlight) return feeRefreshInFlight;
+
+  feeRefreshInFlight = (async () => {
+    try {
+      // primär gegen USDT
+      const p = await fetchSpotLastPrice(feePriceData.sourceSymbol);
+      feePriceData.price = p;
+      feePriceData.tsMs = Date.now();
+      log.debug({ feePriceData }, 'gate fee price refreshed');
+    } catch (err) {
+      log.warn({ err }, 'gate fee price refresh failed');
+    } finally {
+      feeRefreshInFlight = null;
+    }
+  })();
+
+  return feeRefreshInFlight;
+}
+
+function startFeePriceRefreshLoop(): void {
+  if (feeRefreshTmr) return;
+  feeRefreshTmr = setInterval(() => {
+    void refreshFeePriceData();
+  }, FEE_REFRESH_MS);
 }
 
 export const adapter: ExecutorAdapter = {

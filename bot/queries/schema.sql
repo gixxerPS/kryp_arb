@@ -1,5 +1,5 @@
-CREATE TABLE trade_intent (
-  id UUID PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS public.trade_intent (
+  id VARCHAR(32) PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -21,76 +21,43 @@ CREATE TABLE trade_intent (
   theoretical_sell_px numeric(18,8) NOT NULL,
   meta JSONB
 );
-CREATE INDEX idx_intent_status_created
+CREATE INDEX IF NOT EXISTS idx_intent_status_created
 ON trade_intent (status, created_at DESC);
-CREATE INDEX idx_intent_route_created
+CREATE INDEX IF NOT EXISTS idx_intent_route_created
 ON trade_intent (symbol, buy_ex, sell_ex, created_at DESC);
 
 
-
-CREATE TABLE trade_fill (
-  id BIGSERIAL PRIMARY KEY,
-  intent_id UUID NOT NULL REFERENCES trade_intent(id),
+CREATE TABLE IF NOT EXISTS public.trade_fill (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  intent_id VARCHAR(32) NOT NULL REFERENCES trade_intent(id),
 
   ts TIMESTAMPTZ NOT NULL,               -- Fill-Zeit (Exchange oder lokal)
-  exchange TEXT NOT NULL,
   symbol TEXT NOT NULL,
-
-  order_id TEXT,                         -- Exchange order id
-  trade_id TEXT,                         -- Exchange trade id (fill id)
-
-  side TEXT NOT NULL CHECK (side IN ('buy','sell')),
-  price NUMERIC(18,12) NOT NULL,
-  qty_base NUMERIC(28,12) NOT NULL,
-  qty_quote NUMERIC(28,12) NOT NULL,     -- price * qty_base (oder direkt vom exchange)
-
-  fee NUMERIC(28,12) NOT NULL DEFAULT 0,
-  fee_ccy TEXT NOT NULL,                 -- USDT/BNB/etc.
-
-  liquidity TEXT,                        -- maker/taker wenn verfügbar
-  raw JSONB                               -- original payload (audit/debug)
-);
-
-CREATE INDEX idx_fill_intent ON trade_fill(intent_id);
-CREATE INDEX idx_fill_exchange_ts ON trade_fill(exchange, ts DESC);
-CREATE UNIQUE INDEX uq_fill_dedupe
-ON trade_fill(exchange, trade_id)
-WHERE trade_id IS NOT NULL;
-
-
-
-CREATE TABLE IF NOT EXISTS public.trade_order_pair (
-  id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  intent_id  uuid        NOT NULL REFERENCES trade_intent(id),
-  ts         timestamptz NOT NULL DEFAULT now(),
-  symbol     text        NOT NULL,
 
   buy_ex     text        NOT NULL,
   buy_order_id text,
+  buy_order_ts TIMESTAMPTZ,
   buy_status text,
   buy_price  NUMERIC(18,12) NOT NULL,
   buy_qty    NUMERIC(28,12) NOT NULL,
   buy_quote  NUMERIC(18,8) NOT NULL, 
-
+  buy_fee_amount NUMERIC(28,12) NOT NULL DEFAULT 0,
+  buy_fee_ccy TEXT NOT NULL,                 -- USDT/BNB/etc.
+  buy_fee_usd NUMERIC(28,12) NOT NULL DEFAULT 0,
+  
   sell_ex     text       NOT NULL,
   sell_order_id text,
+  sell_order_ts TIMESTAMPTZ,
   sell_status text,
-  sell_price  NUMERIC(18,12) NOT NULL,
+  sell_price  NUMERIC(18,12) NOT NULL, -- avg wenn ueber mehrere levels gefillt
   sell_qty    NUMERIC(28,12) NOT NULL,
-  sell_quote  NUMERIC(18,8) NOT NULL 
-
+  sell_quote  NUMERIC(18,8) NOT NULL, 
+  sell_fee_amount NUMERIC(28,12) NOT NULL DEFAULT 0,
+  sell_fee_ccy TEXT NOT NULL,                 -- USDT/BNB/etc.
+  sell_fee_usd NUMERIC(28,12) NOT NULL DEFAULT 0
+  
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_trade_order_pair_intent
-  ON public.trade_order_pair(intent_id);
-
-CREATE INDEX IF NOT EXISTS idx_trade_order_pair_ts
-  ON public.trade_order_pair(ts DESC);
-
-CREATE INDEX IF NOT EXISTS idx_trade_order_pair_buy
-  ON public.trade_order_pair(buy_ex, buy_order_id)
-  WHERE buy_order_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_trade_order_pair_sell
-  ON public.trade_order_pair(sell_ex, sell_order_id)
-  WHERE sell_order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_fill_intent ON trade_fill(intent_id);
+CREATE INDEX IF NOT EXISTS idx_fill_symbol_ts ON trade_fill(symbol, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_fill_ts_desc ON public.trade_fill(ts DESC);

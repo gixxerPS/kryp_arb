@@ -19,6 +19,7 @@ import startBinanceDepth from './collector/binance_depth';
 import startGateDepth from './collector/gate_depth';
 import startBitgetDepth from './collector/bitget_depth';
 import startDbIntentWriter from './db/intent_writer';
+import startDbOrderWriter from './db/order_writer';
 import startExecutor from './executor';
 import startStrategy from './strategy';
 import { initTelegramBot } from './ui/telegram_bot';
@@ -84,7 +85,8 @@ async function main() {
   startStrategy(cfg, fees);
   
   startDbIntentWriter(cfg, pool); // datenbank. trade ideen eintragen
-
+  startDbOrderWriter(cfg, pool); // datenbank. trade ideen eintragen
+  
   // executor (private exchange APIs: balances, user streams, orders)
   const executor = await startExecutor({ cfg });
 

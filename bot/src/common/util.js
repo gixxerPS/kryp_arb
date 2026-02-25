@@ -92,7 +92,7 @@ function readJson(fp) {
 function makeClientId() {
   const ts = Date.now().toString(36);
   const rnd = Math.random().toString(36).slice(2, 10);
-  return `t-${ts}${rnd}`;   // ~18–22 Zeichen
+  return `${ts}${rnd}`;   // ~18–22 Zeichen
 }
 
 module.exports = {

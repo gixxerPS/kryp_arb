@@ -83,6 +83,7 @@ const log = getLogger('executor').child({ exchange: 'binance' });
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
+import { OrderSides, ExchangeIds } from '../../types/common';
 
 import type { 
   Balances, 
@@ -91,7 +92,8 @@ import type {
   CancelOrderParams,
   UpdateBalancesParams,
   PendingEntry, 
-  ExecutorAdapter} from '../../types/executor';
+  ExecutorAdapter,
+  FeePriceData } from '../../types/executor';
 import type { AppConfig } from '../../types/config';
 import type { WsParams } from '../../types/common';
 import type { ReconnectDelayOverrideArgs } from '../../types/ws_reconnect';
@@ -206,6 +208,14 @@ let ed25519PrivateKeyPem : string  = '';     // string
 const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject, tmr }
 let balances: Balances = {};
 let balancesLoaded = false;
+let feePriceData: FeePriceData = {
+  asset: 'BNB',
+  price: 0,
+  tsMs: 0,
+  sourceExchange: ExchangeIds.binance,
+  sourceSymbol: 'BNBUSDT',
+};
+const FEE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
 /**
  * @brief Send a WS-API request and await response by id.
@@ -266,10 +276,13 @@ function rejectAllPending(err: unknown): void {
 let openResolve: (() => void) | null = null;
 let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
+let feeRefreshTmr: NodeJS.Timeout | null = null;
+let feeRefreshInFlight: Promise<void> | null = null;
 
 async function init(cfg: AppConfig): Promise<void> {
-  if (openPromise) {
+  if (openPromise) { // should not happen
     await openPromise;
+    
     if (!balancesLoaded) {
       balances = await fetchBalancesWs();
       balancesLoaded = true;
@@ -377,6 +390,9 @@ async function init(cfg: AppConfig): Promise<void> {
 
   mgr.start();
   await openPromise;
+  await refreshFeePriceData(); // initialer BNB preis holen fuer fee preisberechnung  beim Start
+    startFeePriceRefreshLoop();  // danach alle 15 min
+
   if (!balancesLoaded) {
     balances = await fetchBalancesWs();
     balancesLoaded = true;
@@ -584,24 +600,47 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
 //       ],
 //       "selfTradePreventionMode": "EXPIRE_MAKER"
 //     }
+  
+  // preis ermitteln
+  const cumQuote : number = Number(r.cummulativeQuoteQty);
+  const exeQty : number = Number(r.executedQty);
+  let priceVwap = 0.0;
+  if (exeQty > 1e-3) {
+    priceVwap = cumQuote / exeQty;
+  }
+  
+  // fees ermitteln
+  const totalCommission = (r.fills ?? []).reduce((sum, f) => {
+    const c = Number(f.commission ?? 0);
+    return Number.isFinite(c) ? sum + c : sum;
+  }, 0);
+  const commissionAsset = r.fills?.[0]?.commissionAsset;
+  let feeUsd = 0.0;
+  if (commissionAsset === feePriceData.asset) {
+    // should not happen! order wurde abgesetzt bevor preis daten vom fee token geholt wurden?
+    // Optional spaeter: alter / gueltigkeit des preises pruefen
+    if (!feePriceData.tsMs) { 
+      log.error({}, 'no price data of fee currency yet');
+    }
+    feeUsd = feePriceData.price * totalCommission;
+  } else {
+    log.warn({currency:commissionAsset}, 'unknown fee currency');
+    feeUsd = 0.0;
+  }
 
   const out : CommonOrderResult = {
-    exchange: 'binance',
+    exchange: ExchangeIds.binance,
     symbol: r.symbol,
     status: r.status,
     orderId: r.orderId,
     clientOrderId: r.clientOrderId,
     transactTime: r.transactTime,
-    executedQty: r.executedQty !== undefined ? Number(r.executedQty) : undefined,
-    cummulativeQuoteQty: r.cummulativeQuoteQty !== undefined ? Number(r.cummulativeQuoteQty) : undefined,
-    price: r.price !== undefined ? Number(r.price) : undefined,
-    fills: r.fills?.map((f) => ({
-      price: Number(f.price),
-      qty: Number(f.qty),
-      commission: f.commission !== undefined ? Number(f.commission) : undefined,
-      commissionAsset: f.commissionAsset,
-      tradeId: f.tradeId,
-    })),
+    executedQty: exeQty,
+    cummulativeQuoteQty: cumQuote,
+    priceVwap: priceVwap,
+    fee_amount: Number(totalCommission),
+    fee_currency: commissionAsset,
+    fee_usd: feeUsd,
   };
   return out;
 }
@@ -622,6 +661,42 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
     orderId: r.orderId,
     clientOrderId: r.clientOrderId ?? r.origClientOrderId,
   };
+}
+
+async function fetchTickerPrice(symbol: string): Promise<number> {
+  const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+  if (!res.ok) throw new Error(`binance ticker failed status=${res.status}`);
+  const json = (await res.json()) as { symbol?: string; price?: string };
+  // log.debug({json}, 'fetch price result');
+  const p = Number(json.price ?? NaN);
+  if (!Number.isFinite(p) || p <= 0) throw new Error(`invalid ticker price for ${symbol}`);
+  return p;
+}
+
+async function refreshFeePriceData(): Promise<void> {
+  if (feeRefreshInFlight) return feeRefreshInFlight;
+
+  feeRefreshInFlight = (async () => {
+    try {
+      const p = await fetchTickerPrice(feePriceData.sourceSymbol);
+      feePriceData.price = p;
+      feePriceData.tsMs = Date.now();
+      log.debug({ feePriceData }, 'fee price refreshed');
+    } catch (err) {
+      log.warn({ err }, 'fee price refresh failed');
+    } finally {
+      feeRefreshInFlight = null;
+    }
+  })();
+
+  return feeRefreshInFlight;
+}
+
+function startFeePriceRefreshLoop(): void {
+  if (feeRefreshTmr) return; // kein doppeltes Interval
+  feeRefreshTmr = setInterval(() => {
+    void refreshFeePriceData();
+  }, FEE_REFRESH_MS);
 }
 
 export const adapter : ExecutorAdapter = {
