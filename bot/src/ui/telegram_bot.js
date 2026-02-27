@@ -1,4 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
+const bus = require('../bus');
 
 const { fmtNowIsoLocal } = require('../common/util');
 const { getExState } = require('../common/exchange_state');
@@ -120,6 +121,30 @@ function buildRuntimeTable(runtimeState) {
   ]);
 }
 
+function n(v, d = 6) {
+  const x = Number(v ?? 0);
+  if (!Number.isFinite(x)) return '0';
+  return x.toFixed(d);
+}
+
+function buildTradeOrdersOkText(ev) {
+  const buyQuote = Number(ev?.buy?.cummulativeQuoteQty ?? 0);
+  const sellQuote = Number(ev?.sell?.cummulativeQuoteQty ?? 0);
+  const buyFeeUsd = Number(ev?.buy?.fee_usd ?? 0);
+  const sellFeeUsd = Number(ev?.sell?.fee_usd ?? 0);
+  const pnl = sellQuote - buyQuote - buyFeeUsd - sellFeeUsd;
+
+  return [
+    'TRADE OK',
+    `id=${ev?.id ?? 'n/a'}`,
+    `ts=${ev?.ts ?? 'n/a'}`,
+    `symbol=${ev?.symbol ?? 'n/a'}`,
+    `BUY  ${ev?.buy?.exchange ?? 'n/a'} qty=${n(ev?.buy?.executedQty)} px=${n(ev?.buy?.priceVwap)} quote=${n(buyQuote)} feeUsd=${n(buyFeeUsd)}`,
+    `SELL ${ev?.sell?.exchange ?? 'n/a'} qty=${n(ev?.sell?.executedQty)} px=${n(ev?.sell?.priceVwap)} quote=${n(sellQuote)} feeUsd=${n(sellFeeUsd)}`,
+    `PnL=${n(pnl)} USD`,
+  ].join('\n');
+}
+
 function initTelegramBot({cfg, app}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -143,6 +168,32 @@ function initTelegramBot({cfg, app}) {
   function isAllowed(msg) {
     return allowed.has(msg.from?.id);
   }
+
+  bus.on('trade:orders_ok', (ev) => {
+    try {
+      const ids = Array.from(allowed);
+      const text = buildTradeOrdersOkText(ev);
+      const sends = [];
+      for (const id of ids) {
+        sends.push(
+          bot.sendMessage(id, `<pre>${text}</pre>`, { parse_mode: 'HTML' })
+        );
+      }
+      Promise.allSettled(sends)
+        .then((res) => {
+          for (const [idx, r] of res.entries()) {
+            if (r.status === 'rejected') {
+              log.error({ err: r.reason, userId: ids[idx] }, 'telegram trade notify failed');
+            }
+          }
+        })
+        .catch((err) => {
+          log.error({ err }, 'telegram trade notify aggregation failed');
+        });
+    } catch (err) {
+      log.error({ err }, 'telegram trade event handler failed');
+    }
+  });
 
   // function buildStatusText() {
   //   const lines = [];
@@ -217,8 +268,10 @@ function initTelegramBot({cfg, app}) {
   });
 
   log.info({  }, 'telegram bot started');
+  allowed.forEach((id) => {
+    bot.sendMessage(id, 'app(re-)start');
+  });
   return bot;
 }
 
 module.exports = { initTelegramBot };
-
