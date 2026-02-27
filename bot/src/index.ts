@@ -47,7 +47,7 @@ async function main() {
   // u.a. symbolinfo je exchange {AXS_USDT:{binance:{...}, gate:{...}, bitget:{...}}}
   // und wieder reverse mapping je symbol und exchange
   symbolinfo.init({
-    symbolsCanon: cfg.bot.symbols,
+    symbolsCanon: cfg.symbols,
     exchangesCfg: cfg.exchanges,
     symbolInfoByEx : cfg.symbolInfoByEx,
     log
