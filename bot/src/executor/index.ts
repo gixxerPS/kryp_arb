@@ -35,6 +35,8 @@ type Deps = {
   nowFn?: () => number;
 };
 
+
+
 // function getEnabledSymbols(cfg: AppConfig) {
 //   if (Array.isArray(cfg.symbols)) return cfg.symbols;
 //   if (cfg.pairs && typeof cfg.pairs === 'object') {
@@ -60,7 +62,8 @@ export default async function startExecutor(
   const exStateArr = exState.getAllExchangeStates();
 
   const CFG_AUTO_FIX_FAILED_ORDERS = getBotCfg().auto_fix_failed_orders;
-  
+  const STARTUP_MAX_TRADES = 1; // kuenstliche bremse fuer trades
+
   // adapters ermitteln fuer exchanges die bei start enabled sind
   const adapters: Partial<Record<ExchangeId, ExecutorAdapter>> = deps.adapters ?? {};
   for (const ex of exStateArr) {
@@ -262,6 +265,12 @@ export default async function startExecutor(
       const sellExSymInfo = getEx(symbol, sellEx);
       if (!buyExSymInfo || !sellExSymInfo) {
         log.error({ reason:'symbolinfo missing', symbol, buyEx, sellEx }, 'dropping intent');
+        return;
+      }
+
+      if (runtimeState.today.failedCount > STARTUP_MAX_TRADES
+        || runtimeState.today.successCount > STARTUP_MAX_TRADES) {
+        log.warn({ reason:'startup trade limit today reached', intent, STARTUP_MAX_TRADES }, 'dropping intent');
         return;
       }
       const buyExchangeState = exState.getExchangeState(buyEx);
@@ -469,13 +478,17 @@ export default async function startExecutor(
   }
 
   // subscription
-  // bus.on('trade:intent', (intent) => {
-  //   // als erstes state aktualisieren: ist exchange noch enabled? oder von 
-  //   // ui (telegram / webserver) disabled worden?
-  //   handleIntent(intent).catch((err) => {
-  //     log.error({ err, intent }, 'executor intent failed');
-  //   });
-  // });
+  bus.on('trade:intent', (intent :TradeIntent) => {
+    // als erstes state aktualisieren: ist exchange noch enabled? oder von 
+    // ui (telegram / webserver) disabled worden?
+    if (process.env.NODE_ENV !== 'production') {
+      log.debug({ nodeEnv: process.env.NODE_ENV, intentId: intent.id }, 'skip handleIntent outside production');
+      return;
+    }
+    handleIntent(intent).catch((err) => {
+      log.error({ err, intent }, 'executor intent failed');
+    });
+  });
 
   log.debug({ }, 'executor started');
   return {
