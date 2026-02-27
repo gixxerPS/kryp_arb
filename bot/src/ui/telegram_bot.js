@@ -172,6 +172,7 @@ function initTelegramBot({cfg, app}) {
       log.error({ userId: msg.chat.id }, 'user id not authorized');
       return;
     }
+    log.debug({ chat_id: msg.chat.id }, 'chat id');
     try {
       const header = `trading=${runtimestate.tradingEnabled ? 'ON' : 'OFF'}  @ ${fmtNowIsoLocal()}`;
       const accountStatus = app?.executor?.getAccountStatus ? app.executor.getAccountStatus() : {};
