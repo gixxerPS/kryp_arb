@@ -2,7 +2,8 @@ const {suite, test} = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 
-const startStrategy = require('../../src/strategy'); 
+const { default: startStrategy } = require('../../src/strategy'); 
+const { EXCHANGE_QUALITY } = require('../../src/common/constants');
 
 function mkCfg(overrides = {}) {
   return {
@@ -17,6 +18,16 @@ function mkCfg(overrides = {}) {
       bitget:  { taker_fee_pct: 0.1 },
       ...overrides.exchanges,
     },
+  };
+}
+
+function initTestExchangeState() {
+  return {
+    getExchangeState: (exchange) => ({
+      exchange,
+      exchangeQuality: EXCHANGE_QUALITY.OK,
+      anyAgeMs: 0,
+    }),
   };
 }
 
@@ -39,7 +50,7 @@ suite('strategy/index', () => {
       bot: { symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn });
+    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
 
@@ -69,7 +80,7 @@ suite('strategy/index', () => {
       bot: { symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn });
+    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(emitted.length, 1);
@@ -104,7 +115,7 @@ suite('strategy/index', () => {
       bot: { symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 200 },
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn });
+    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(computeCalls, 1);
@@ -128,7 +139,7 @@ suite('strategy/index', () => {
 
     const cfg = mkCfg({ bot: { symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 0 } });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn: () => 1, uuidFn: () => 'u' });
+    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn: () => 1, uuidFn: () => 'u', getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'BAR_USDT', tsMs: 1, bids: [], asks: [] });
     assert.equal(computeCalls, 0);

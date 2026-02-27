@@ -1,8 +1,9 @@
 const { suite, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { computeIntentsForSym, getQWithinSlippage } = require('../../src/strategy/engine');
+const { computeIntentsForSym, getQWithinSlippage, initStrategyEngine } = require('../../src/strategy/engine');
 const { EXCHANGE_QUALITY } = require('../../src/common/constants');
+const symbolinfo = require('../../src/common/symbolinfo');
 
 const cfg = { 
   bot : {
@@ -21,6 +22,46 @@ const fees = {
 const exState = {
   getExchangeState: (ex) => ({ exchange: ex, exchangeQuality: EXCHANGE_QUALITY.OK, anyAgeMs: 0 })
 };
+
+function orderKeyFor(ex, sym) {
+  if (ex === 'binance' || ex === 'bitget') return String(sym).replace('_', '').toUpperCase();
+  if (ex === 'gate') return String(sym).toUpperCase();
+  return String(sym);
+}
+
+function setupEngineRuntime({ sym, cfg, fees }) {
+  const exchanges = cfg?.bot?.exchanges ?? [];
+  const exchangesCfg = {};
+  const symbolInfoByEx = {};
+
+  for (const ex of exchanges) {
+    exchangesCfg[ex] = {
+      enabled: true,
+      subscription: { levels: 10, updateMs: 100 },
+      taker_fee_pct: Number(fees?.[ex]?.taker_fee_pct ?? 0),
+    };
+    const orderKey = orderKeyFor(ex, sym);
+    symbolInfoByEx[ex] = {
+      symbols: {
+        [orderKey]: { enabled: true },
+      },
+    };
+  }
+
+  symbolinfo._resetForTests();
+  symbolinfo.init({
+    symbolsCanon: [sym],
+    exchangesCfg,
+    symbolInfoByEx,
+    log: { warn: () => {} },
+  });
+  initStrategyEngine(cfg);
+}
+
+function computeIntentsForSymWithInit(args) {
+  setupEngineRuntime({ sym: args.sym, cfg: args.cfg, fees: args.fees });
+  return computeIntentsForSym(args);
+}
 
 suite('strategy/engine stage 1. detect trades from spread', () => {
   test('computeIntents erzeugt intent wenn net edge > 0 und genug l10 liquidität', () => {
@@ -46,7 +87,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState});
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState});
 
     assert.deepEqual(intents.length, 1);
     assert.deepEqual(intents[0].buyEx, 'gate');
@@ -77,7 +118,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState});
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState});
 
     assert.deepEqual(intents.length, 0);
   });
@@ -102,7 +143,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState});
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState});
 
     assert.equal(intents.length, 0);
   });
@@ -128,7 +169,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
 
     const fees = { binance: { taker_fee_pct: 0.0 }, bitget: { taker_fee_pct: 0.0 } };
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState });
     assert.equal(intents.length, 1);
   });
   test('computeIntentsForSymbol uses bestAskPx for asks and bestBidPx for bids (guards against swap bug)', () => {
@@ -173,7 +214,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       bitget: { taker_fee_pct: 0 },
     };
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState });
 
     assert.equal(intents.length, 1);
     assert.equal(intents[0].symbol, sym);
@@ -232,7 +273,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       bitget:  { taker_fee_pct: 0 },
     };
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState });
     assert.equal(intents.length, 0);
   });
 
@@ -279,7 +320,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       binance: { taker_fee_pct: 0 },
       bitget:  { taker_fee_pct: 0 },
     };
-    const intents = computeIntentsForSym({sym, latest, fees, nowMs, cfg, exState});
+    const intents = computeIntentsForSymWithInit({sym, latest, fees, nowMs, cfg, exState});
 
     assert.equal(intents.length, 1);
     const it = intents[0];
@@ -333,7 +374,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       binance: { taker_fee_pct: 0 },
       bitget:  { taker_fee_pct: 0 },
     };
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState });
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState });
     assert.equal(intents.length, 0);
   });
   test('computeIntents erzeugt keinen intent wenn trade gueltig aber exchange state passt nicht', () => {
@@ -366,7 +407,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     cfg.bot.symbols = [sym];
     cfg.bot.exchanges = ['gate', 'binance'];
 
-    const intents = computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState:exStateBinanceFail});
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState:exStateBinanceFail});
 
     assert.deepEqual(intents.length, 0);
   });

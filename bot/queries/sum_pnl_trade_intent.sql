@@ -7,6 +7,8 @@ SELECT
   ROUND(MAX(expected_pnl_quote), 2) AS max_expected_pnl_quote,
   ROUND(MIN(expected_pnl_quote), 2) AS min_expected_pnl_quote,
   ROUND(AVG(size_quote), 2)         AS avg_size_quote,
+  ROUND(MAX(size_quote), 2)         AS max_size_quote,
+  ROUND(MIN(size_quote), 2)         AS min_size_quote,
   ROUND(AVG(target_qty), 2)         AS avg_target_qty
 FROM trade_intent
 WHERE created_at >= now() - interval :'my_interval';

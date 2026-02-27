@@ -1,3 +1,5 @@
+import type { EventEmitter } from 'node:events';
+import type { AppConfig } from './config';
 import type { ExchangeId } from './common';
 
 export type TradeIntent = {
@@ -19,4 +21,39 @@ export type TradeIntent = {
 
   buyPxWorst    : number;     /** worst case ask px (incl slippage) -> buy price should be better than this */
   sellPxWorst   : number;     /** worst case bid px (incl slippage) -> sell price should be better than this */
+};
+
+export type TradeIntentDraft = Omit<TradeIntent, 'id' | 'tsMs' | 'valid_until'>;
+
+export type L2Level = [number | string, number | string];
+
+export type L2Snapshot = {
+  tsMs: number;
+  exchange: ExchangeId;
+  symbol: string;
+  bids: L2Level[];
+  asks: L2Level[];
+};
+
+export type ExchangeStateLike = {
+  getExchangeState: (exchange: ExchangeId) => unknown;
+};
+
+export type ComputeIntentsForSymArgs = {
+  sym: string;
+  latest: Map<string, L2Snapshot>;
+  fees: AppConfig['exchanges'];
+  nowMs: number;
+  cfg: AppConfig;
+  exState: ExchangeStateLike;
+};
+
+export type ComputeIntentsForSym = (params: ComputeIntentsForSymArgs) => TradeIntentDraft[];
+
+export type StrategyDeps = {
+  bus?: EventEmitter;
+  getExState?: () => ExchangeStateLike | null;
+  computeIntentsForSymbol?: ComputeIntentsForSym;
+  nowFn?: () => number;
+  uuidFn?: () => string;
 };

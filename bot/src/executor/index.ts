@@ -13,7 +13,7 @@ import { adapter as gateAdapter } from './adapter/gate_ws';
 
 import type { AppConfig } from '../types/config';
 import type { ExchangeId } from '../types/common';
-import { OrderTypes, OrderSides } from '../types/common';
+import { OrderTypes, OrderSides, ExchangeIds } from '../types/common';
 import {
   type ExecutorAdapter,
   type PlaceOrderParams,
@@ -145,7 +145,93 @@ export default async function startExecutor(
   //     orderId: '123456789',
   //   });
   // }
+  // if (adapters.gate) {
+  //   const gateSym = getEx('AXS_USDT', ExchangeIds.gate);
+  //   if (!gateSym?.orderKey) {
+  //     log.warn({ symbol: 'AXS_USDT', exchange: ExchangeIds.gate }, 'skip gate test order: missing orderKey');
+  //   } else {
+  //     const buyPO  = adapters.gate.placeOrder(false, {
+  //       symbol: gateSym.orderKey,
+  //       side: OrderSides.BUY,
+  //       type: OrderTypes.MARKET,
+  //       // qty/quoteQty je nach Ansatz
+  //       quantity:10,
+  //       q: 13.6,
+  //       orderId: '123456789',
+  //     }); 
+  //     // Promises sofort starten (parallel), aber Fehler in op() abfangen
+  //     const [buyR] = await Promise.allSettled([buyPO]);
+      
+  //     const buyOk  = isFulfilled(buyR) // promise result
+  //       && buyR.value.status === OrderStates.FILLED;       // order result
+  //     if (buyOk) {
+  //       log.debug({rValue:buyR.value}, 'ORDER EXECUTED');
+//         [2026-02-26 16:47:32.554 +0100] DEBUG (executor): placeOrder raw response
+//     exchange: "gate"
+//     reqParam: {
+//       "currency_pair": "AXS_USDT",
+//       "side": "buy",
+//       "type": "market",
+//       "text": "t-123456789",
+//       "action_mode": "FULL",
+//       "time_in_force": "fok",
+//       "amount": "13.6"
+//     }
+//     rawOrderResponse: {
+//       "id": "1021226213356",
+//       "text": "t-123456789",
+//       "amend_text": "-",
+//       "create_time": "1772120852",
+//       "update_time": "1772120852",
+//       "create_time_ms": 1772120852424,
+//       "update_time_ms": 1772120852424,
+//       "status": "closed",
+//       "currency_pair": "AXS_USDT",
+//       "type": "market",
+//       "account": "spot",
+//       "side": "buy",
+//       "amount": "13.6",
+//       "price": "0",
+//       "time_in_force": "fok",
+//       "iceberg": "0",
+//       "left": "0.00642",
+//       "filled_amount": "10.01",
+//       "fill_price": "13.59358",
+//       "filled_total": "13.59358",
+//       "avg_deal_price": "1.358",
+//       "fee": "0",
+//       "fee_currency": "AXS",
+//       "point_fee": "0",
+//       "gt_fee": "0.00173044158415841584",
+//       "gt_maker_fee": "0",
+//       "gt_taker_fee": "0.0009",
+//       "gt_discount": true,
+//       "rebated_fee": "0",
+//       "rebated_fee_currency": "USDT",
+//       "finish_as": "filled"
+//     }
+// [2026-02-26 16:47:32.555 +0100] DEBUG (executor): ORDER EXECUTED
+//     rValue: {
+//       "exchange": "gate",
+//       "symbol": "AXS_USDT",
+//       "status": "FILLED",
+//       "orderId": "1021226213356",
+//       "clientOrderId": "123456789",
+//       "transactTime": 1772120852424,
+//       "executedQty": 10.01,
+//       "cummulativeQuoteQty": 13.59358,
+//       "priceVwap": 1.358,
+//       "slippage": null,
+//       "fee_amount": 0.0017304415841584157,
+//       "fee_currency": "AXS",
+//       "fee_usd": 0.012234222
+//     }
 
+  //     } else {
+  //       log.error({rStatus:buyR.status}, 'ORDER NOT EXECUTED');
+  //     }
+  //   }
+  // }
 
   // spaeter:
   // for (const [ex, ad] of Object.entries(adapters)) {

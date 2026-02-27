@@ -62,6 +62,8 @@ export interface ExSymbolInfo {
   enabled: boolean;
   base: string;
   quote: string;
+  taker_fee_pct: number;
+  taker_fee: number;
   mdKey: string;
   orderKey: string;
   rules: CompiledRules | null;

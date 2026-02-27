@@ -1,28 +1,35 @@
-// db/intent_writer.js
-//
-//
-const bus = require('../bus');
-const { getLogger } = require('../common/logger');
-const log = getLogger('db').child({ module:'trade_intents' });
+import appBus from '../bus';
+import { getLogger } from '../common/logger';
 
-module.exports = function startIntentWriter(cfg, pool) {
-  const flushIntervalMs = Number(cfg.db.flushIntervalMs) ?? 1000;   // Batch-Flush Intervall
-  const maxBatch = Number(cfg.db.maxBatch) ?? 200; // Max rows pro Insert
+import type { AppConfig } from '../types/config';
+import type { DpPool } from '../types/db';
+import type { TradeIntent } from '../types/strategy';
+
+const log = getLogger('db').child({ module: 'trade_intents' });
+
+function toFiniteNumber(value: unknown, fallback: number): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+export default function startIntentWriter(cfg: AppConfig, pool: DpPool): () => void {
+  const flushIntervalMs = toFiniteNumber(cfg.db.flushIntervalMs, 1000);
+  const maxBatch = Math.max(1, Math.floor(toFiniteNumber(cfg.db.maxBatch, 200)));
   const strategyName = cfg.bot.strategy;
   const status = 'created';
-  const q = [];
+  const q: TradeIntent[] = [];
   let flushing = false;
 
-  bus.on('trade:intent', (it) => {
+  appBus.on('trade:intent', (it: TradeIntent) => {
     q.push(it);
     // Keine await/DB hier -> sofort zurück
     // Hot-Path soll nicht blockiert werden
     // executor soll schnellstmoeglich drankommen
   });
 
-  async function flushOnce() {
+  async function flushOnce(): Promise<void> {
     if (flushing) return;
-    if (q.length === 0) return; // nothing to do
+    if (q.length === 0) return;
 
     flushing = true;
     try {
@@ -40,20 +47,18 @@ module.exports = function startIntentWriter(cfg, pool) {
         'expected_pnl_bps',
         'size_quote',
         'target_qty',
-        'theoretical_buy_px',
-        'theoretical_sell_px',
-        'meta',
+        'buy_px_worst',
+        'sell_px_worst',
       ];
-      const values = [];
-      const params = [];
+      const values: Array<string | number | Date> = [];
+      const params: string[] = [];
       let p = 1;
 
       for (const it of batch) {
-
         const expectedPnlQuote = it.q * it.net;
         const expectedPnlBps = it.net * 10_000;
 
-        params.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+        params.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
 
         values.push(
           it.id,
@@ -67,9 +72,8 @@ module.exports = function startIntentWriter(cfg, pool) {
           expectedPnlBps,
           it.q,
           it.targetQty,
-          it.buyAsk,
-          it.sellBid,
-          it.meta ? JSON.stringify(it.meta) : null
+          it.buyPxWorst,
+          it.sellPxWorst
         );
       }
       const sql = `
@@ -81,23 +85,15 @@ module.exports = function startIntentWriter(cfg, pool) {
       await pool.query(sql, values);
       log.debug({ n: batch.length }, 'wrote trade:intent batch');
     } catch (err) {
-      // Batch zurück in die Queue (vorne) damit nichts verloren geht
       log.error({ err }, 'intent flush failed');
-      // “best effort”: wieder vorne anstellen
-      // (wenn Reihenfolge egal ist, reicht q.unshift(...batch))
-      // hier safer: concat vorne
-      // eslint-disable-next-line no-use-before-define
-      //q.unshift(...batch);
     } finally {
       flushing = false;
     }
   }
 
   const t = setInterval(() => {
-    // keine await im interval callback
-    flushOnce().catch((err) => log.error({ err }, 'flushOnce error'));
+    flushOnce().catch((err: unknown) => log.error({ err }, 'flushOnce error'));
   }, flushIntervalMs);
 
   return () => clearInterval(t);
-};
-
+}

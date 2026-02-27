@@ -264,6 +264,8 @@ export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx, log }: InitAr
 
       const rawSi = symbolsMap[orderKey] ?? null;
       const rules = compileRules(rawSi);
+      const takerFeePct = Number((exCfg as any)?.taker_fee_pct ?? 0);
+      const takerFee = Number.isFinite(takerFeePct) ? takerFeePct * 0.01 : 0;
 
       const enabled = Boolean(rules?.enabled);
 
@@ -274,6 +276,8 @@ export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx, log }: InitAr
         enabled,
         base: canon.base,
         quote: quoteEx,
+        taker_fee_pct: Number.isFinite(takerFeePct) ? takerFeePct : 0,
+        taker_fee: takerFee, // absolutwert halten fuer schnelle rechnung spaeter
         mdKey,
         orderKey,
         rules,

@@ -1,24 +1,29 @@
-// db/order_writer.js
-'use strict';
+import appBus from '../bus';
+import { getLogger } from '../common/logger';
 
-const bus = require('../bus');
-const { getLogger } = require('../common/logger');
-const log = getLogger('db').child({ module:'trade_orders' });
+import type { AppConfig } from '../types/config';
+import type { DpPool } from '../types/db';
+import type { TradeOrdersOkEvent } from '../types/events';
 
-/** @typedef {import('../types/events').TradeOrdersOkEvent} TradeOrdersOkEvent */
+const log = getLogger('db').child({ module: 'trade_orders' });
 
-module.exports = function startDbOrderWriter(cfg, pool) {
-  const flushIntervalMs = Number(cfg.db.flushIntervalMs) ?? 1000;
-  const maxBatch = Number(cfg.db.maxBatch) ?? 200;
+function toFiniteNumber(value: unknown, fallback: number): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
 
-  const q = [];
+export default function startDbOrderWriter(cfg: AppConfig, pool: DpPool): () => void {
+  const flushIntervalMs = toFiniteNumber(cfg.db.flushIntervalMs, 1000);
+  const maxBatch = Math.max(1, Math.floor(toFiniteNumber(cfg.db.maxBatch, 200)));
+
+  const q: TradeOrdersOkEvent[] = [];
   let flushing = false;
 
-  bus.on('trade:orders_ok', /** @param {TradeOrdersOkEvent} ev */ (ev) => {
+  appBus.on('trade:orders_ok', (ev: TradeOrdersOkEvent) => {
     q.push(ev);
   });
 
-  async function flushOnce() {
+  async function flushOnce(): Promise<void> {
     if (flushing) return;
     if (q.length === 0) return;
     flushing = true;
@@ -26,15 +31,15 @@ module.exports = function startDbOrderWriter(cfg, pool) {
 
     try {
       const cols = [
-        'intent_id','ts','symbol',
-        'buy_ex','buy_order_id','buy_order_ts','buy_status','buy_price','buy_qty','buy_quote',
-        'buy_fee_amount','buy_fee_ccy','buy_fee_usd',
-        'sell_ex','sell_order_id','sell_order_ts','sell_status','sell_price','sell_qty','sell_quote',
-        'sell_fee_amount','sell_fee_ccy','sell_fee_usd'
+        'intent_id', 'ts', 'symbol',
+        'buy_ex', 'buy_order_id', 'buy_order_ts', 'buy_status', 'buy_price', 'buy_qty', 'buy_quote',
+        'buy_fee_amount', 'buy_fee_ccy', 'buy_fee_usd',
+        'sell_ex', 'sell_order_id', 'sell_order_ts', 'sell_status', 'sell_price', 'sell_qty', 'sell_quote',
+        'sell_fee_amount', 'sell_fee_ccy', 'sell_fee_usd'
       ];
 
-      const params = [];
-      const values = [];
+      const params: string[] = [];
+      const values: Array<string | number | Date | null> = [];
       let p = 1;
 
       for (const it of batch) {
@@ -70,8 +75,7 @@ module.exports = function startDbOrderWriter(cfg, pool) {
           it.sell.cummulativeQuoteQty ?? -1,
           it.sell.fee_amount ?? 0,
           it.sell.fee_currency ?? 'UNKNOWN',
-          it.sell.fee_usd ?? 0,
-
+          it.sell.fee_usd ?? 0
         );
       }
 
@@ -92,8 +96,8 @@ module.exports = function startDbOrderWriter(cfg, pool) {
   }
 
   const t = setInterval(() => {
-    flushOnce().catch((err) => log.error({ err }, 'flushOnce error'));
+    flushOnce().catch((err: unknown) => log.error({ err }, 'flushOnce error'));
   }, flushIntervalMs);
 
   return () => clearInterval(t);
-};
+}

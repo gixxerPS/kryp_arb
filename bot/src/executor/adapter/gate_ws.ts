@@ -41,6 +41,7 @@ type GatePlaceOrderResult = {
   filled_total: string;
   fee: string;
   fee_currency: string;
+  gt_fee: string;
   slippage?: string;
 };
 
@@ -427,6 +428,7 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     type: String(orderParams.type).toLowerCase(),
     text: idToGateText(orderParams.orderId),
     action_mode: 'FULL',
+    time_in_force: 'fok'
   };
   if (orderParams.side === OrderSides.BUY) {
     if (orderParams.q === undefined) {
@@ -435,26 +437,72 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     reqParam.amount = String(orderParams.q);
   } else if (orderParams.side === OrderSides.SELL) {
     reqParam.amount = String(orderParams.quantity);
-  } else {
-    throw new Error(`unsupported side for gate placeOrder: ${String(orderParams.side)}`);
   }
   log.debug({reqParam}, 'ORDER!!!!');
   const r = await sendReq<GatePlaceOrderResult>('spot.order_place', reqParam, { timeoutMs: 10_000 });
   log.debug({ reqParam, rawOrderResponse: r }, 'placeOrder raw response');
 
+  // [2026-02-26 15:34:32.648 +0100] DEBUG (executor): placeOrder raw response
+  //   exchange: "gate"
+  //   reqParam: {
+  //     "currency_pair": "AXS_USDT",
+  //     "side": "buy",
+  //     "type": "market",
+  //     "text": "t-123456789",
+  //     "action_mode": "FULL",
+  //     "time_in_force": "fok",
+  //     "amount": "13.6"
+  //   }
+  //   rawOrderResponse: {
+  //     "id": "1021176225755",
+  //     "text": "t-123456789",
+  //     "amend_text": "-",
+  //     "create_time": "1772116472",
+  //     "update_time": "1772116472",
+  //     "create_time_ms": 1772116472554,
+  //     "update_time_ms": 1772116472555,
+  //     "status": "closed",
+  //     "currency_pair": "AXS_USDT",
+  //     "type": "market",
+  //     "account": "spot",
+  //     "side": "buy",
+  //     "amount": "13.6",
+  //     "price": "0",
+  //     "time_in_force": "fok",
+  //     "iceberg": "0",
+  //     "left": "0.006",
+  //     "filled_amount": "10",
+  //     "fill_price": "13.594",
+  //     "filled_total": "13.594",
+  //     "avg_deal_price": "1.3594",
+  //     "fee": "0",
+  //     "fee_currency": "AXS",
+  //     "point_fee": "0",
+  //     "gt_fee": "0.00171113286713286713",
+  //     "gt_maker_fee": "0",
+  //     "gt_taker_fee": "0.0009",
+  //     "gt_discount": true,
+  //     "rebated_fee": "0",
+  //     "rebated_fee_currency": "USDT",
+  //     "finish_as": "filled"
+  //   }
+
   const cumQuote : number = Number(r.filled_total);
-  const totalCommission = Number(r.fee);
+  const totalCommission = Number(r.gt_fee);
   let feeUsd = 0.0;
-  if (r.fee_currency === feePriceData.asset) {
+  if (totalCommission > 0.0) {
     // should not happen! order wurde abgesetzt bevor preis daten vom fee token geholt wurden?
     // Optional spaeter: alter / gueltigkeit des preises pruefen
     if (!feePriceData.tsMs) { 
       log.error({}, 'no price data of fee currency yet');
     }
     feeUsd = feePriceData.price * totalCommission;
-  } else {
-    log.warn({currency:r.fee_currency}, 'unknown fee currency');
-    feeUsd = 0.0;
+  } else { // no gt_fee ?
+    feeUsd = Number(r.fee); // assume usd fee
+    if (feeUsd <= 1e-6) {
+      log.warn({currency:r.fee_currency}, 'unknown fee currency');
+      feeUsd = 0.0;
+    }
   }
   const out : CommonOrderResult = {
     exchange: ExchangeIds.gate,

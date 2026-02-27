@@ -82,7 +82,7 @@ async function main() {
     log.warn({exchange:'bitget'}, 'exchange disabled. no data collection');
   }
 
-  startStrategy(cfg, fees);
+  startStrategy(cfg);
   
   startDbIntentWriter(cfg, pool); // datenbank. trade ideen eintragen
   startDbOrderWriter(cfg, pool); // datenbank. trade ideen eintragen
@@ -101,4 +101,3 @@ main().catch((e) => {
   log.error({ err: e }, 'startup error');
   process.exit(1);
 });
-

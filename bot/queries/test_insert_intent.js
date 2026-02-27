@@ -31,11 +31,10 @@ const pool = new Pool({
         expected_pnl_bps,
         size_quote,
         target_qty,
-        theoretical_buy_px,
-        theoretical_sell_px,
-        meta
+        buy_px_worst,
+        sell_px_worst
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
       )
     `;
 
@@ -51,9 +50,8 @@ const pool = new Pool({
       12.3,          // expected_pnl_bps
       5000,          // size_quote
       42.0,          // target_qty
-      1.2345,        // theoretical_buy_px
-      1.2360,        // theoretical_sell_px
-      JSON.stringify({ note: 'manual test insert' }),
+      1.2345,        // buy_px_worst
+      1.2360,        // sell_px_worst
     ];
 
     await client.query(sql, values);
@@ -65,4 +63,3 @@ const pool = new Pool({
     await pool.end();
   }
 })();
-

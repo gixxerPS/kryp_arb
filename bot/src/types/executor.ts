@@ -17,7 +17,7 @@ export type PendingEntry = {
 };
 
 export type PlaceOrderParams = {
-  symbol: string | null;          // exchange orderKey (AXSUSDC)
+  symbol: string;          // exchange orderKey (AXSUSDC)
   side: OrderSide;
   type: OrderType;
   quantity: number;
@@ -27,7 +27,7 @@ export type PlaceOrderParams = {
 }
 
 export type CancelOrderParams = {
-  symbol: string | null;
+  symbol: string;
   orderId?: number | string;
 }
 
