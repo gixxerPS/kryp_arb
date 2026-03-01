@@ -579,9 +579,9 @@ async function refreshFeePriceData(): Promise<void> {
       const p = await fetchSpotLastPrice(feePriceData.sourceSymbol);
       feePriceData.price = p;
       feePriceData.tsMs = Date.now();
-      log.debug({ feePriceData }, 'gate fee price refreshed');
+      log.debug({ feePriceData }, 'fee price refreshed');
     } catch (err) {
-      log.warn({ err }, 'gate fee price refresh failed');
+      log.warn({ err }, 'fee price refresh failed');
     } finally {
       feeRefreshInFlight = null;
     }
