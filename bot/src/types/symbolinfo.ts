@@ -32,8 +32,8 @@ export interface RawSymbolInfo {
   priceTick?: string | number;
   qtyStep?: string | number;
 
-  minQty?: number;
-  maxQty?: number;
+  minQty?: number | null;
+  maxQty?: number | null;
   minNotional?: number;
 }
 
@@ -48,8 +48,8 @@ export interface CompiledRules {
   qtyStep: number;
   qty: StepMeta;       // integer meta für schnelle floor-berechnung
   priceTick: number;
-  minQty: number;
-  maxQty: number;
+  minQty: number | null;
+  maxQty: number | null;
   minNotional: number;
 }
 

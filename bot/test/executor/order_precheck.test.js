@@ -94,6 +94,36 @@ suite('executor/order_precheck', () => {
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_MAX_QTY');
   });
+  test('OK: minQty null is treated as 0', () => {
+    const cfg = JSON.parse(JSON.stringify(baseConfig));
+    cfg.symbolInfoByEx.binance.symbols.AXSUSDC.minQty = null;
+    initSymbolinfo(cfg);
+    const r = marketOrderPrecheckOk({
+      side: 'SELL',
+      q: 100,
+      targetQty: 0.01,
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
+      feeRate: 0.001,
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.reason, null);
+  });
+  test('OK: maxQty null is treated as unlimited', () => {
+    const cfg = JSON.parse(JSON.stringify(baseConfig));
+    cfg.symbolInfoByEx.binance.symbols.AXSUSDC.maxQty = null;
+    initSymbolinfo(cfg);
+    const r = marketOrderPrecheckOk({
+      side: 'SELL',
+      q: 100,
+      targetQty: 1000,
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      exState:  {enabled:true, balances: { USDC: 100, AXS: 2000 }},
+      feeRate: 0.001,
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.reason, null);
+  });
   test('NOK: below min notional', () => {
     initSymbolinfo();
     const r = marketOrderPrecheckOk({

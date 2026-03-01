@@ -128,8 +128,8 @@ export function compileRules(raw: RawSymbolInfo | null | undefined): CompiledRul
     qtyStep,
     qty: qtyMeta,
     priceTick,
-    minQty: Number(raw?.minQty ?? 0),
-    maxQty: Number(raw?.maxQty ?? 0),
+    minQty: raw?.minQty == null ? null : Number(raw.minQty),
+    maxQty: raw?.maxQty == null ? null : Number(raw.maxQty),
     minNotional: Number(raw?.minNotional ?? 0),
   };
 }
