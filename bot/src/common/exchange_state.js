@@ -53,8 +53,14 @@ function createExchangeState(cfg) {
 
   function onWsMessage(exchange) {
     const s = ensure(exchange);
-    s.anyMsgAt = Date.now();
+    const now = Date.now();
+    s.anyMsgAt = now;
     s.counts.anyMsg += 1;
+    // Fast path: nur im STOP-Zustand sofort neu bewerten.
+    if (s.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+      const cfg = exchangesCfg[exchange];
+      if (cfg) evaluateOne(exchange, cfg, now);
+    }
   }
 
   function onWsReconnect(exchange) {
@@ -83,41 +89,45 @@ function createExchangeState(cfg) {
    * Periodic evaluation
    * ===================== */
 
+  function evaluateOne(exchange, cfg, now) {
+    const s = ensure(exchange);
+
+    // refresh enabled in case config reload is added later (optional)
+    s.enabled = cfg.enabled ?? true;
+
+    s.anyAgeMs = s.anyMsgAt ? (now - s.anyMsgAt) : Number.POSITIVE_INFINITY;
+    s.lastEvalAt = now;
+
+    if (!s.enabled) {
+      s.exchangeQuality = EXCHANGE_QUALITY.STOP;
+      s.reason = 'exchange_disabled';
+      return;
+    }
+    if (s.wsState !== WS_STATE.OPEN) {
+      s.exchangeQuality = EXCHANGE_QUALITY.STOP;
+      s.reason = 'ws_not_open';
+      return;
+    }
+    const warnMs = cfg.timeout_no_msg_trade_warn_ms ?? 8000;
+    const stopMs = cfg.timeout_no_msg_trade_stop_ms ?? 20000;
+
+    if (s.anyAgeMs > stopMs) {
+      s.exchangeQuality = EXCHANGE_QUALITY.STOP;
+      s.reason = 'no_msgs_trade_stop';
+      return;
+    }
+    if (s.anyAgeMs > warnMs) {
+      s.exchangeQuality = EXCHANGE_QUALITY.WARN;
+      s.reason = 'no_msgs_trade_warn';
+      return;
+    }
+    s.exchangeQuality = EXCHANGE_QUALITY.OK;
+    s.reason = 'ok. checks passed';
+  }
+
   function evaluateAll(now = Date.now()) {
     for (const [exchange, cfg] of Object.entries(exchangesCfg)) {
-      const s = ensure(exchange);
-
-      // refresh enabled in case config reload is added later (optional)
-      s.enabled = cfg.enabled ?? true;
-
-      s.anyAgeMs = s.anyMsgAt ? (now - s.anyMsgAt) : Number.POSITIVE_INFINITY;
-      s.lastEvalAt = now;
-
-      if (!s.enabled) {
-        s.exchangeQuality = EXCHANGE_QUALITY.STOP;
-        s.reason = 'exchange_disabled';
-        continue;
-      }
-      if (s.wsState !== WS_STATE.OPEN) {
-        s.exchangeQuality = EXCHANGE_QUALITY.STOP;
-        s.reason = 'ws_not_open';
-        continue;
-      }
-      const warnMs = cfg.timeout_no_msg_trade_warn_ms ?? 8000;
-      const stopMs = cfg.timeout_no_msg_trade_stop_ms ?? 20000;
-
-      if (s.anyAgeMs > stopMs) {
-        s.exchangeQuality = EXCHANGE_QUALITY.STOP;
-        s.reason = 'no_msgs_trade_stop';
-        continue;
-      }
-      if (s.anyAgeMs > warnMs) {
-        s.exchangeQuality = EXCHANGE_QUALITY.WARN;
-        s.reason = 'no_msgs_trade_warn';
-        continue;
-      }
-      s.exchangeQuality = EXCHANGE_QUALITY.OK;
-      s.reason = 'ok. checks passed';
+      evaluateOne(exchange, cfg, now);
     }
   }
 
@@ -188,4 +198,3 @@ module.exports = {
   initExchangeState,
   getExState
 };
-
