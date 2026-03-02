@@ -62,7 +62,7 @@ export default async function startExecutor(
   const exStateArr = exState.getAllExchangeStates();
 
   const CFG_AUTO_FIX_FAILED_ORDERS = getBotCfg().auto_fix_failed_orders;
-  const STARTUP_MAX_TRADES = 1; // kuenstliche bremse fuer trades
+  let startupMaxTrades = 10; // kuenstliche bremse fuer trades
 
   // adapters ermitteln fuer exchanges die bei start enabled sind
   const adapters: Partial<Record<ExchangeId, ExecutorAdapter>> = deps.adapters ?? {};
@@ -268,9 +268,9 @@ export default async function startExecutor(
         return;
       }
 
-      if (runtimeState.today.failedCount > STARTUP_MAX_TRADES
-        || runtimeState.today.successCount > STARTUP_MAX_TRADES) {
-        log.warn({ reason:'startup trade limit today reached', intent, STARTUP_MAX_TRADES }, 'dropping intent');
+      if (runtimeState.today.failedCount >= startupMaxTrades
+        || runtimeState.today.successCount >= startupMaxTrades) {
+        log.warn({ reason:'startup trade limit today reached', intent, STARTUP_MAX_TRADES: startupMaxTrades }, 'dropping intent');
         return;
       }
       const buyExchangeState = exState.getExchangeState(buyEx);
@@ -495,6 +495,10 @@ export default async function startExecutor(
     }
   }
 
+  function setMoreTradeCount(n : number) {
+    startupMaxTrades += Math.floor(n);
+  }
+
   // subscription
   bus.on('trade:intent', (intent :TradeIntent) => {
     // als erstes state aktualisieren: ist exchange noch enabled? oder von 
@@ -513,5 +517,6 @@ export default async function startExecutor(
     getBalances,
     getAccountStatus,
     getRuntimeState,
+    setMoreTradeCount,
   };
 }

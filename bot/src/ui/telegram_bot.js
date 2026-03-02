@@ -185,6 +185,19 @@ function buildTradeWarnPrecheckText(ev) {
   ].join('\n');
 }
 
+function buildCommandsText() {
+  return [
+    'COMMANDS',
+    '/help   - zeigt diese Hilfe',
+    '/cmd    - Alias fuer /help',
+    '/status - zeigt collector/account/runtime',
+    '/shutup - stoppt unaufgeforderte Push-Nachrichten',
+    '/speak  - aktiviert unaufgeforderte Push-Nachrichten',
+    '/kill   - setzt Trading auf OFF',
+    '/more10 - erhoeht Trade-Limit um 10',
+  ].join('\n');
+}
+
 function initTelegramBot({cfg, app}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -270,6 +283,13 @@ function initTelegramBot({cfg, app}) {
   //   return lines.join('\n');
   // }
 
+  bot.onText(/^\/(help|cmd)$/, async (msg) => {
+    if (!isAllowed(msg)) return;
+    await bot.sendMessage(msg.chat.id, `<pre>${buildCommandsText()}</pre>`, {
+      parse_mode: 'HTML',
+    });
+  });
+
   bot.onText(/^\/status$/, async (msg) => {
     if (!isAllowed(msg)) {
       log.error({ userId: msg.chat.id }, 'user id not authorized');
@@ -327,6 +347,15 @@ function initTelegramBot({cfg, app}) {
     pushEnabled = true;
     await bot.sendMessage(msg.chat.id, 'Unaufgeforderte Nachrichten aktiviert.');
   });
+
+  bot.onText(/^\/more10$/, async (msg) => {
+    if (!isAllowed(msg)) return;
+    app.bot.setMoreTradeCount(10);
+    await bot.sendMessage(msg.chat.id, 'Unaufgeforderte Nachrichten aktiviert.');
+  });
+
+
+  
 
   bot.on('polling_error', (err) => {
     log.error({ err }, 'telegram polling error');
