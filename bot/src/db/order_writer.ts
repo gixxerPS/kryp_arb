@@ -24,7 +24,7 @@ export function buildOrderInsert(batch: TradeOrdersOkEvent[]): DbInsert {
 
     values.push(
       it.id,
-      it.ts ? new Date(it.ts) : new Date(),
+      it.ts,
       it.symbol,
 
       it.buy.exchange,

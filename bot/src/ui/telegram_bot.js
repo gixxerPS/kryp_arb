@@ -150,6 +150,11 @@ function n(v, d = 6) {
   return x.toFixed(d);
 }
 
+function fmtTs(ts) {
+  if (ts instanceof Date) return ts.toISOString();
+  return ts ?? 'n/a';
+}
+
 function buildTradeOrdersOkText(ev) {
   const buyQuote = Number(ev?.buy?.cummulativeQuoteQty ?? 0);
   const sellQuote = Number(ev?.sell?.cummulativeQuoteQty ?? 0);
@@ -160,7 +165,7 @@ function buildTradeOrdersOkText(ev) {
   return [
     'TRADE OK',
     `id=${ev?.id ?? 'n/a'}`,
-    `ts=${ev?.ts ?? 'n/a'}`,
+    `ts=${fmtTs(ev?.ts)}`,
     `symbol=${ev?.symbol ?? 'n/a'}`,
     `BUY  ${ev?.buy?.exchange ?? 'n/a'} qty=${n(ev?.buy?.executedQty)} px=${n(ev?.buy?.priceVwap)} quote=${n(buyQuote)} feeUsd=${n(buyFeeUsd)}`,
     `SELL ${ev?.sell?.exchange ?? 'n/a'} qty=${n(ev?.sell?.executedQty)} px=${n(ev?.sell?.priceVwap)} quote=${n(sellQuote)} feeUsd=${n(sellFeeUsd)}`,
@@ -171,7 +176,7 @@ function buildTradeOrdersOkText(ev) {
 function buildTradeWarnPrecheckText(ev) {
   return [
     'TRADE WARN PRECHECK',
-    `ts=${ev?.ts ?? 'n/a'}`,
+    `ts=${fmtTs(ev?.ts)}`,
     `intentId=${ev?.intentId ?? 'n/a'}`,
     `symbol=${ev?.symbol ?? 'n/a'}`,
     `side=${ev?.side ?? 'n/a'}`,

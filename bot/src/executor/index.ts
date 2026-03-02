@@ -294,7 +294,7 @@ export default async function startExecutor(
         log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason },
           'dropping intent');
         const warnPrecheckEvent: TradeWarnPrecheckEvent = {
-          ts: new Date().toISOString(),
+          ts: new Date(),
           symbol,
           side: 'BUY',
           exchange: buyEx,
@@ -320,7 +320,7 @@ export default async function startExecutor(
         log.warn({ reason:'precheck sell order failed', intent, sellEx, checkReason:resSellCheck.reason },
           'dropping intent');
         const warnPrecheckEvent: TradeWarnPrecheckEvent = {
-          ts: new Date().toISOString(),
+          ts: new Date(),
           symbol,
           side: 'SELL',
           exchange: sellEx,
@@ -402,7 +402,7 @@ export default async function startExecutor(
       
         const ordersOkEvent: TradeOrdersOkEvent = {
           id, // intent_id
-          ts: new Date().toISOString(),
+          ts: new Date(),
           symbol,
           buy: buyR.value,
           sell: sellR.value,
