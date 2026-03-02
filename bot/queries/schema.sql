@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS public.trade_intent (
   id VARCHAR(32) PRIMARY KEY,
+  ts TIMESTAMPTZ NOT NULL,               -- Intent-Zeit aus der App
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -17,6 +18,8 @@ CREATE TABLE IF NOT EXISTS public.trade_intent (
   size_quote NUMERIC(18,8) NOT NULL,      -- z.B. 5000 USDT Budget
   target_qty NUMERIC(18,8) NOT NULL,      -- z.B. 100 AXS
 
+  buy_px        numeric(18,8) NOT NULL,
+  sell_px       numeric(18,8) NOT NULL,
   buy_px_worst  numeric(18,8) NOT NULL,
   sell_px_worst numeric(18,8) NOT NULL
 );
@@ -24,6 +27,10 @@ CREATE INDEX IF NOT EXISTS idx_intent_status_created
 ON trade_intent (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_intent_route_created
 ON trade_intent (symbol, buy_ex, sell_ex, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_intent_status_ts
+ON trade_intent (status, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_intent_route_ts
+ON trade_intent (symbol, buy_ex, sell_ex, ts DESC);
 
 
 CREATE TABLE IF NOT EXISTS public.trade_fill (

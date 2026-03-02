@@ -21,6 +21,7 @@ const pool = new Pool({
     const sql = `
       INSERT INTO public.trade_intent (
         id,
+        ts,
         symbol,
         buy_ex,
         sell_ex,
@@ -34,12 +35,13 @@ const pool = new Pool({
         buy_px_worst,
         sell_px_worst
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
       )
     `;
 
     const values = [
       randomUUID(),
+      new Date(),
       'TEST_USDT',
       'bitget',
       'binance',

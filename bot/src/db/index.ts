@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 
+import startDbFlush from './flush';
 import { getLogger } from '../common/logger';
+import type { AppConfig } from '../types/config';
 import type { DpPool } from '../types/db';
 
 const log = getLogger('db');
@@ -11,8 +13,9 @@ type PgPool = DpPool & {
 };
 
 let pool: PgPool | null = null;
+let stopFlush: (() => void) | null = null;
 
-function init(): PgPool {
+export function init(cfg: AppConfig): PgPool {
   if (pool) return pool;
 
   pool = new Pool({
@@ -35,25 +38,24 @@ function init(): PgPool {
       log.error(err, 'db session info failed');
     });
 
+  stopFlush = startDbFlush(cfg, pool);
+
   return pool;
 }
 
-async function ping(): Promise<void> {
+export async function ping(): Promise<void> {
   if (!pool) throw new Error('db pool not initialized');
   await pool.query('SELECT 1');
   log.info('db connected');
 }
 
-async function close(): Promise<void> {
+export async function close(): Promise<void> {
+  if (stopFlush) {
+    stopFlush();
+    stopFlush = null;
+  }
   if (!pool) return;
   const p = pool;
   pool = null;
   await p.end();
 }
-
-export default {
-  init,
-  ping,
-  close,
-};
-

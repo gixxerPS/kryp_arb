@@ -25,7 +25,7 @@ import {
   type ExecutorAccountStatusByExchange,
   OrderStates
 } from '../types/executor';
-import type { TradeOrdersOkEvent } from '../types/events';
+import type { TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
 import type { TradeIntent } from '../types/strategy';
 
 type Deps = {
@@ -293,6 +293,15 @@ export default async function startExecutor(
       if (!resBuyCheck.ok) {
         log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason },
           'dropping intent');
+        const warnPrecheckEvent: TradeWarnPrecheckEvent = {
+          ts: new Date().toISOString(),
+          symbol,
+          side: 'BUY',
+          exchange: buyEx,
+          checkReason: String(resBuyCheck.reason ?? 'unknown'),
+          intentId: id,
+        };
+        bus.emit('trade:warn_precheck', warnPrecheckEvent);
         return;
       }
       //=======================================================================
@@ -310,6 +319,15 @@ export default async function startExecutor(
       if (!resSellCheck.ok) {
         log.warn({ reason:'precheck sell order failed', intent, sellEx, checkReason:resSellCheck.reason },
           'dropping intent');
+        const warnPrecheckEvent: TradeWarnPrecheckEvent = {
+          ts: new Date().toISOString(),
+          symbol,
+          side: 'SELL',
+          exchange: sellEx,
+          checkReason: String(resSellCheck.reason ?? 'unknown'),
+          intentId: id,
+        };
+        bus.emit('trade:warn_precheck', warnPrecheckEvent);
         return;
       }
       //=======================================================================

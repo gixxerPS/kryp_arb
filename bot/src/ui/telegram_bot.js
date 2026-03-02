@@ -58,7 +58,6 @@ function buildStatusTable({ exState, exchanges }) {
       ws:       s.wsState ?? 'n/a',
       mdAge:    s.anyMsgAt ? fmtAge(s.anyMsgAt) : 'n/a',
       reconn:   s.counts.reconnects ?? 0,
-      reason:   s.reason ?? '',
     });
   }
 
@@ -68,27 +67,51 @@ function buildStatusTable({ exState, exchanges }) {
     { key: 'ws',       label: 'WS',       width: 6 },
     { key: 'mdAge',    label: 'MSG_AGE',   width: 8 },
     { key: 'reconn',   label: 'RECONN',   width: 7 },
-    { key: 'reason',   label: 'REASON',   width: 12 },
   ]);
 }
 
-function buildAccountTable({ exchanges, accountStatus }) {
+function estimateUsdBalance(balances) {
+  const b = balances ?? {};
+  const usdLikeKeys = ['USD', 'USDT', 'USDC', 'FDUSD', 'BUSD', 'TUSD'];
+  let usdLike = 0;
+  let hasUsdLike = false;
+
+  for (const k of usdLikeKeys) {
+    const v = Number(b[k] ?? 0);
+    if (Number.isFinite(v) && v !== 0) {
+      usdLike += v;
+      hasUsdLike = true;
+    }
+  }
+
+  if (hasUsdLike) return usdLike;
+
+  let fallback = 0;
+  for (const v of Object.values(b)) {
+    const n = Number(v);
+    if (Number.isFinite(n)) fallback += n;
+  }
+  return fallback;
+}
+
+function buildAccountTable({ exchanges, accountStatus, balancesByExchange }) {
   const rows = [];
 
   for (const [ex, exCfg] of Object.entries(exchanges)) {
     if (exCfg.enabled === false) continue;
     const s = accountStatus?.[ex] ?? {};
+    const balances = balancesByExchange?.[ex] ?? {};
     rows.push({
       exchange: ex,
       ws: s.ws ?? 'CLOSED',
-      totalBalance: Number(s.totalBalance ?? 0).toFixed(2),
+      totalBalance: estimateUsdBalance(balances).toFixed(2),
     });
   }
 
   return buildTable(rows, [
     { key: 'exchange', label: 'EXCHANGE', width: 9 },
     { key: 'ws', label: 'WS', width: 6 },
-    { key: 'totalBalance', label: 'TOTAL_BALANCE', width: 14 },
+    { key: 'totalBalance', label: 'USD_BALANCE', width: 14 },
   ]);
 }
 
@@ -145,6 +168,18 @@ function buildTradeOrdersOkText(ev) {
   ].join('\n');
 }
 
+function buildTradeWarnPrecheckText(ev) {
+  return [
+    'TRADE WARN PRECHECK',
+    `ts=${ev?.ts ?? 'n/a'}`,
+    `intentId=${ev?.intentId ?? 'n/a'}`,
+    `symbol=${ev?.symbol ?? 'n/a'}`,
+    `side=${ev?.side ?? 'n/a'}`,
+    `exchange=${ev?.exchange ?? 'n/a'}`,
+    `checkReason=${ev?.checkReason ?? 'n/a'}`,
+  ].join('\n');
+}
+
 function initTelegramBot({cfg, app}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -164,15 +199,19 @@ function initTelegramBot({cfg, app}) {
   
   const exState = getExState();
   const exchanges = cfg.exchanges;
+  if (!app || !app.executor) {
+    throw new Error('telegram_bot init requires app.executor');
+  }
+  let pushEnabled = true;
 
   function isAllowed(msg) {
     return allowed.has(msg.from?.id);
   }
 
-  bus.on('trade:orders_ok', (ev) => {
+  function notifyAllowedUsers(text, logKey) {
+    if (!pushEnabled) return;
     try {
       const ids = Array.from(allowed);
-      const text = buildTradeOrdersOkText(ev);
       const sends = [];
       for (const id of ids) {
         sends.push(
@@ -183,16 +222,24 @@ function initTelegramBot({cfg, app}) {
         .then((res) => {
           for (const [idx, r] of res.entries()) {
             if (r.status === 'rejected') {
-              log.error({ err: r.reason, userId: ids[idx] }, 'telegram trade notify failed');
+              log.error({ err: r.reason, userId: ids[idx] }, `${logKey} failed`);
             }
           }
         })
         .catch((err) => {
-          log.error({ err }, 'telegram trade notify aggregation failed');
+          log.error({ err }, `${logKey} aggregation failed`);
         });
     } catch (err) {
-      log.error({ err }, 'telegram trade event handler failed');
+      log.error({ err }, `${logKey} handler failed`);
     }
+  }
+
+  bus.on('trade:orders_ok', (ev) => {
+    notifyAllowedUsers(buildTradeOrdersOkText(ev), 'telegram trade notify');
+  });
+
+  bus.on('trade:warn_precheck', (ev) => {
+    notifyAllowedUsers(buildTradeWarnPrecheckText(ev), 'telegram precheck warn notify');
   });
 
   // function buildStatusText() {
@@ -226,8 +273,9 @@ function initTelegramBot({cfg, app}) {
     log.debug({ chat_id: msg.chat.id }, 'chat id');
     try {
       const header = `trading=${runtimestate.tradingEnabled ? 'ON' : 'OFF'}  @ ${fmtNowIsoLocal()}`;
-      const accountStatus = app?.executor?.getAccountStatus ? app.executor.getAccountStatus() : {};
-      const runtimeState = app?.executor?.getRuntimeState ? app.executor.getRuntimeState() : null;
+      const accountStatus = app.executor.getAccountStatus();
+      const balancesByExchange = app.executor.getBalances();
+      const runtimeState = app.executor.getRuntimeState();
       const body = [
         header,
         '',
@@ -235,7 +283,7 @@ function initTelegramBot({cfg, app}) {
         buildStatusTable({ exState, exchanges }),
         '',
         '========= account =========',
-        buildAccountTable({ exchanges, accountStatus }),
+        buildAccountTable({ exchanges, accountStatus, balancesByExchange }),
         '',
         '========= runtime =========',
         buildRuntimeTable(runtimeState),
@@ -261,6 +309,18 @@ function initTelegramBot({cfg, app}) {
     } catch (err) {
       log.error({ err }, 'telegram /kill failed');
     }
+  });
+
+  bot.onText(/^\/shutup$/, async (msg) => {
+    if (!isAllowed(msg)) return;
+    pushEnabled = false;
+    await bot.sendMessage(msg.chat.id, 'Unaufgeforderte Nachrichten deaktiviert.');
+  });
+
+  bot.onText(/^\/speak$/, async (msg) => {
+    if (!isAllowed(msg)) return;
+    pushEnabled = true;
+    await bot.sendMessage(msg.chat.id, 'Unaufgeforderte Nachrichten aktiviert.');
   });
 
   bot.on('polling_error', (err) => {

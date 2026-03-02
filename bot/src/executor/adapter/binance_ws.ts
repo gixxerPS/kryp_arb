@@ -552,11 +552,6 @@ async function subscribeUserData(/* handler */) {
 
 
 async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
-  if (test) {
-    log.debug({}, 'TEST ORDER!!!!');
-  } else {
-    log.debug({}, 'REAL ORDER!!!!');
-  }
   const method = test ? 'order.test' : 'order.place';
   // const method = 'order.test';
   
@@ -694,7 +689,7 @@ async function refreshFeePriceData(): Promise<void> {
       const p = await fetchTickerPrice(feePriceData.sourceSymbol);
       feePriceData.price = p;
       feePriceData.tsMs = Date.now();
-      log.debug({ feePriceData }, 'fee price refreshed');
+      // log.debug({ feePriceData }, 'fee price refreshed');
     } catch (err) {
       log.warn({ err }, 'fee price refresh failed');
     } finally {

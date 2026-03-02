@@ -13,13 +13,11 @@ const log = getLogger('app');
 import { initExchangeState } from './common/exchange_state';
 import * as symbolinfo from './common/symbolinfo';
 
-import db from './db';
+import { init as initDb, ping as pingDb } from './db';
 
 import startBinanceDepth from './collector/binance_depth';
 import startGateDepth from './collector/gate_depth';
 import startBitgetDepth from './collector/bitget_depth';
-import startDbIntentWriter from './db/intent_writer';
-import startDbOrderWriter from './db/order_writer';
 import startExecutor from './executor';
 import startStrategy from './strategy';
 import { initTelegramBot } from './ui/telegram_bot';
@@ -57,8 +55,8 @@ async function main() {
 
   await verifyPublicIp();
 
-  const pool = db.init();
-  await db.ping();
+  initDb(cfg);
+  await pingDb();
 
   initExchangeState(cfg); // monitoring, heartbeat ueberwachung und logging der exchange zustaende
 
@@ -83,9 +81,6 @@ async function main() {
   }
 
   startStrategy(cfg);
-  
-  startDbIntentWriter(cfg, pool); // datenbank. trade ideen eintragen
-  startDbOrderWriter(cfg, pool); // datenbank. trade ideen eintragen
   
   // executor (private exchange APIs: balances, user streams, orders)
   const executor = await startExecutor({ cfg });

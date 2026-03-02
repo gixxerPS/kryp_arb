@@ -1,6 +1,12 @@
 \set my_interval '24 hours';
 \echo Auswerteinterval: :my_interval
 
+SELECT COUNT(*)::text AS total_rows_text
+FROM trade_fill
+WHERE ts >= now() - interval :'my_interval'
+\gset
+\echo total_rows: :total_rows_text
+
 WITH filtered AS (
   SELECT
     intent_id,
@@ -28,10 +34,6 @@ WITH filtered AS (
     sell_fee_usd
   FROM trade_fill
   WHERE ts >= now() - interval :'my_interval'
-),
-total AS (
-  SELECT COUNT(*)::text AS total_rows_text
-  FROM filtered
 )
 SELECT
   f.intent_id,
@@ -56,9 +58,7 @@ SELECT
   f.sell_quote,
   -- f.sell_fee_amount,
   -- f.sell_fee_ccy,
-  f.sell_fee_usd,
-  t.total_rows_text
+  f.sell_fee_usd
 FROM filtered f
-CROSS JOIN total t
 ORDER BY f.ts DESC
 LIMIT 50;
