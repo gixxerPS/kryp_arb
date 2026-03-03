@@ -132,6 +132,32 @@ function getQWithinSlippage(
   return { q, limLvlIdx: i - 1, pxLim, targetQty };
 }
 
+/**
+ * Nachdem die targetQty aus min(buyQty, sellQty) bestimmt wurde muss die erwartete q
+ * nochmal mit der targetQty praezise bestimmt werden. einmal fuer buy leg und einmal 
+ * fuer sell leg
+ * @param param0 
+ * @returns q
+ */
+function getQFromQtyL2(
+  { levels, targetQty }: { levels: L2Level[]; targetQty: number }
+): number {
+  let i = 0, q = 0, qtyRemaining = targetQty;
+  const l = levels.length;
+  for (; i < l; i++) {
+    const px = Number(levels[i][0]);
+    const qty = Number(levels[i][1]);
+    if (qtyRemaining <= qty) { // level nur noch anteilig ?
+      q += px * qtyRemaining;
+      qtyRemaining = 0;
+      break;
+    }
+    qtyRemaining -= qty;
+    q += px * qty;
+  }
+  return q;
+}
+
 function key(ex: ExchangeId, sym: string): string {
   return `${ex}|${sym}`;
 }
@@ -202,7 +228,6 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       if (qBuy.q < rt.qMin || qSell.q < rt.qMin) {
         continue;
       }
-      const qEff = Math.min(qBuy.q, qSell.q);
 
       // Worst-case Slippage bis zur Band-Grenze (nicht abhängig von qEff!)
       // Es wird ja eine Seite begrenzt verursacht also potentiell weniger slippage.
@@ -221,12 +246,17 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       }
 
       const targetQty = Math.min(qBuy.targetQty, qSell.targetQty);
+      const qBuyTarget = getQFromQtyL2({ levels: buy.asks, targetQty });
+      const qSellTarget = getQFromQtyL2({ levels: sell.bids, targetQty });
+      const expectedPnl = qSellTarget - qBuyTarget - qSellTarget*sellFee - qBuyTarget*buyFee;
 
       intents.push({
         symbol: sym,
         buyEx,
         sellEx,
-        q: qEff,
+        qBuy: qBuyTarget,
+        qSell: qSellTarget,
+        expectedPnl,
         targetQty,
         net: net2,
         buyAsk,
@@ -242,4 +272,5 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
 
 export {
   getQWithinSlippage,
+  getQFromQtyL2
 };

@@ -12,6 +12,7 @@ let cached = null;
 function loadConfig() {
   if (cached) return cached;
 
+  const app = readJson(absConfigPath('app.json'));
   const bot = readJson(absConfigPath('bot.json'));
   const exchanges = readJson(absConfigPath('exchanges.json'));
   const symbolsFile = readJson(absConfigPath('symbols.json'));
@@ -36,6 +37,7 @@ function loadConfig() {
     : Object.keys(exchanges || {});
 
   const cfg = {
+    app,
     bot,
     symbols,
     exchanges,
@@ -45,7 +47,7 @@ function loadConfig() {
   };
   // console.log(cfg);
 
-  cached = { cfg, exchanges, symbols, log, symbolInfoByEx };
+  cached = { cfg, exchanges, symbols, log, symbolInfoByEx, app };
   return cached;
 }
 
@@ -66,6 +68,10 @@ function getBotCfg() {
   return loadConfig().cfg.bot;
 }
 
+function getAppCfg() {
+  return loadConfig().cfg.app;
+}
+
 function getSymbolInfoByEx() { 
   return loadConfig().symbolInfoByEx; 
 }
@@ -82,6 +88,6 @@ module.exports = {
   resetConfigCache,
   getSymbolInfoByEx,
   getExchange,
-  getBotCfg
+  getBotCfg,
+  getAppCfg
 };
-

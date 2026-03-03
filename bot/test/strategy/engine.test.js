@@ -1,7 +1,10 @@
 const { suite, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { computeIntentsForSym, getQWithinSlippage, initStrategyEngine } = require('../../src/strategy/engine');
+const { computeIntentsForSym, 
+  getQWithinSlippage, 
+  initStrategyEngine,
+getQFromQtyL2 } = require('../../src/strategy/engine');
 const { EXCHANGE_QUALITY } = require('../../src/common/constants');
 const symbolinfo = require('../../src/common/symbolinfo');
 
@@ -92,7 +95,8 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     assert.deepEqual(intents.length, 1);
     assert.deepEqual(intents[0].buyEx, 'gate');
     assert.deepEqual(intents[0].sellEx, 'binance');
-    assert.ok(intents[0].q <= 5000);
+    assert.ok(intents[0].qBuy > 0);
+    assert.ok(intents[0].qSell > 0);
     assert.ok(intents[0].net > 0);
   });
   test('computeIntents erzeugt keinen intent wenn net edge < 0 ', () => {
@@ -549,4 +553,22 @@ suite('strategy/engine stage 2. determine possible q', () => {
     assert.equal(limLvlIdx, 0);
   });
 
+});
+//=============================================================================
+//
+//=============================================================================
+
+suite('strategy/engine stage 3. determine target qBuy, qSell for targetQty', () => {
+  test('qty for exact level match', () => {
+    const asks = [
+      [100.00, 1],   // in band
+      [100.05, 2],   // in band for 0.10%
+      [100.20, 10],  // out of band
+    ];
+    const q = getQFromQtyL2({
+      levels: asks,
+      targetQty: 3,
+    });
+    assert.equal(q, 100*1 + 100.05*2);
+  });
 });

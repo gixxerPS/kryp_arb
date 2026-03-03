@@ -29,10 +29,9 @@ export function buildIntentInsert(batch: TradeIntent[], cfg: AppConfig): DbInser
   let p = 1;
 
   for (const it of batch) {
-    const expectedPnlQuote = it.q * it.net;
     const expectedPnlBps = it.net * 10_000;
 
-    params.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    params.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
 
     values.push(
       it.id,
@@ -43,9 +42,10 @@ export function buildIntentInsert(batch: TradeIntent[], cfg: AppConfig): DbInser
       strategyName,
       status,
       it.valid_until,
-      expectedPnlQuote,
+      it.expectedPnl,
       expectedPnlBps,
-      it.q,
+      it.qBuy,
+      it.qSell,
       it.targetQty,
       it.buyAsk,
       it.sellBid,

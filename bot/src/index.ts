@@ -11,6 +11,7 @@ import { initLogger, getLogger } from './common/logger';
 initLogger();
 const log = getLogger('app');
 import { initExchangeState } from './common/exchange_state';
+import { loadPersistent, savePersistent } from './common/persistent';
 import * as symbolinfo from './common/symbolinfo';
 
 import { init as initDb, ping as pingDb } from './db';
@@ -21,6 +22,7 @@ import startBitgetDepth from './collector/bitget_depth';
 import startExecutor from './executor';
 import startStrategy from './strategy';
 import { initTelegramBot } from './ui/telegram_bot';
+import type { PersistentStore } from './types/persistent';
 
 async function verifyPublicIp() {
   const expectedIps = process.env.EXPECTED_PUBLIC_IPS;
@@ -38,9 +40,12 @@ async function verifyPublicIp() {
 }
 
 async function main() {
-  const { cfg, fees } = loadConfig();
+  const { cfg } = loadConfig();
   // log.debug({ cfg }, 'startup config');
   log.info({  }, 'starting');
+
+  const loadedPersistent = await loadPersistent({ cfg, log });
+  const persistentStore: PersistentStore = loadedPersistent ?? {};
 
   // u.a. symbolinfo je exchange {AXS_USDT:{binance:{...}, gate:{...}, bitget:{...}}}
   // und wieder reverse mapping je symbol und exchange
@@ -83,13 +88,46 @@ async function main() {
   startStrategy(cfg);
   
   // executor (private exchange APIs: balances, user streams, orders)
-  const executor = await startExecutor({ cfg });
+  const executor = await startExecutor({
+    cfg,
+    restoredRuntimeState: persistentStore.runtimeState ?? null,
+  });
 
   const app = { cfg, executor}; // zentraler app-context für UI und andere Module
   
   if (cfg.ui.telegram_enabled) {
     initTelegramBot({cfg, app}); // TODO: noch in (app) umbauen
   }
+
+  let isShuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    try {
+      const nextPersistent: PersistentStore = {
+        ...persistentStore,
+        runtimeState: executor.getRuntimeState(),
+      };
+      await savePersistent(nextPersistent);
+      log.info({ signal }, 'persistent state saved');
+    } catch (err) {
+      log.error({ err, signal }, 'failed to save persistent state');
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once('SIGINT', () => {
+    shutdown('SIGINT').catch((err) => {
+      log.error({ err }, 'shutdown SIGINT failed');
+      process.exit(1);
+    });
+  });
+  process.once('SIGTERM', () => {
+    shutdown('SIGTERM').catch((err) => {
+      log.error({ err }, 'shutdown SIGTERM failed');
+      process.exit(1);
+    });
+  });
 }
 
 main().catch((e) => {

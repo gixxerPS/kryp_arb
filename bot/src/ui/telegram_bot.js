@@ -115,6 +115,36 @@ function buildAccountTable({ exchanges, accountStatus, balancesByExchange }) {
   ]);
 }
 
+function buildBalancesText({ exchanges, balancesByExchange }) {
+  const blocks = [];
+
+  for (const [ex, exCfg] of Object.entries(exchanges)) {
+    if (exCfg.enabled === false) continue;
+
+    const balances = balancesByExchange?.[ex] ?? {};
+    const entries = Object.entries(balances)
+      .map(([asset, value]) => [asset, Number(value)])
+      .filter(([, value]) => Number.isFinite(value))
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
+    const estimate = estimateUsdBalance(balances);
+    blocks.push(`=== ${ex} (USD_EST=${estimate.toFixed(2)}) ===`);
+
+    if (entries.length === 0) {
+      blocks.push('no balances');
+      blocks.push('');
+      continue;
+    }
+
+    for (const [asset, value] of entries) {
+      blocks.push(`${pad(asset, 10)} ${n(value, 8)}`);
+    }
+    blocks.push('');
+  }
+
+  return blocks.join('\n').trim();
+}
+
 function buildRuntimeTable(runtimeState) {
   const rt = runtimeState ?? {
     today: { pnlSum: 0, successCount: 0, failedCount: 0 },
@@ -191,6 +221,7 @@ function buildCommandsText() {
     '/help   - zeigt diese Hilfe',
     '/cmd    - Alias fuer /help',
     '/status - zeigt collector/account/runtime',
+    '/balance - zeigt alle balances je boerse',
     '/shutup - stoppt unaufgeforderte Push-Nachrichten',
     '/speak  - aktiviert unaufgeforderte Push-Nachrichten',
     '/kill   - setzt Trading auf OFF',
@@ -320,6 +351,25 @@ function initTelegramBot({cfg, app}) {
       );
     } catch (err) {
       log.error({ err }, 'telegram /status failed');
+    }
+  });
+
+  bot.onText(/^\/balance$/, async (msg) => {
+    if (!isAllowed(msg)) {
+      log.error({ userId: msg.chat.id }, 'user id not authorized');
+      return;
+    }
+    try {
+      const balancesByExchange = app.executor.getBalances();
+      const body = [
+        `balances @ ${fmtNowIsoLocal()}`,
+        '',
+        buildBalancesText({ exchanges, balancesByExchange }),
+      ].join('\n');
+
+      await bot.sendMessage(msg.chat.id, `<pre>${body}</pre>`, { parse_mode: 'HTML' });
+    } catch (err) {
+      log.error({ err }, 'telegram /balance failed');
     }
   });
 

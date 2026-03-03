@@ -28,6 +28,11 @@ import {
 import type { TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
 import type { TradeIntent } from '../types/strategy';
 
+type StartExecutorParams = {
+  cfg: AppConfig;
+  restoredRuntimeState?: ExecutorRuntimeState | null;
+};
+
 type Deps = {
   bus?: any;
   exState?: any;
@@ -49,7 +54,7 @@ type Deps = {
 // }
 
 export default async function startExecutor(
-  { cfg }: { cfg: AppConfig },
+  { cfg, restoredRuntimeState }: StartExecutorParams,
   deps: Deps = {}
 ): Promise<ExecutorHandle> {
   const bus = deps.bus ?? appBus;
@@ -90,10 +95,37 @@ export default async function startExecutor(
   }
   log.debug({ initialBalances }, 'initialized');
 
-  const runtimeState: ExecutorRuntimeState = { 
-    today     : { tsMs:nowFn(), pnlSum: 0, successCount: 0, failedCount: 0 },
-    yesterday : { tsMs:0, pnlSum: 0, successCount: 0, failedCount: 0 }
-  };
+  function isValidDayStats(v: any): boolean {
+    return (
+      !!v
+      && typeof v.tsMs === 'number'
+      && typeof v.pnlSum === 'number'
+      && typeof v.successCount === 'number'
+      && typeof v.failedCount === 'number'
+      && Number.isFinite(v.tsMs)
+      && Number.isFinite(v.pnlSum)
+      && Number.isFinite(v.successCount)
+      && Number.isFinite(v.failedCount)
+    );
+  }
+
+  function makeDefaultRuntimeState(): ExecutorRuntimeState {
+    return {
+      today: { tsMs: nowFn(), pnlSum: 0, successCount: 0, failedCount: 0 },
+      yesterday: { tsMs: 0, pnlSum: 0, successCount: 0, failedCount: 0 },
+    };
+  }
+
+  const runtimeState: ExecutorRuntimeState = (
+    restoredRuntimeState
+    && isValidDayStats(restoredRuntimeState.today)
+    && isValidDayStats(restoredRuntimeState.yesterday)
+  )
+    ? {
+      today: { ...restoredRuntimeState.today },
+      yesterday: { ...restoredRuntimeState.yesterday },
+    }
+    : makeDefaultRuntimeState();
 
   function updateRuntimeState(params: UpdateRuntimeStateParams): void {
     const tsMs = nowFn();
@@ -250,7 +282,7 @@ export default async function startExecutor(
     }
     busy = true;
     try {
-      const { symbol, buyEx, sellEx, targetQty, q, id } = intent; // sym ist canonical
+      const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, id } = intent; // sym ist canonical
       const buyAd = adapters[buyEx];
       const sellAd = adapters[sellEx];
       if (!buyAd || !sellAd) {
@@ -284,7 +316,7 @@ export default async function startExecutor(
       const resBuyCheck = marketOrderPrecheckOk({
         side: OrderSides.BUY,
         targetQty,
-        q,
+        q: qBuy,
         prepSymbolInfo: buyExSymInfo,
         exState:  { enabled: buyExchangeState?.enabled ?? true, balances: buyBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
@@ -310,7 +342,7 @@ export default async function startExecutor(
       const resSellCheck = marketOrderPrecheckOk({
         side: OrderSides.SELL,
         targetQty,
-        q,
+        q: qSell,
         prepSymbolInfo: sellExSymInfo,
         exState:  { enabled: sellExchangeState?.enabled ?? true, balances: sellBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
@@ -338,7 +370,7 @@ export default async function startExecutor(
         side: OrderSides.BUY,
         symbol: buyExSymInfo.orderKey,
         quantity:targetQty,
-        q,
+        q: qBuy,
         orderId: id,
       };
       const buyPO  = buyAd.placeOrder(false, buyParams); 
@@ -347,7 +379,7 @@ export default async function startExecutor(
         side: OrderSides.SELL,
         symbol:sellExSymInfo.orderKey,
         quantity:targetQty,
-        q,
+        q: qSell,
         orderId: id,
       };
       const sellPO = sellAd.placeOrder(false, sellParams);
@@ -371,7 +403,7 @@ export default async function startExecutor(
           baseAsset: buyExSymInfo.base,
           quoteAsset: buyExSymInfo.quote,
           executedQty: buyR.value.executedQty ?? targetQty,
-          cummulativeQuoteQty: buyR.value.cummulativeQuoteQty ?? q,
+          cummulativeQuoteQty: buyR.value.cummulativeQuoteQty,
         });
       }
       if (sellOk) {
@@ -380,7 +412,7 @@ export default async function startExecutor(
           baseAsset: sellExSymInfo.base,
           quoteAsset: sellExSymInfo.quote,
           executedQty: sellR.value.executedQty ?? targetQty,
-          cummulativeQuoteQty: sellR.value.cummulativeQuoteQty ?? q,
+          cummulativeQuoteQty: sellR.value.cummulativeQuoteQty,
         });
       }
       if (buyOk && sellOk) {

@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS public.trade_intent (
   expected_pnl_quote NUMERIC(18,8) NOT NULL,
   expected_pnl_bps   NUMERIC(10,4) NOT NULL,
 
-  size_quote NUMERIC(18,8) NOT NULL,      -- z.B. 5000 USDT Budget
+  buy_quote NUMERIC(18,8) NOT NULL,      -- z.B. 5000 USDT Budget
+  sell_quote NUMERIC(18,8) NOT NULL,      -- z.B. 5000 USDT Budget
   target_qty NUMERIC(18,8) NOT NULL,      -- z.B. 100 AXS
 
   buy_px        numeric(18,8) NOT NULL,

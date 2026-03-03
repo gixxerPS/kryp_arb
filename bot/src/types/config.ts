@@ -20,6 +20,11 @@ export interface BotCfg {
     exchanges: Array<'binance' | 'gate' | 'bitget'>;
   }
 
+export interface AppCfg {
+  persistent_path: string;
+  [k: string]: unknown;
+}
+
 export interface DbCfg {
   [k: string]: unknown;
 }
@@ -33,6 +38,7 @@ export interface LogCfg {
 }
 
 export interface AppConfig {
+  app: AppCfg;
   bot: BotCfg;
   symbols: { symbols: string[] } | { symbols: string[]; [k: string]: unknown };
   exchanges: ExchangesCfg;

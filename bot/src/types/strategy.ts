@@ -12,9 +12,13 @@ export type TradeIntent = {
   buyEx         : ExchangeId; /** e.g. binance */
   sellEx        : ExchangeId; /** e.g. gate */
 
-  q             : number;     /** expected liquidity of each leg, i.e. avg price * targetQty */
   targetQty     : number;     /** e.g. 127 [AXS] */
   net           : number;     /** net spread incl slippage worst px and fees, e.g. 0.0012 (no %!) */
+  
+  qBuy          : number;     /** expected liquidity of buy leg, i.e. avg buy price * targetQty */
+  qSell         : number;     /** expected liquidity of buy leg, i.e. avg sell price * targetQty */
+
+  expectedPnl   : number;     /** qSell - qBuy */
 
   buyAsk        : number;     /** best ask px */
   sellBid       : number;     /** best bid px */
