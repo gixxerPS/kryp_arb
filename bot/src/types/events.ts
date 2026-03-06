@@ -15,5 +15,6 @@ export type TradeWarnPrecheckEvent = {
   side: 'BUY' | 'SELL';
   exchange: ExchangeId;
   checkReason: string;
+  checkReasonDesc: string;
   intentId?: string;
 };

@@ -331,6 +331,7 @@ export default async function startExecutor(
           side: 'BUY',
           exchange: buyEx,
           checkReason: String(resBuyCheck.reason ?? 'unknown'),
+          checkReasonDesc: resBuyCheck.reasonDesc,
           intentId: id,
         };
         bus.emit('trade:warn_precheck', warnPrecheckEvent);
@@ -357,6 +358,7 @@ export default async function startExecutor(
           side: 'SELL',
           exchange: sellEx,
           checkReason: String(resSellCheck.reason ?? 'unknown'),
+          checkReasonDesc: resSellCheck.reasonDesc,
           intentId: id,
         };
         bus.emit('trade:warn_precheck', warnPrecheckEvent);

@@ -211,7 +211,8 @@ function buildTradeWarnPrecheckText(ev) {
     `symbol=${ev?.symbol ?? 'n/a'}`,
     `side=${ev?.side ?? 'n/a'}`,
     `exchange=${ev?.exchange ?? 'n/a'}`,
-    `checkReason=${ev?.checkReason ?? 'n/a'}`,
+    `reason=${ev?.checkReason ?? 'n/a'}`,
+    `reasonDesc=${ev?.checkReasonDesc ?? 'n/a'}`,
   ].join('\n');
 }
 

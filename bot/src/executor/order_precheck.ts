@@ -23,6 +23,7 @@ export type MarketOrderPrecheckReason =
 export type MarketOrderPrecheckResult = {
   ok: boolean;
   reason: MarketOrderPrecheckReason | null;
+  reasonDesc: string;                       // description
   fixedTargetQtyStr: string;
 };
 
@@ -78,7 +79,7 @@ export function marketOrderPrecheckOk({
   balance_minimum_usdt = 0, // dieser bestand soll auf dem konto nie unterschritten werden
   feeRate = 0, // e.g. 0.001
 }: MarketOrderPrecheckParams): MarketOrderPrecheckResult {
-  const ret: MarketOrderPrecheckResult = { ok: false, reason: null, fixedTargetQtyStr: '' };
+  const ret: MarketOrderPrecheckResult = { ok: false, reason: null, reasonDesc: '', fixedTargetQtyStr: '' };
 
   //===========================================================================
   // check exchange requirements
@@ -103,14 +104,17 @@ export function marketOrderPrecheckOk({
 
   if (q < rules.minNotional) {
     ret.reason = 'EX_MIN_NOTIONAL';
+    ret.reasonDesc = `q=${q}; minNotional=${rules.minNotional}`;
     return ret;
   }
   if (!fixedTargetQty || fixedTargetQty < minQty) {
     ret.reason = 'EX_MIN_QTY';
+    ret.reasonDesc = `fixedTargetQty=${fixedTargetQty}; minQty=${minQty}`;
     return ret;
   }
   if (!fixedTargetQty || fixedTargetQty > maxQty) {
     ret.reason = 'EX_MAX_QTY';
+    ret.reasonDesc = `targetQty=${fixedTargetQty}; minQty=${maxQty}`;
     return ret;
   }
 
@@ -121,15 +125,17 @@ export function marketOrderPrecheckOk({
   const exBalanceBase = exState.balances[prepSymbolInfo.base] ?? 0;
 
   if (side === 'BUY') {
-    const qInclFees = q * (1 + feeRate);
-    const balanceAfterOrder = exBalanceUSDT - qInclFees;
+    // const qInclFees = q * (1 + feeRate);
+    const balanceAfterOrder = exBalanceUSDT - q; // fees entfernt die werden nicht mit usd bezahlt sondern in boersenwaehrung
     if (balanceAfterOrder < balance_minimum_usdt) {
       ret.reason = 'INT_INSUFFICIENT_BALANCE_USDT';
+      ret.reasonDesc = `q=${q}; feeRate=${feeRate}; min=${balance_minimum_usdt}`;
       return ret;
     }
   } else if (side === 'SELL') {
     if (exBalanceBase - fixedTargetQty < 0) {
       ret.reason = 'INT_INSUFFICIENT_BALANCE_BASE';
+      ret.reasonDesc = `balance=${exBalanceBase}; targetQty=${fixedTargetQtyStr}`;
       return ret;
     }
   }
