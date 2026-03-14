@@ -67,7 +67,6 @@ export default async function startExecutor(
   const exStateArr = exState.getAllExchangeStates();
 
   const CFG_AUTO_FIX_FAILED_ORDERS = getBotCfg().auto_fix_failed_orders;
-  let startupMaxTrades = 10; // kuenstliche bremse fuer trades
 
   // adapters ermitteln fuer exchanges die bei start enabled sind
   const adapters: Partial<Record<ExchangeId, ExecutorAdapter>> = deps.adapters ?? {};
@@ -299,12 +298,6 @@ export default async function startExecutor(
       const sellExSymInfo = getEx(symbol, sellEx);
       if (!buyExSymInfo || !sellExSymInfo) {
         log.error({ reason:'symbolinfo missing', symbol, buyEx, sellEx }, 'dropping intent');
-        return;
-      }
-
-      if (runtimeState.today.failedCount >= startupMaxTrades
-        || runtimeState.today.successCount >= startupMaxTrades) {
-        log.warn({ reason:'startup trade limit today reached', intent, STARTUP_MAX_TRADES: startupMaxTrades }, 'dropping intent');
         return;
       }
       const buyExchangeState = exState.getExchangeState(buyEx);
