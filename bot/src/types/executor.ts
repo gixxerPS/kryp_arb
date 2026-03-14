@@ -115,5 +115,4 @@ export interface ExecutorHandle {
   getBalances(): ExecutorBalancesByExchange;
   getAccountStatus(): ExecutorAccountStatusByExchange;
   getRuntimeState(): ExecutorRuntimeState;
-  setMoreTradeCount: (n: number) => void;
 }
