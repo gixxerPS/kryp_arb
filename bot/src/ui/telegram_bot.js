@@ -218,7 +218,6 @@ function buildCommandsText() {
     '/shutup - stoppt unaufgeforderte Push-Nachrichten',
     '/speak  - aktiviert unaufgeforderte Push-Nachrichten',
     '/kill   - setzt Trading auf OFF',
-    '/more10 - erhoeht Trade-Limit um 10',
   ].join('\n');
 }
 
@@ -390,15 +389,6 @@ function initTelegramBot({cfg, app}) {
     pushEnabled = true;
     await bot.sendMessage(msg.chat.id, 'Unaufgeforderte Nachrichten aktiviert.');
   });
-
-  bot.onText(/^\/more10$/, async (msg) => {
-    if (!isAllowed(msg)) return;
-    app.bot.setMoreTradeCount(10);
-    await bot.sendMessage(msg.chat.id, 'Unaufgeforderte Nachrichten aktiviert.');
-  });
-
-
-  
 
   bot.on('polling_error', (err) => {
     log.warn({ err }, 'telegram polling error');

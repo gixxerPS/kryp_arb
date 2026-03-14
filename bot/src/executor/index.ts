@@ -601,10 +601,6 @@ export default async function startExecutor(
     }
   }
 
-  function setMoreTradeCount(n : number) {
-    startupMaxTrades += Math.floor(n);
-  }
-
   // subscription
   bus.on('trade:intent', (intent :TradeIntent) => {
     // als erstes state aktualisieren: ist exchange noch enabled? oder von 
