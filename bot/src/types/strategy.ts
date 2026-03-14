@@ -17,6 +17,8 @@ export type TradeIntent = {
   
   qBuy          : number;     /** expected liquidity of buy leg, i.e. avg buy price * targetQty */
   qSell         : number;     /** expected liquidity of buy leg, i.e. avg sell price * targetQty */
+  buyPxEff      : number;     /** qBuy / targetQty */
+  sellPxEff     : number;     /** qSell / targetQty */
 
   expectedPnl   : number;     /** qSell - qBuy */
 

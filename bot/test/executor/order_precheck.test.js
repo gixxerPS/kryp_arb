@@ -2,7 +2,10 @@
 const { suite, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { marketOrderPrecheckOk } = require('../../src/executor/order_precheck');
+const {
+  marketOrderPrecheckOk,
+  floorQuantityQToBalance
+} = require('../../src/executor/order_precheck');
 
 const symbolinfo = require('../../src/common/symbolinfo');
 
@@ -272,5 +275,88 @@ suite('executor/order_precheck', () => {
     assert.deepEqual(r.reason, null);
     assert.equal(r.ok, true);
     assert.deepEqual(r.fixedTargetQtyStr, '10.1234');
+  });
+
+  test('OK: floorQuantityQToBalance BUY floors qty to keep quote minimum', () => {
+    initSymbolinfo();
+    const r = floorQuantityQToBalance({
+      intent: {
+        targetQty: 10,
+        qBuy: 20,
+        qSell: 22,
+        buyPxEff: 2,
+        sellPxEff: 2.2,
+      },
+      side: 'BUY',
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      exState: { enabled: true, balances: { USDC: 115, AXS: 100 } },
+      balance_minimum_usdt: 100,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.targetQty, 7.5);
+    assert.equal(r.targetQtyStr, '7.50');
+    assert.equal(r.q, 15);
+  });
+
+  test('OK: floorQuantityQToBalance SELL floors qty to available base', () => {
+    initSymbolinfo();
+    const r = floorQuantityQToBalance({
+      intent: {
+        targetQty: 10,
+        qBuy: 20,
+        qSell: 22,
+        buyPxEff: 2,
+        sellPxEff: 2.2,
+      },
+      side: 'SELL',
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      exState: { enabled: true, balances: { USDC: 1000, AXS: 6.789 } },
+      balance_minimum_usdt: 100,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.targetQty, 6.78);
+    assert.equal(r.targetQtyStr, '6.78');
+    assert.ok(Math.abs(r.q - 6.78*2.2) < 1e-12);
+  });
+
+  test('NOK: floorQuantityQToBalance fails when floored qty violates exchange minQty', () => {
+    initSymbolinfo();
+    const r = floorQuantityQToBalance({
+      intent: {
+        targetQty: 10,
+        qBuy: 20,
+        qSell: 22,
+        buyPxEff: 2,
+        sellPxEff: 2.2,
+      },
+      side: 'BUY',
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      exState: { enabled: true, balances: { USDC: 100.1, AXS: 100 } },
+      balance_minimum_usdt: 100,
+    });
+    assert.equal(r.ok, false);
+    assert.match(r.reasonDesc, /minQty=0.1/);
+  });
+
+  test('NOK: floorQuantityQToBalance fails when minQty passes but minNotional stays below limit', () => {
+    initSymbolinfo();
+    const r = floorQuantityQToBalance({
+      intent: {
+        targetQty: 10,
+        qBuy: 1,
+        qSell: 1.1,
+        buyPxEff: 0.1,
+        sellPxEff: 0.11,
+      },
+      side: 'BUY',
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      exState: { enabled: true, balances: { USDC: 100.5, AXS: 100 } },
+      balance_minimum_usdt: 100,
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.targetQty, 5);
+    assert.equal(r.targetQtyStr, '5.00');
+    assert.equal(r.q, 0.5);
+    assert.match(r.reasonDesc, /minNotional=5/);
   });
 });

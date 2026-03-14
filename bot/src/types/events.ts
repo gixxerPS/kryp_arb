@@ -7,6 +7,8 @@ export type TradeOrdersOkEvent = {
   symbol: string;
   buy: CommonOrderResult;
   sell: CommonOrderResult;
+  pnl: number;
+  deltaBalanceBase: number;
 };
 
 export type TradeWarnPrecheckEvent = {

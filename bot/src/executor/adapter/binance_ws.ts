@@ -393,7 +393,7 @@ async function init(cfg: AppConfig): Promise<void> {
   mgr.start();
   await openPromise;
   await refreshFeePriceData(); // initialer BNB preis holen fuer fee preisberechnung  beim Start
-    startFeePriceRefreshLoop();  // danach alle 15 min
+  startFeePriceRefreshLoop();  // danach alle 15 min
 
   if (!balancesLoaded) {
     balances = await fetchBalancesWs();
@@ -701,10 +701,14 @@ async function refreshFeePriceData(): Promise<void> {
 }
 
 function startFeePriceRefreshLoop(): void {
+  if (process.env.NODE_ENV === 'development') return;
   if (feeRefreshTmr) return; // kein doppeltes Interval
-  feeRefreshTmr = setInterval(() => {
-    void refreshFeePriceData();
+  feeRefreshTmr = setInterval(async () => {
+    await refreshFeePriceData();
+    balances = await fetchBalancesWs();
+    balancesLoaded = true;
   }, FEE_REFRESH_MS);
+  feeRefreshTmr.unref?.();
 }
 
 export const adapter : ExecutorAdapter = {

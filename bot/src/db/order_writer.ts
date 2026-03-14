@@ -7,7 +7,8 @@ export function buildOrderInsert(batch: TradeOrdersOkEvent[]): DbInsert {
     'buy_ex', 'buy_order_id', 'buy_order_ts', 'buy_status', 'buy_price', 'buy_qty', 'buy_quote',
     'buy_fee_amount', 'buy_fee_ccy', 'buy_fee_usd',
     'sell_ex', 'sell_order_id', 'sell_order_ts', 'sell_status', 'sell_price', 'sell_qty', 'sell_quote',
-    'sell_fee_amount', 'sell_fee_ccy', 'sell_fee_usd'
+    'sell_fee_amount', 'sell_fee_ccy', 'sell_fee_usd',
+    'pnl',
   ];
 
   const params: string[] = [];
@@ -19,7 +20,7 @@ export function buildOrderInsert(batch: TradeOrdersOkEvent[]): DbInsert {
     const sellOrderTs = new Date(it.sell.transactTime);
 
     params.push(
-      `($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`
+      `($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`
     );
 
     values.push(
@@ -47,7 +48,8 @@ export function buildOrderInsert(batch: TradeOrdersOkEvent[]): DbInsert {
       it.sell.cummulativeQuoteQty ?? -1,
       it.sell.fee_amount ?? 0,
       it.sell.fee_currency ?? 'UNKNOWN',
-      it.sell.fee_usd ?? 0
+      it.sell.fee_usd ?? 0,
+      Number(it.pnl ?? 0),
     );
   }
 

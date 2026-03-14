@@ -431,7 +431,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
     ];
     const r = getQWithinSlippage({
       levels: asks,
-      slippagePct: 0.10,  // 0.10%
+      slippage: 0.0010,  // 0.10%
       qMax: 1e9,
     });
     assert.equal(r.q, 100*1 + 100.05*2);
@@ -446,7 +446,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
     ];
     const r = getQWithinSlippage({
       levels: asks,
-      slippagePct: 0.50,  // 0.10%
+      slippage: 0.0050,  // 0.10%
       qMax: 1e9,
     });
     assert.ok(Math.abs(r.q - (100*1 + 100.05*2 + 100.2*10)) < 1e-3);
@@ -461,7 +461,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
     ];
     const r = getQWithinSlippage({
       levels: pArr,
-      slippagePct: 0.10,  // 0.10%
+      slippage: 0.0010,  // 0.10%
       qMax: 1e9,
     });
     assert.ok(Math.abs(r.q - (100*1 + 99.95*2) ) < 1e-3);
@@ -476,7 +476,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
     ];
     const r = getQWithinSlippage({
       levels: pArr,
-      slippagePct: 0.50,  
+      slippage: 0.0050,  
       qMax: 1e9,
     });
     assert.ok(Math.abs(r.q - (100*1 + 99.95*2 + 99.5*10)) < 1e-3);
@@ -491,7 +491,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
       [101, 2],   // quote 202
     ];
     const { q, targetQty, limLvlIdx } = 
-      getQWithinSlippage({ levels, slippagePct: 5, qMax: 1000 });
+      getQWithinSlippage({ levels, slippage: 5, qMax: 1000 });
 
     assert.equal(q, 302);
     assert.equal(targetQty, 3);
@@ -504,7 +504,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
       [101, 10],  // quote 1010
     ];
     const { q, targetQty, limLvlIdx } =
-    getQWithinSlippage({ levels, slippagePct: 5, qMax: 1500 });
+    getQWithinSlippage({ levels, slippage: 0.05, qMax: 1500 });
 
     // take full lvl0: 1000 quote, qty 10
     // remaining 500 quote at px 101 => qty 500/101
@@ -519,7 +519,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
       [100.04, 1],// ok (<= 0.05%)
       [100.06, 1],// exceeds 0.05% -> stop before this
     ];
-    const { q, targetQty, limLvlIdx } = getQWithinSlippage({ levels, slippagePct: 0.05, qMax: 1000 });
+    const { q, targetQty, limLvlIdx } = getQWithinSlippage({ levels, slippage: 0.0005, qMax: 1000 });
 
     assert.ok(Math.abs(q - 200.04) < 1e-6);
     assert.equal(targetQty, 2);
@@ -533,7 +533,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
       [99.98, 2],    // within 0.05% (limit = 99.95)
       [99.94, 1],    // below limit -> stop before
     ];
-    const { q, targetQty, limLvlIdx, pxLim } = getQWithinSlippage({ levels, slippagePct: 0.05, qMax: 1000 });
+    const { q, targetQty, limLvlIdx, pxLim } = getQWithinSlippage({ levels, slippage: 0.0005, qMax: 1000 });
 
     assert.ok(pxLim <= 100 && pxLim >= 99.9);
     assert.equal(q, 100 + 99.98*2);
@@ -546,7 +546,7 @@ suite('strategy/engine stage 2. determine possible q', () => {
       [100, 10], // quote 1000 available
     ];
     const { q, targetQty, limLvlIdx } = 
-      getQWithinSlippage({ levels, slippagePct: 1, qMax: 250 });
+      getQWithinSlippage({ levels, slippage: 0.01, qMax: 250 });
 
     assert.equal(q, 250);
     assert.equal(targetQty, 2.5);

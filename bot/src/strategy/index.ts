@@ -97,8 +97,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
     tryComputeForSymbol(m.symbol);
   });
 
-  log.debug(
-    {
+  log.debug({
       mode: 'event-driven',
       cooldownS,
       throttleMs,
@@ -106,7 +105,5 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
       slippagePct: cfg.bot.slippage_pct,
       qMinUsdt: cfg.bot.q_min_usdt,
       qMaxUsdt: cfg.bot.q_max_usdt,
-    },
-    'started'
-  );
+  },'started');
 }

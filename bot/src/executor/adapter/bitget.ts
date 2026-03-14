@@ -142,9 +142,11 @@ let wsRef: WebSocket | null = null;
 let balances: Balances = {};
 let balancesLoaded = false;
 let isLoggedIn = false;
+let balanceRefreshTmr: NodeJS.Timeout | null = null;
 let openResolve: (() => void) | null = null;
 let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
+const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
 let loginPending:
   | { resolve: () => void; reject: (err: unknown) => void; tmr: NodeJS.Timeout }
@@ -285,6 +287,7 @@ async function init(_cfg: AppConfig): Promise<void> {
 
   mgr.start();
   await openPromise;
+  startBalanceRefreshLoop();
   if (!balancesLoaded) {
     balances = await fetchBalances();
     balancesLoaded = true;
@@ -303,6 +306,16 @@ async function fetchBalances(): Promise<Balances> {
     out[c] = Number(r.available ?? 0);
   }
   return out;
+}
+
+function startBalanceRefreshLoop(): void {
+  if (process.env.NODE_ENV === 'development') return;
+  if (balanceRefreshTmr) return;
+  balanceRefreshTmr = setInterval(async () => {
+    balances = await fetchBalances();
+    balancesLoaded = true;
+  }, BALANCE_REFRESH_MS);
+  balanceRefreshTmr.unref?.();
 }
 
 function isReady(): boolean {

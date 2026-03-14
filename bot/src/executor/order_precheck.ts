@@ -1,5 +1,6 @@
 import type { ExSymbolInfo, StepMeta } from '../types/symbolinfo';
 import type { OrderSide } from '../types/common';
+import type { TradeIntent } from '../types/strategy';
 
 type FloorByMetaResult = {
   q: number;
@@ -37,6 +38,22 @@ export type MarketOrderPrecheckParams = {
   feeRate?: number;
 };
 
+export type FloorQuantityQToBalanceParams = {
+  intent: Pick<TradeIntent, 'targetQty' | 'qBuy' | 'qSell' | 'buyPxEff' | 'sellPxEff'>;
+  side: OrderSide;
+  prepSymbolInfo: ExSymbolInfo;
+  exState: PrecheckExchangeState;
+  balance_minimum_usdt?: number;
+};
+
+export type FloorQuantityQToBalanceResult = {
+  ok: boolean;
+  reasonDesc: string;
+  targetQty: number;
+  targetQtyStr: string;
+  q: number;
+};
+
 /**
  * bringt beliebige zahl in von der boerse vorgegebenes "zahlenraster". verlustfrei und schnell
  *
@@ -53,6 +70,64 @@ function floorByMeta(value: number, meta: StepMeta): FloorByMetaResult {
   const qInt = Math.floor(vInt / stepInt) * stepInt; // floor(123 / 5) * 5 = 24 * 5 = 120
   const q = qInt / factor; // 120 / 100 = 1.20
   return { q, qStr: q.toFixed(decimals) };
+}
+
+export function floorQuantityQToBalance({
+  intent,
+  side,
+  prepSymbolInfo,
+  exState,
+  balance_minimum_usdt = 0,
+}: FloorQuantityQToBalanceParams): FloorQuantityQToBalanceResult {
+  const ret: FloorQuantityQToBalanceResult = {
+    ok: false,
+    reasonDesc: '',
+    targetQty: 0,
+    targetQtyStr: '',
+    q: 0,
+  };
+  if (!prepSymbolInfo.rules) {
+    ret.reasonDesc = 'missing rules';
+    return ret;
+  }
+  const pxEff = side === 'BUY'
+    ? Number(intent.buyPxEff ?? 0)
+    : Number(intent.sellPxEff ?? 0);
+  if (!Number.isFinite(pxEff) || pxEff <= 0) {
+    ret.reasonDesc = `invalid pxEff=${pxEff}`;
+    return ret;
+  }
+
+  const exBalanceQuote = exState.balances[prepSymbolInfo.quote] ?? 0;
+  const exBalanceBase = exState.balances[prepSymbolInfo.base] ?? 0;
+  const rawQtyCap = side === 'BUY'
+    ? Math.max(0, (exBalanceQuote - balance_minimum_usdt) / pxEff)
+    : Math.max(0, exBalanceBase);
+  const cappedQty = Math.min(intent.targetQty, rawQtyCap);
+  const { q: fixedTargetQty, qStr: fixedTargetQtyStr } = floorByMeta(cappedQty, prepSymbolInfo.rules.qty);
+  const fixedQ = fixedTargetQty * pxEff;
+  const minQty = prepSymbolInfo.rules.minQty == null ? 0 : Number(prepSymbolInfo.rules.minQty);
+  const minNotional = Number(prepSymbolInfo.rules.minNotional ?? 0);
+
+  ret.targetQty = fixedTargetQty;
+  ret.targetQtyStr = fixedTargetQtyStr;
+  ret.q = fixedQ;
+
+  if (!fixedTargetQty) {
+    ret.reasonDesc = `fixedTargetQty=${fixedTargetQty}`;
+    return ret;
+  }
+  if (fixedTargetQty < minQty) {
+    ret.reasonDesc = `fixedTargetQty=${fixedTargetQty}; minQty=${minQty}`;
+    return ret;
+  }
+  if (fixedQ < minNotional) {
+    ret.reasonDesc = `q=${fixedQ}; minNotional=${minNotional}`;
+    return ret;
+  }
+
+  ret.ok = true;
+  return ret;
 }
 
 // prepSymbolInfo: {

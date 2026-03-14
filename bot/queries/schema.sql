@@ -61,8 +61,9 @@ CREATE TABLE IF NOT EXISTS public.trade_fill (
   sell_quote  NUMERIC(18,8) NOT NULL, 
   sell_fee_amount NUMERIC(28,12) NOT NULL DEFAULT 0,
   sell_fee_ccy TEXT NOT NULL,                 -- USDT/BNB/etc.
-  sell_fee_usd NUMERIC(28,12) NOT NULL DEFAULT 0
+  sell_fee_usd NUMERIC(28,12) NOT NULL DEFAULT 0,
   
+  pnl NUMERIC(18,12) NOT NULL, -- min(sellQty, buyQty)*price_vwap - buy_fess - sell_fees
 );
 
 CREATE INDEX IF NOT EXISTS idx_fill_intent ON trade_fill(intent_id);

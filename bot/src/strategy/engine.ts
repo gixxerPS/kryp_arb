@@ -60,7 +60,7 @@ export function bestAskPx(asks: L2Level[] | undefined | null): number {
 /**
  * side: 'buy' (asks) oder 'sell' (bids)
  * levels: [[price, qty], ...] (Strings oder Numbers)
- * slippagePct: z.B. 0.10 für 0.10% (also config in Prozent)
+ * slippage: z.B. 0.0010 für 0.10% (config in Prozent uebergabe hier vorberechnet / normalisiert)
  * qMin/qMax in USDT
  *
  *   bids: [ ["0.10000000","2978.60000000"],["0.09990000","52469.90000000"],...
@@ -83,7 +83,7 @@ export function bestAskPx(asks: L2Level[] | undefined | null): number {
  * - Es wird eine Sortierung der Levels vorausgesetzt.
  */
 function getQWithinSlippage(
-  { levels, slippagePct, qMax }: { levels: L2Level[]; slippagePct: number; qMax: number }
+  { levels, slippage, qMax }: { levels: L2Level[]; slippage: number; qMax: number }
 ): QWithinSlippageResult {
   const l = levels.length;
   const bestPx = Number(levels[0][0]); // best price
@@ -99,7 +99,7 @@ function getQWithinSlippage(
     // ganzes qMax wenn es passt, sonst ganzes level
     targetQty = qMax < q ? qMax / bestPx : Number(levels[0][1]);
   }
-  const pxLim = dir === 1 ? bestPx * (1 + slippagePct * 0.01) : bestPx * (1 - slippagePct * 0.01);
+  const pxLim = dir === 1 ? bestPx * (1 + slippage) : bestPx * (1 - slippage);
   let i = 1;
   for (; i < l; i++) {
     const px = Number(levels[i][0]);
@@ -222,8 +222,8 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       }
 
       // STAGE 2: max moegliche ordergroesse anhand von L2 daten ermitteln
-      const qBuy = getQWithinSlippage({ levels: buy.asks, slippagePct: rt.slippage, qMax: rt.qMax });
-      const qSell = getQWithinSlippage({ levels: sell.bids, slippagePct: rt.slippage, qMax: rt.qMax });
+      const qBuy = getQWithinSlippage({ levels: buy.asks, slippage: rt.slippage, qMax: rt.qMax });
+      const qSell = getQWithinSlippage({ levels: sell.bids, slippage: rt.slippage, qMax: rt.qMax });
 
       if (qBuy.q < rt.qMin || qSell.q < rt.qMin) {
         continue;
@@ -248,6 +248,8 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       const targetQty = Math.min(qBuy.targetQty, qSell.targetQty);
       const qBuyTarget = getQFromQtyL2({ levels: buy.asks, targetQty });
       const qSellTarget = getQFromQtyL2({ levels: sell.bids, targetQty });
+      const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;
+      const sellPxEff = targetQty > 0 ? qSellTarget / targetQty : 0;
       const expectedPnl = qSellTarget - qBuyTarget - qSellTarget*sellFee - qBuyTarget*buyFee;
 
       intents.push({
@@ -256,6 +258,8 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
         sellEx,
         qBuy: qBuyTarget,
         qSell: qSellTarget,
+        buyPxEff,
+        sellPxEff,
         expectedPnl,
         targetQty,
         net: net2,

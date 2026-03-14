@@ -174,7 +174,7 @@ function buildRuntimeTable(runtimeState) {
   ]);
 }
 
-function n(v, d = 6) {
+function n(v, d = 4) {
   const x = Number(v ?? 0);
   if (!Number.isFinite(x)) return '0';
   return x.toFixed(d);
@@ -186,33 +186,25 @@ function fmtTs(ts) {
 }
 
 function buildTradeOrdersOkText(ev) {
-  const buyQuote = Number(ev?.buy?.cummulativeQuoteQty ?? 0);
-  const sellQuote = Number(ev?.sell?.cummulativeQuoteQty ?? 0);
-  const buyFeeUsd = Number(ev?.buy?.fee_usd ?? 0);
-  const sellFeeUsd = Number(ev?.sell?.fee_usd ?? 0);
-  const pnl = sellQuote - buyQuote - buyFeeUsd - sellFeeUsd;
-
+  if (!ev || !ev.buy || !ev.sell) return '';
+  
   return [
-    'TRADE OK',
-    `id=${ev?.id ?? 'n/a'}`,
-    `ts=${fmtTs(ev?.ts)}`,
-    `symbol=${ev?.symbol ?? 'n/a'}`,
-    `BUY  ${ev?.buy?.exchange ?? 'n/a'} qty=${n(ev?.buy?.executedQty)} px=${n(ev?.buy?.priceVwap)} quote=${n(buyQuote)} feeUsd=${n(buyFeeUsd)}`,
-    `SELL ${ev?.sell?.exchange ?? 'n/a'} qty=${n(ev?.sell?.executedQty)} px=${n(ev?.sell?.priceVwap)} quote=${n(sellQuote)} feeUsd=${n(sellFeeUsd)}`,
-    `PnL=${n(pnl)} USD`,
+    `TRADE OK @${fmtTs(ev.ts)}`,
+    `symbol=${ev.symbol} id=${ev.id}`,
+    `BUY  [${ev.buy.exchange}] quote=${n(ev.buy.cummulativeQuoteQty)} qty=${n(ev.buy.executedQty)} px=${n(ev.buy.priceVwap)}  feeUsd=${n(ev.buy.fee_usd)}`,
+    `SELL [${ev.sell.exchange}] quote=${n(ev.sell.cummulativeQuoteQty)} qty=${n(ev.sell.executedQty)} px=${n(ev.sell.priceVwap)}  feeUsd=${n(ev.sell.fee_usd)}`,
+    `PnL=${n(ev.pnl)} USD deltaBalanceBase=${n(ev.deltaBalanceBase)}`,
   ].join('\n');
 }
 
 function buildTradeWarnPrecheckText(ev) {
+  if (!ev) return '';
   return [
-    'TRADE WARN PRECHECK',
-    `ts=${fmtTs(ev?.ts)}`,
-    `intentId=${ev?.intentId ?? 'n/a'}`,
-    `symbol=${ev?.symbol ?? 'n/a'}`,
-    `side=${ev?.side ?? 'n/a'}`,
-    `exchange=${ev?.exchange ?? 'n/a'}`,
-    `reason=${ev?.checkReason ?? 'n/a'}`,
-    `reasonDesc=${ev?.checkReasonDesc ?? 'n/a'}`,
+    `TRADE WARN PRECHECK @${fmtTs(ev.ts)}`,
+    `symbol=${ev.symbol} id=${ev.intentId}`,
+    `tried to ${ev.side} on ${ev.exchange}`,
+    `reason=${ev.checkReason}`,
+    `reasonDesc=${ev.checkReasonDesc}`,
   ].join('\n');
 }
 
@@ -409,7 +401,7 @@ function initTelegramBot({cfg, app}) {
   
 
   bot.on('polling_error', (err) => {
-    log.error({ err }, 'telegram polling error');
+    log.warn({ err }, 'telegram polling error');
   });
 
   log.info({  }, 'telegram bot started');

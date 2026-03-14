@@ -5,7 +5,7 @@ import { getEx } from '../common/symbolinfo';
 import { getExchange, getBotCfg } from '../common/config';
 import { safeCall, isFulfilled } from '../common/async';
 import { DAY_MS } from '../common/util';
-import { marketOrderPrecheckOk } from './order_precheck';
+import { floorQuantityQToBalance, marketOrderPrecheckOk } from './order_precheck';
 
 import appBus from '../bus';
 import { adapter as binanceAdapter } from './adapter/binance_ws';
@@ -38,9 +38,8 @@ type Deps = {
   exState?: any;
   adapters?: Partial<Record<ExchangeId, ExecutorAdapter>>;
   nowFn?: () => number;
+  enableIntentHandling?: boolean;
 };
-
-
 
 // function getEnabledSymbols(cfg: AppConfig) {
 //   if (Array.isArray(cfg.symbols)) return cfg.symbols;
@@ -61,6 +60,7 @@ export default async function startExecutor(
   const exState = deps.exState ?? getExState();
   const adaptersFromDeps = deps.adapters;
   const nowFn = deps.nowFn ?? (() => Date.now());
+  const enableIntentHandling = deps.enableIntentHandling ?? (process.env.NODE_ENV === 'production');
 
   // const enabledSymbols = getEnabledSymbols(cfg);
 
@@ -128,19 +128,18 @@ export default async function startExecutor(
     : makeDefaultRuntimeState();
 
   function updateRuntimeState(params: UpdateRuntimeStateParams): void {
-    const tsMs = nowFn();
-
-    // rollen noetig weil 1 tag vergangen ?
-    if (tsMs - runtimeState.today.tsMs > DAY_MS) {
-      runtimeState.yesterday = runtimeState.today;
-      runtimeState.today = { tsMs, pnlSum: 0, successCount: 0, failedCount: 0 };
-    }
     if (params.buyOk && params.sellOk) {
       runtimeState.today.successCount += 1;
       runtimeState.today.pnlSum += Number(params.pnl ?? 0);
       return;
     }
     runtimeState.today.failedCount += 1;
+  }
+  function rollRuntimeState() {
+    const tsMs = nowFn();
+    // rollen noetig weil 1 tag vergangen ?
+    runtimeState.yesterday = runtimeState.today;
+    runtimeState.today = { tsMs, pnlSum: 0, successCount: 0, failedCount: 0 };
   }
 
   function getBalances(): ExecutorBalancesByExchange {
@@ -282,7 +281,10 @@ export default async function startExecutor(
     }
     busy = true;
     try {
-      const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, id } = intent; // sym ist canonical
+      const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, buyPxEff, sellPxEff, id } = intent; // sym ist canonical
+      let orderTargetQty = targetQty;
+      let orderQBuy = qBuy;
+      let orderQSell = qSell;
       const buyAd = adapters[buyEx];
       const sellAd = adapters[sellEx];
       if (!buyAd || !sellAd) {
@@ -309,20 +311,48 @@ export default async function startExecutor(
       const sellExchangeState = exState.getExchangeState(sellEx);
       const buyBalances = buyAd.getBalances();
       const sellBalances = sellAd.getBalances();
-      
       //=======================================================================
       // 1.1) prechecks BUY (gegen den aktuellen bestands snapshot)
       //=======================================================================
       const resBuyCheck = marketOrderPrecheckOk({
         side: OrderSides.BUY,
-        targetQty,
-        q: qBuy,
+        targetQty: orderTargetQty,
+        q: orderQBuy,
         prepSymbolInfo: buyExSymInfo,
         exState:  { enabled: buyExchangeState?.enabled ?? true, balances: buyBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
         feeRate: getExchange(buyEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
       if (!resBuyCheck.ok) {
+        if (resBuyCheck.reason === 'INT_INSUFFICIENT_BALANCE_USDT') {
+          const flooredBuy = floorQuantityQToBalance({
+            intent: { targetQty: orderTargetQty, qBuy: orderQBuy, qSell: orderQSell, buyPxEff, sellPxEff },
+            side: OrderSides.BUY,
+            prepSymbolInfo: buyExSymInfo,
+            exState: { enabled: buyExchangeState?.enabled ?? true, balances: buyBalances },
+            balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
+          });
+          log.debug({newParams:{flooredBuy}}, 'reduced quote due to insufficient balance');
+          if (flooredBuy.ok) {
+            orderTargetQty = flooredBuy.targetQty;
+            orderQBuy = orderTargetQty * buyPxEff;
+            orderQSell = orderTargetQty * sellPxEff;
+          } else {
+            log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason, floorReasonDesc:flooredBuy.reasonDesc },
+              'dropping intent');
+            const warnPrecheckEvent: TradeWarnPrecheckEvent = {
+              ts: new Date(),
+              symbol,
+              side: 'BUY',
+              exchange: buyEx,
+              checkReason: String(resBuyCheck.reason ?? 'unknown'),
+              checkReasonDesc: `${resBuyCheck.reasonDesc}; floorReason=${flooredBuy.reasonDesc}`,
+              intentId: id,
+            };
+            bus.emit('trade:warn_precheck', warnPrecheckEvent);
+            return;
+          }
+        } else {
         log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason },
           'dropping intent');
         const warnPrecheckEvent: TradeWarnPrecheckEvent = {
@@ -336,20 +366,50 @@ export default async function startExecutor(
         };
         bus.emit('trade:warn_precheck', warnPrecheckEvent);
         return;
+        }
       }
       //=======================================================================
       // 1.2) prechecks SELL (gegen den aktuellen bestands snapshot)
       //=======================================================================
       const resSellCheck = marketOrderPrecheckOk({
         side: OrderSides.SELL,
-        targetQty,
-        q: qSell,
+        targetQty: orderTargetQty,
+        q: orderQSell,
         prepSymbolInfo: sellExSymInfo,
         exState:  { enabled: sellExchangeState?.enabled ?? true, balances: sellBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
         feeRate: getExchange(sellEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
       if (!resSellCheck.ok) {
+        if (resSellCheck.reason === 'INT_INSUFFICIENT_BALANCE_BASE') {
+          const flooredSell = floorQuantityQToBalance({
+            intent: { targetQty: orderTargetQty, qBuy: orderQBuy, qSell: orderQSell, buyPxEff, sellPxEff },
+            side: OrderSides.SELL,
+            prepSymbolInfo: sellExSymInfo,
+            exState: { enabled: sellExchangeState?.enabled ?? true, balances: sellBalances },
+            balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
+          });
+          log.debug({newParams:{flooredSell}}, 'reduced quote due to insufficient balance');
+          if (flooredSell.ok) {
+            orderTargetQty = flooredSell.targetQty;
+            orderQBuy = orderTargetQty * buyPxEff;
+            orderQSell = orderTargetQty * sellPxEff;
+          } else {
+            log.warn({ reason:'precheck sell order failed', intent, sellEx, checkReason:resSellCheck.reason, floorReasonDesc:flooredSell.reasonDesc },
+              'dropping intent');
+            const warnPrecheckEvent: TradeWarnPrecheckEvent = {
+              ts: new Date(),
+              symbol,
+              side: 'SELL',
+              exchange: sellEx,
+              checkReason: String(resSellCheck.reason ?? 'unknown'),
+              checkReasonDesc: `${resSellCheck.reasonDesc}; floorReason=${flooredSell.reasonDesc}`,
+              intentId: id,
+            };
+            bus.emit('trade:warn_precheck', warnPrecheckEvent);
+            return;
+          }
+        } else {
         log.warn({ reason:'precheck sell order failed', intent, sellEx, checkReason:resSellCheck.reason },
           'dropping intent');
         const warnPrecheckEvent: TradeWarnPrecheckEvent = {
@@ -363,6 +423,7 @@ export default async function startExecutor(
         };
         bus.emit('trade:warn_precheck', warnPrecheckEvent);
         return;
+        }
       }
       //=======================================================================
       // 2) orders schicken (parallel)
@@ -371,8 +432,8 @@ export default async function startExecutor(
         type: OrderTypes.MARKET,
         side: OrderSides.BUY,
         symbol: buyExSymInfo.orderKey,
-        quantity:targetQty,
-        q: qBuy,
+        quantity:orderTargetQty,
+        q: orderQBuy,
         orderId: id,
       };
       const buyPO  = buyAd.placeOrder(false, buyParams); 
@@ -380,8 +441,8 @@ export default async function startExecutor(
         type: OrderTypes.MARKET,
         side: OrderSides.SELL,
         symbol:sellExSymInfo.orderKey,
-        quantity:targetQty,
-        q: qSell,
+        quantity:orderTargetQty,
+        q: orderQSell,
         orderId: id,
       };
       const sellPO = sellAd.placeOrder(false, sellParams);
@@ -395,16 +456,31 @@ export default async function startExecutor(
         && buyR.value.status === OrderStates.FILLED;       // order result
       const sellOk = isFulfilled(sellR) // promise result
         && sellR.value.status === OrderStates.FILLED;      // order result
-      const pnl = (buyOk && sellOk)
-        ? sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
-        : 0.0;
+
+      let arbQty=0.0, pnl=0.0, deltaBalanceBase=0.0;
+      if (buyOk && sellOk) {
+        // nur qty die auf beiden legs ausgefuehrt wurde in die pnl berechnung einbeziehen
+        arbQty = Math.min(sellR.value.executedQty, buyR.value.executedQty);
+
+        // anteilige fee berechnen der rest gehoert zu delta balance anteil
+        const buyFeeArb = arbQty / buyR.value.executedQty * buyR.value.fee_usd;
+        const sellFeeArb = arbQty / sellR.value.executedQty * sellR.value.fee_usd;
+
+        pnl = (sellR.value.priceVwap  - buyR.value.priceVwap) * arbQty - buyFeeArb - sellFeeArb;
+          // sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
+        
+        // bestand der sich aendert / driftet
+        // +: mehr gekauft als verkauft => bestand wird aufgebaut
+        // -: mehr verkauft als gekauft => bestand wird abgebaut
+        deltaBalanceBase = buyR.value.executedQty - sellR.value.executedQty;
+      }
       updateRuntimeState({ buyOk, sellOk, pnl });
       if (buyOk) {
         buyAd.updateBalancesFromOrderData({
           side: OrderSides.BUY,
           baseAsset: buyExSymInfo.base,
           quoteAsset: buyExSymInfo.quote,
-          executedQty: buyR.value.executedQty ?? targetQty,
+          executedQty: buyR.value.executedQty ?? orderTargetQty,
           cummulativeQuoteQty: buyR.value.cummulativeQuoteQty,
         });
       }
@@ -413,7 +489,7 @@ export default async function startExecutor(
           side: OrderSides.SELL,
           baseAsset: sellExSymInfo.base,
           quoteAsset: sellExSymInfo.quote,
-          executedQty: sellR.value.executedQty ?? targetQty,
+          executedQty: sellR.value.executedQty ?? orderTargetQty,
           cummulativeQuoteQty: sellR.value.cummulativeQuoteQty,
         });
       }
@@ -423,7 +499,8 @@ export default async function startExecutor(
             symbol,
             buyEx,
             sellEx,
-            PnL: pnl,
+            pnl,
+            deltaBalanceBase,
             buyQ               : buyR.value.cummulativeQuoteQty,
             buyP               : buyR.value.priceVwap,
             buyFeeUsd          : buyR.value.fee_usd,
@@ -440,6 +517,8 @@ export default async function startExecutor(
           symbol,
           buy: buyR.value,
           sell: sellR.value,
+          pnl,
+          deltaBalanceBase
         };
 
         bus.emit('trade:orders_ok', ordersOkEvent);
@@ -537,14 +616,23 @@ export default async function startExecutor(
   bus.on('trade:intent', (intent :TradeIntent) => {
     // als erstes state aktualisieren: ist exchange noch enabled? oder von 
     // ui (telegram / webserver) disabled worden?
-    if (process.env.NODE_ENV !== 'production') {
-      log.debug({ nodeEnv: process.env.NODE_ENV, intentId: intent.id }, 'skip handleIntent outside production');
+    if (!enableIntentHandling) {
+      log.debug({ nodeEnv: process.env.NODE_ENV, intentId: intent.id }, 'skip handleIntent');
       return;
     }
     handleIntent(intent).catch((err) => {
       log.error({ err, intent }, 'executor intent failed');
     });
   });
+
+  // once a day ...
+  let dayTmr: NodeJS.Timeout | null = null;
+  if (process.env.NODE_ENV !== 'development' && !dayTmr) { // kein doppeltes Interval
+    dayTmr = setInterval(() => {
+      rollRuntimeState(); // ... switch today -> yesterday
+    }, DAY_MS);
+    dayTmr.unref?.();
+  } 
 
   log.debug({ }, 'executor started');
   return {

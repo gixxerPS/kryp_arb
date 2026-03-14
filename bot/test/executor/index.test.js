@@ -1,137 +1,169 @@
-// const {suite, test} = require('node:test');
-// const assert = require('node:assert/strict');
-// const { EventEmitter } = require('node:events');
+'use strict';
+const { suite, test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const { EventEmitter, once } = require('node:events');
 
-// const startStrategy = require('../../src/executor'); 
+const config = require('../../src/common/config');
+const symbolinfo = require('../../src/common/symbolinfo');
+const { default: startExecutor } = require('../../src/executor');
 
-// function mkCfg(overrides = {}) {
-//   return {
-//     bot: {
-//       symbols: ['FOO_USDT'],
-//       cooldown_s: 10,
-//       throttle_ms: 200,
-//       ...overrides.bot,
-//     },
-//     exchanges: {
-//       binance: { taker_fee_pct: 0.1 },
-//       bitget:  { taker_fee_pct: 0.1 },
-//       ...overrides.exchanges,
-//     },
-//   };
-// }
+suite('executor/index', () => {
+  const originalGetExchange = config.getExchange;
+  const originalGetBotCfg = config.getBotCfg;
 
-// suite('strategy/index', () => {
-//   test('emits trade:intent for compute results and adds id/tsMs', () => {
-//     const bus = new EventEmitter();
+  const symbolCfg = {
+    symbolsCanon: ['AXS_USDT'],
+    exchangesCfg: {
+      binance: { enabled: true, quote_map: { USDT: 'USDC' }, subscription: { levels: 10, updateMs: 100 } },
+      gate: { enabled: true, subscription: { levels: 10, updateMs: 100 } },
+    },
+    symbolInfoByEx: {
+      binance: {
+        symbols: {
+          AXSUSDC: {
+            symbol: 'AXSUSDC',
+            baseAsset: 'AXS',
+            quoteAsset: 'USDC',
+            status: 'TRADING',
+            enabled: true,
+            qtyPrecision: 8,
+            qtyStep: '0.01',
+            minQty: 0.1,
+            maxQty: 100,
+            minNotional: 5,
+            priceTick: '0.001',
+          }
+        }
+      },
+      gate: {
+        symbols: {
+          AXS_USDT: {
+            symbol: 'AXS_USDT',
+            baseAsset: 'AXS',
+            quoteAsset: 'USDT',
+            status: 'tradable',
+            enabled: true,
+            qtyPrecision: 8,
+            qtyStep: '0.01',
+            minQty: 0.1,
+            maxQty: 100,
+            minNotional: 5,
+            priceTick: '0.001',
+          }
+        }
+      }
+    },
+  };
 
-//     const emitted = [];
-//     bus.on('trade:intent', (m) => emitted.push(m));
+  before(() => {
+    config.getExchange = () => ({ taker_fee_pct: 0.1 });
+    config.getBotCfg = () => ({ auto_fix_failed_orders: false });
+    symbolinfo._resetForTests();
+    symbolinfo.init(symbolCfg);
+  });
 
-//     let now = 1_000_000;
-//     const nowFn = () => now;
-//     const uuidFn = () => 'uuid-1';
+  after(() => {
+    config.getExchange = originalGetExchange;
+    config.getBotCfg = originalGetBotCfg;
+    symbolinfo._resetForTests();
+  });
 
-//     const computeIntentsForSymbol = ({ sym }) => {
-//       return [ { symbol: sym, buyEx: 'binance', sellEx: 'bitget', q: 100, net2: 0.001, buyAsk: 100, sellBid: 101 } ]
-//     };
+  test('floors insufficient buy balance and places both orders with reduced size', async () => {
+    const bus = new EventEmitter();
+    const placed = [];
 
-//     const cfg = mkCfg({
-//       bot: { symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
-//     });
+    function mkAdapter(exchange, balances) {
+      return {
+        isReady: () => true,
+        getBalances: () => balances,
+        updateBalancesFromOrderData: () => {},
+        placeOrder: async (_test, params) => {
+          placed.push({ exchange, params });
+          return {
+            exchange,
+            symbol: params.symbol,
+            status: 'FILLED',
+            orderId: `${exchange}-1`,
+            clientOrderId: String(params.orderId),
+            transactTime: Date.now(),
+            executedQty: params.quantity,
+            cummulativeQuoteQty: params.q ?? 0,
+            priceVwap: params.quantity > 0 ? (params.q ?? 0) / params.quantity : 0,
+            fee_amount: 0,
+            fee_currency: 'USDT',
+            fee_usd: 0,
+          };
+        },
+        cancelOrder: async () => {
+          throw new Error('not used');
+        },
+      };
+    }
 
-//     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn });
+    await startExecutor({
+      cfg: {
+        bot: {
+          balance_minimum_usdt: 100,
+        },
+      },
+    }, {
+      bus,
+      exState: {
+        getAllExchangeStates: () => [],
+        getExchangeState: () => ({ enabled: true }),
+      },
+      adapters: {
+        binance: mkAdapter('binance', { USDC: 115, AXS: 100 }),
+        gate: mkAdapter('gate', { USDT: 1000, AXS: 100 }),
+      },
+      nowFn: () => 1_700_000_000_000,
+      enableIntentHandling: true,
+    });
 
-//     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
+    bus.emit('trade:intent', {
+      id: 'intent-1',
+      tsMs: 1,
+      valid_until: new Date('2026-03-12T00:00:05.000Z'),
+      symbol: 'AXS_USDT',
+      buyEx: 'binance',
+      sellEx: 'gate',
+      targetQty: 10,
+      net: 0.01,
+      qBuy: 20,
+      qSell: 22,
+      buyPxEff: 2,
+      sellPxEff: 2.2,
+      expectedPnl: 2,
+      buyAsk: 2,
+      sellBid: 2.2,
+      buyPxWorst: 2,
+      sellPxWorst: 2.2,
+    });
 
-//     assert.deepEqual(emitted.length, 1);
-//     assert.deepEqual(emitted[0].id, 'uuid-1');
-//     assert.deepEqual(emitted[0].tsMs, now);
-//     assert.deepEqual(emitted[0].symbol, 'FOO_USDT');
-//     assert.deepEqual(emitted[0].buyEx, 'binance');
-//     assert.deepEqual(emitted[0].sellEx, 'bitget');
-//   });
+    await once(bus, 'trade:orders_ok');
 
-//   test('respects cooldown per routeKey (symbol|buy->sell)', () => {
-//     const bus = new EventEmitter();
-//     const emitted = [];
-//     bus.on('trade:intent', (m) => emitted.push(m));
-
-//     let now = 1_000_000;
-//     const nowFn = () => now;
-//     let uuidN = 0;
-//     const uuidFn = () => `uuid-${++uuidN}`;
-
-//     const computeIntentsForSymbol = ({ sym }) => ([
-//       { symbol: sym, buyEx: 'binance', sellEx: 'bitget', q: 100, net2: 0.001, buyAsk: 100, sellBid: 101 }
-//     ]);
-
-//     const cfg = mkCfg({
-//       bot: { symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
-//     });
-
-//     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn });
-
-//     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
-//     assert.equal(emitted.length, 1);
-
-//     // innerhalb cooldown_s => kein zweiter Intent
-//     now += 9_000;
-//     bus.emit('md:l2', { exchange: 'bitget', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
-//     assert.equal(emitted.length, 1);
-
-//     // nach cooldown_s => wieder erlaubt
-//     now += 2_000; // insgesamt 11s
-//     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
-//     assert.equal(emitted.length, 2);
-//   });
-
-//   test('respects throttle per symbol', () => {
-//     const bus = new EventEmitter();
-//     const emitted = [];
-//     bus.on('trade:intent', (m) => emitted.push(m));
-
-//     let now = 1_000_000;
-//     const nowFn = () => now;
-//     const uuidFn = () => 'uuid';
-
-//     let computeCalls = 0;
-//     const computeIntentsForSymbol = ({ sym }) => {
-//       computeCalls++;
-//       return [{ symbol: sym, buyEx: 'binance', sellEx: 'bitget', q: 100, net2: 0.001, buyAsk: 100, sellBid: 101 }];
-//     };
-
-//     const cfg = mkCfg({
-//       bot: { symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 200 },
-//     });
-
-//     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn });
-
-//     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
-//     assert.equal(computeCalls, 1);
-
-//     // innerhalb throttle => compute nicht nochmal
-//     now += 100;
-//     bus.emit('md:l2', { exchange: 'bitget', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
-//     assert.equal(computeCalls, 1);
-
-//     // nach throttle => compute wieder
-//     now += 200;
-//     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
-//     assert.equal(computeCalls, 2);
-//   });
-
-//   test('ignores md:l2 symbols not in cfg.bot.symbols', () => {
-//     const bus = new EventEmitter();
-//     let computeCalls = 0;
-
-//     const computeIntentsForSymbol = () => { computeCalls++; return []; };
-
-//     const cfg = mkCfg({ bot: { symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 0 } });
-
-//     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn: () => 1, uuidFn: () => 'u' });
-
-//     bus.emit('md:l2', { exchange: 'binance', symbol: 'BAR_USDT', tsMs: 1, bids: [], asks: [] });
-//     assert.equal(computeCalls, 0);
-//   });
-
-// });
+    assert.equal(placed.length, 2);
+    assert.deepEqual(placed[0], {
+      exchange: 'binance',
+      params: {
+        type: 'MARKET',
+        side: 'BUY',
+        symbol: 'AXSUSDC',
+        quantity: 7.5,
+        q: 15,
+        orderId: 'intent-1',
+      },
+    });
+    assert.deepEqual(placed[1], {
+      exchange: 'gate',
+      params: {
+        type: 'MARKET',
+        side: 'SELL',
+        symbol: 'AXS_USDT',
+        quantity: 7.5,
+        q: 16.5,
+        orderId: 'intent-1',
+      },
+    });
+  });
+});
