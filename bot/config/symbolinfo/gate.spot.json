@@ -1,7 +1,8 @@
 {
   "meta": {
     "source": "https://api.gateio.ws/api/v4/spot/currency_pairs",
-    "fetchedAt": "2026-02-12T07:18:26.796Z"
+    "fetchedAt": "2026-02-12T07:18:26.796Z",
+    "commissionAssetSym": "GT_USDT"
   },
   "symbols": {
     "AXS_USDT": {

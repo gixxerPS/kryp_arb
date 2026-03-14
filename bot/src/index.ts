@@ -12,7 +12,8 @@ initLogger();
 const log = getLogger('app');
 import { initExchangeState } from './common/exchange_state';
 import { loadPersistent, savePersistent } from './common/persistent';
-import * as symbolinfo from './common/symbolinfo';
+import { init as initSymbolInfo } from './common/symbolinfo';
+import { initSymbolInfoPrice } from './common/symbolinfo_price';
 
 import { init as initDb, ping as pingDb } from './db';
 
@@ -49,12 +50,14 @@ async function main() {
 
   // u.a. symbolinfo je exchange {AXS_USDT:{binance:{...}, gate:{...}, bitget:{...}}}
   // und wieder reverse mapping je symbol und exchange
-  symbolinfo.init({
+  initSymbolInfo({
     symbolsCanon: cfg.symbols,
     exchangesCfg: cfg.exchanges,
     symbolInfoByEx : cfg.symbolInfoByEx,
     log
   });
+
+  await initSymbolInfoPrice();
 
   // log.info({symInfoIdx:symbolinfo.getIndex(), symInfoRevIdx:symbolinfo.getReverseIndex()});
 

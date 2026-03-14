@@ -83,6 +83,7 @@ const log = getLogger('executor').child({ exchange: 'binance' });
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
+import { getAssetPrice } from '../../common/symbolinfo_price';
 import { OrderSides, ExchangeIds  } from '../../types/common';
 
 import { 
@@ -93,7 +94,6 @@ import {
   type UpdateBalancesParams,
   type PendingEntry, 
   type ExecutorAdapter,
-  type FeePriceData, 
   OrderStates} from '../../types/executor';
 import type { AppConfig } from '../../types/config';
 import type { WsParams } from '../../types/common';
@@ -210,14 +210,7 @@ let ed25519PrivateKeyPem : string  = '';     // string
 const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject, tmr }
 let balances: Balances = {};
 let balancesLoaded = false;
-let feePriceData: FeePriceData = {
-  asset: 'BNB',
-  price: 0,
-  tsMs: 0,
-  sourceExchange: ExchangeIds.binance,
-  sourceSymbol: 'BNBUSDT',
-};
-const FEE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
+const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
 /**
  * @brief Send a WS-API request and await response by id.
@@ -278,8 +271,7 @@ function rejectAllPending(err: unknown): void {
 let openResolve: (() => void) | null = null;
 let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
-let feeRefreshTmr: NodeJS.Timeout | null = null;
-let feeRefreshInFlight: Promise<void> | null = null;
+let balanceRefreshTmr: NodeJS.Timeout | null = null;
 
 async function init(cfg: AppConfig): Promise<void> {
   if (openPromise) { // should not happen
@@ -392,13 +384,12 @@ async function init(cfg: AppConfig): Promise<void> {
 
   mgr.start();
   await openPromise;
-  await refreshFeePriceData(); // initialer BNB preis holen fuer fee preisberechnung  beim Start
-  startFeePriceRefreshLoop();  // danach alle 15 min
 
   if (!balancesLoaded) {
     balances = await fetchBalancesWs();
     balancesLoaded = true;
   }
+  startBalanceRefreshLoop();
 }
 
 /**
@@ -617,15 +608,15 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
   }, 0);
   const commissionAsset = r.fills?.[0]?.commissionAsset;
   let feeUsd = 0.0;
-  if (commissionAsset === feePriceData.asset) {
-    // should not happen! order wurde abgesetzt bevor preis daten vom fee token geholt wurden?
-    // Optional spaeter: alter / gueltigkeit des preises pruefen
-    if (!feePriceData.tsMs) { 
-      log.error({}, 'no price data of fee currency yet');
+  if (commissionAsset) {
+    const feeAssetPrice = getAssetPrice(ExchangeIds.binance, commissionAsset);
+    if (feeAssetPrice == null) {
+      log.warn({ currency: commissionAsset }, 'missing cached asset price');
+    } else {
+      feeUsd = feeAssetPrice * totalCommission;
     }
-    feeUsd = feePriceData.price * totalCommission;
   } else {
-    log.warn({currency:commissionAsset}, 'unknown fee currency');
+    log.warn({ currency: commissionAsset }, 'unknown fee currency');
     feeUsd = 0.0;
   }
 
@@ -671,44 +662,20 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
   };
 }
 
-async function fetchTickerPrice(symbol: string): Promise<number> {
-  const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
-  if (!res.ok) throw new Error(`binance ticker failed status=${res.status}`);
-  const json = (await res.json()) as { symbol?: string; price?: string };
-  // log.debug({json}, 'fetch price result');
-  const p = Number(json.price ?? NaN);
-  if (!Number.isFinite(p) || p <= 0) throw new Error(`invalid ticker price for ${symbol}`);
-  return p;
-}
-
-async function refreshFeePriceData(): Promise<void> {
-  if (feeRefreshInFlight) return feeRefreshInFlight;
-
-  feeRefreshInFlight = (async () => {
-    try {
-      const p = await fetchTickerPrice(feePriceData.sourceSymbol);
-      feePriceData.price = p;
-      feePriceData.tsMs = Date.now();
-      // log.debug({ feePriceData }, 'fee price refreshed');
-    } catch (err) {
-      log.warn({ err }, 'fee price refresh failed');
-    } finally {
-      feeRefreshInFlight = null;
-    }
-  })();
-
-  return feeRefreshInFlight;
-}
-
-function startFeePriceRefreshLoop(): void {
+function startBalanceRefreshLoop(): void {
   if (process.env.NODE_ENV === 'development') return;
-  if (feeRefreshTmr) return; // kein doppeltes Interval
-  feeRefreshTmr = setInterval(async () => {
-    await refreshFeePriceData();
-    balances = await fetchBalancesWs();
-    balancesLoaded = true;
-  }, FEE_REFRESH_MS);
-  feeRefreshTmr.unref?.();
+  if (balanceRefreshTmr) return;
+  balanceRefreshTmr = setInterval(() => {
+    fetchBalancesWs()
+      .then((nextBalances) => {
+        balances = nextBalances;
+        balancesLoaded = true;
+      })
+      .catch((err: unknown) => {
+        log.warn({ err }, 'balance refresh failed');
+      });
+  }, BALANCE_REFRESH_MS);
+  balanceRefreshTmr.unref?.();
 }
 
 export const adapter : ExecutorAdapter = {

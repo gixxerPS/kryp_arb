@@ -3,7 +3,6 @@
 
 SELECT
   COUNT(*) AS trade_count,
-  ROUND(SUM(sell_quote - buy_quote), 8) AS gross_pnl_quote,
   ROUND(SUM(sell_quote - buy_quote - buy_fee_usd - sell_fee_usd), 8) AS net_pnl_usd,
   ROUND(AVG(sell_quote - buy_quote - buy_fee_usd - sell_fee_usd), 8) AS avg_net_pnl_usd,
   ROUND(MAX(sell_quote - buy_quote - buy_fee_usd - sell_fee_usd), 8) AS max_net_pnl_usd,
@@ -17,7 +16,6 @@ SELECT
   buy_ex,
   sell_ex,
   COUNT(*) AS trade_count,
-  ROUND(SUM(sell_quote - buy_quote), 8) AS gross_pnl_quote,
   ROUND(SUM(sell_quote - buy_quote - buy_fee_usd - sell_fee_usd), 8) AS net_pnl_usd,
   ROUND(AVG(sell_quote - buy_quote - buy_fee_usd - sell_fee_usd), 8) AS avg_net_pnl_usd
 FROM trade_fill

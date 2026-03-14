@@ -3,7 +3,8 @@
     "source": "https://api.binance.com/api/v3/exchangeInfo",
     "fetchedAt": "2026-02-12T07:18:26.795Z",
     "timezone": "UTC",
-    "symbolCountRequested": 2
+    "symbolCountRequested": 2,
+    "commissionAssetSym": "BNBUSDT"
   },
   "symbols": {
     "AXSUSDC": {

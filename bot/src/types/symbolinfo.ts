@@ -85,11 +85,16 @@ export interface ReverseIndexPerEx {
 
 export type ReverseIndex = Partial<Record<ExchangeId, ReverseIndexPerEx>>;
 
-export interface SymbolInfoByEx {
-  [ex: string]: {
-    meta?: unknown;
-    symbols?: Record<string, RawSymbolInfo>;
+export interface SymbolInfoExchangeFile {
+  meta?: {
+    commissionAssetSym?: string;
+    [k: string]: unknown;
   };
+  symbols?: Record<string, RawSymbolInfo>;
+}
+
+export interface SymbolInfoByEx {
+  [ex: string]: SymbolInfoExchangeFile;
 }
 
 export interface InitArgs {

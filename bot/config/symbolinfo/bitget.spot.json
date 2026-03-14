@@ -1,7 +1,8 @@
 {
   "meta": {
     "source": "https://api.bitget.com/api/v2/spot/public/symbols",
-    "fetchedAt": "2026-02-12T07:18:30.248Z"
+    "fetchedAt": "2026-02-12T07:18:30.248Z",
+    "commissionAssetSym": "BGBUSDT"
   },
   "symbols": {
     "AXSUSDT": {

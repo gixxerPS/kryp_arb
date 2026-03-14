@@ -1,8 +1,4 @@
-// common/symbolinfo.js
-'use strict';
-
-import path from "path";
-
+// common/symbolinfo.ts
 import type {
   CanonPair,
   CompiledRules,
@@ -20,6 +16,7 @@ import type { ExchangeId } from "../types/common";
 
 let _idx: SymbolIndex | null = null; // { [symbol_canon]: { canon:{base,quote}, [ex]: {...} } }
 let _reverseIdx: ReverseIndex | null = null; // { [ex]:{[stream_symbol_from_exchange]: { canon : ...} }}
+let _commissionAssetSymByEx: Partial<Record<ExchangeId, string>> | null = null;
 
 // AXS_USDT -> axsusdt
 function symToBinance(sym: string): string {
@@ -242,6 +239,15 @@ function makeExtra(ex: ExchangeId, _symMapped: string, subscription: { levels: n
 export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx, log }: InitArgs): void {
   const idx: SymbolIndex = {};
   const reverseIdx: ReverseIndex = {};
+  const commissionAssetSymByEx: Partial<Record<ExchangeId, string>> = {};
+
+  for (const [exRaw, siEx] of Object.entries(symbolInfoByEx ?? {})) {
+    const ex = exRaw as ExchangeId;
+    const commissionAssetSym = siEx?.meta?.commissionAssetSym;
+    if (commissionAssetSym) {
+      commissionAssetSymByEx[ex] = commissionAssetSym;
+    }
+  }
 
   for (const symCanon of symbolsCanon ?? []) {
     const canon = parseCanon(symCanon);
@@ -290,6 +296,7 @@ export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx, log }: InitAr
   }
   _idx = idx;
   _reverseIdx = reverseIdx;
+  _commissionAssetSymByEx = commissionAssetSymByEx;
 }
 
 export function getIndex(): SymbolIndex {
@@ -321,7 +328,23 @@ export function getCanonFromOderSym(sym: string, ex: ExchangeId): string | null 
   return r?.orderKey[sym]?.canon ?? null;
 }
 
+export function getTrackedOrderSymbols(ex: ExchangeId): string[] {
+  const out = new Set<string>();
+  for (const row of Object.values(getIndex())) {
+    const exInfo = row[ex];
+    if (!exInfo?.enabled || !exInfo.orderKey) continue;
+    out.add(exInfo.orderKey);
+  }
+  return Array.from(out);
+}
+
+export function getCommissionAssetSym(ex: ExchangeId): string | null {
+  if (!_commissionAssetSymByEx) throw new Error('symbolinfo not initialized; call symbolinfo.init(...) at startup');
+  return _commissionAssetSymByEx[ex] ?? null;
+}
+
 export function _resetForTests() {
   _idx = null;
   _reverseIdx = null;
+  _commissionAssetSymByEx = null;
 }
