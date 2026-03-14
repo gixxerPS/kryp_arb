@@ -628,6 +628,5 @@ export default async function startExecutor(
     getBalances,
     getAccountStatus,
     getRuntimeState,
-    setMoreTradeCount,
   };
 }
