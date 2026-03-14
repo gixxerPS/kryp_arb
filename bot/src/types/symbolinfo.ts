@@ -101,7 +101,4 @@ export interface InitArgs {
   symbolsCanon: string[];
   exchangesCfg: ExchangesCfg;
   symbolInfoByEx: SymbolInfoByEx;
-  log?: {
-    warn?: (obj: any, msg?: string) => void;
-  };
 }

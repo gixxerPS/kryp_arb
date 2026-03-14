@@ -1,4 +1,6 @@
 // common/symbolinfo.ts
+import { getLogger } from './logger';
+
 import type {
   CanonPair,
   CompiledRules,
@@ -13,6 +15,8 @@ import type {
 } from "../types/symbolinfo";
 
 import type { ExchangeId } from "../types/common";
+
+const log = getLogger('symbolinfo');
 
 let _idx: SymbolIndex | null = null; // { [symbol_canon]: { canon:{base,quote}, [ex]: {...} } }
 let _reverseIdx: ReverseIndex | null = null; // { [ex]:{[stream_symbol_from_exchange]: { canon : ...} }}
@@ -236,7 +240,7 @@ function makeExtra(ex: ExchangeId, _symMapped: string, subscription: { levels: n
 //   }
 // }
 
-export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx, log }: InitArgs): void {
+export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx }: InitArgs): void {
   const idx: SymbolIndex = {};
   const reverseIdx: ReverseIndex = {};
   const commissionAssetSymByEx: Partial<Record<ExchangeId, string>> = {};
@@ -275,8 +279,8 @@ export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx, log }: InitAr
 
       const enabled = Boolean(rules?.enabled);
 
-      if (!rawSi) log?.warn?.({ ex, symCanon, orderKey, mdKey }, "symbolinfo missing for mapped symbol");
-      if (!enabled) log?.warn?.({ ex, symCanon, orderKey }, "symbol disabled/not trading");
+      if (!rawSi) log.warn({ ex, symCanon, orderKey, mdKey }, 'symbolinfo missing for mapped symbol');
+      if (!enabled) log.warn({ ex, symCanon, orderKey }, 'symbol disabled/not trading');
 
       (idx[symCanon] as any)[ex] = {
         enabled,

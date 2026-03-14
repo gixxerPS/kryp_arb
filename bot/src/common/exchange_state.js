@@ -135,7 +135,7 @@ function createExchangeState(cfg) {
    * Heartbeat / Diagnose
    * ===================== */
 
-  function startHeartbeat(intervalMs = 5_000) {
+  function startHeartbeat(intervalMs = 60_000) {
     const t = setInterval(() => {
       const now = Date.now();
 

@@ -10,6 +10,7 @@
     "strategy": "info",
     "executor": "debug",
     "db": "debug",
-    "ui": "debug"
+    "ui": "debug",
+    "symbolinfo_price": "debug"
   }
 }

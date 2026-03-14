@@ -177,6 +177,7 @@ function buildAccountTable({
 
 function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextParams): string {
   const blocks: string[] = [];
+  let totalEstimate : number = 0.0;
 
   for (const [ex, exCfg] of Object.entries(exchanges)) {
     if (exCfg?.enabled === false) continue;
@@ -189,7 +190,8 @@ function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextP
       .sort((a, b) => a[0].localeCompare(b[0]));
 
     const estimate = estimateUsdBalance(exchangeId, balances);
-    blocks.push(`=== ${ex} (TOTAL=${estimate.toFixed(2)}) ===`);
+    totalEstimate += estimate;
+    blocks.push(`=== ${ex} (${estimate.toFixed(2)} USD) ===`);
 
     if (entries.length === 0) {
       blocks.push('no balances');
@@ -198,10 +200,12 @@ function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextP
     }
 
     for (const [asset, value] of entries) {
-      blocks.push(`${pad(asset, 10)} ${n(value, 8)}`);
+      blocks.push(`${pad(asset, 10)} ${n(value)}`);
     }
     blocks.push('');
   }
+  blocks.push(`TOTAL= ${totalEstimate.toFixed(2)} USD`);
+
 
   return blocks.join('\n').trim();
 }

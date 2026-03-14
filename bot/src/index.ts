@@ -54,7 +54,6 @@ async function main() {
     symbolsCanon: cfg.symbols,
     exchangesCfg: cfg.exchanges,
     symbolInfoByEx : cfg.symbolInfoByEx,
-    log
   });
 
   await initSymbolInfoPrice();
