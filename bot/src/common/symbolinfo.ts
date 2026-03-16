@@ -279,7 +279,7 @@ export function init({ symbolsCanon, exchangesCfg, symbolInfoByEx }: InitArgs): 
 
       const enabled = Boolean(rules?.enabled);
 
-      if (!rawSi) log.warn({ ex, symCanon, orderKey, mdKey }, 'symbolinfo missing for mapped symbol');
+      if (!rawSi) log.warn({ ex, symCanon, orderKey, mdKey }, 'symbolinfo missing for mapped symbol. no trade intents for this symbol!!!');
       if (!enabled) log.warn({ ex, symCanon, orderKey }, 'symbol disabled/not trading');
 
       (idx[symCanon] as any)[ex] = {

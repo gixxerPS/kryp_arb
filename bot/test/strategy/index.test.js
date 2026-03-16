@@ -8,11 +8,12 @@ const { EXCHANGE_QUALITY } = require('../../src/common/constants');
 function mkCfg(overrides = {}) {
   return {
     bot: {
-      symbols: ['FOO_USDT'],
+      execution_symbols: ['FOO_USDT'],
       cooldown_s: 10,
       throttle_ms: 200,
       ...overrides.bot,
     },
+    symbols: ['FOO_USDT'],
     exchanges: {
       binance: { taker_fee_pct: 0.1 },
       bitget:  { taker_fee_pct: 0.1 },
@@ -47,7 +48,8 @@ suite('strategy/index', () => {
     };
 
     const cfg = mkCfg({
-      bot: { symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
+      symbols: ['FOO_USDT'],
     });
 
     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
@@ -77,7 +79,8 @@ suite('strategy/index', () => {
     ]);
 
     const cfg = mkCfg({
-      bot: { symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
+      symbols: ['FOO_USDT'],
     });
 
     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
@@ -112,7 +115,8 @@ suite('strategy/index', () => {
     };
 
     const cfg = mkCfg({
-      bot: { symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 200 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 200 },
+      symbols: ['FOO_USDT'],
     });
 
     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
@@ -131,13 +135,16 @@ suite('strategy/index', () => {
     assert.equal(computeCalls, 2);
   });
 
-  test('ignores md:l2 symbols not in cfg.bot.symbols', () => {
+  test('ignores md:l2 symbols not in cfg.symbols', () => {
     const bus = new EventEmitter();
     let computeCalls = 0;
 
     const computeIntentsForSymbol = () => { computeCalls++; return []; };
 
-    const cfg = mkCfg({ bot: { symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 0 } });
+    const cfg = mkCfg({
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 0 },
+      symbols: ['FOO_USDT'],
+    });
 
     startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn: () => 1, uuidFn: () => 'u', getExState: initTestExchangeState });
 

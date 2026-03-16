@@ -1,7 +1,8 @@
 const path = require("node:path");
 
 // repo root: tools/get_symbolinfo/../.. => bot/
-const REPO_ROOT = path.resolve(__dirname, "../..");
+const REPO_ROOT = path.resolve(__dirname, "../../collector");
+// const REPO_ROOT = path.resolve(__dirname, "../../bot");
 
 const CONFIG_DIR = path.join(REPO_ROOT, "config");
 const SYMBOLINFO_DIR = path.join(CONFIG_DIR, "symbolinfo");

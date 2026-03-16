@@ -168,8 +168,8 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
   const rt = runtime as EngineRuntime;
   const intents: TradeIntentDraft[] = [];
 
-  for (const buyEx of cfg.bot.exchanges) {
-    for (const sellEx of cfg.bot.exchanges) {
+  for (const buyEx of cfg.enabledExchanges) {
+    for (const sellEx of cfg.enabledExchanges) {
       if (buyEx === sellEx) continue;
 
       const buy = latest.get(key(buyEx, sym));

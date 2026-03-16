@@ -1,13 +1,15 @@
 {
   "symbols": [
-    "SOL_USDT",
+    "GALA_USDT",
     "AXS_USDT",
-    "TRX_USDT",
-    "AB_USDT",
-    "A_USDT",
-    "MET_USDT",
-    "AVAX_USDT",
-    "HNT_USDT"
+    "INJ_USDT",
+    "ATOM_USDT",
+    "QNT_USDT",
+    "FIL_USDT",
+    "ARB_USDT",
+    "VET_USDT",
+    "ALGO_USDT",
+    "POL_USDT"
   ]
 }
 

@@ -1,7 +1,6 @@
 SELECT symbol, count(*) AS n
-FROM bbo_ticks
-WHERE exchange='bitget'
+FROM trade_intent
+WHERE (buy_ex = 'bitget' OR sell_ex = 'bitget')
   AND ts > now() - interval '5 minutes'
 GROUP BY 1
 ORDER BY n DESC;
-

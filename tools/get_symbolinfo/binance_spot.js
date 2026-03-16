@@ -43,11 +43,12 @@ function pickFilter(filters, type) {
 }
 
 async function fetchExchangeInfo(wanted) {
-  const query = `?symbols=${encodeURIComponent(JSON.stringify(Array.from(wanted)))}`;
+  const reqSymbols = JSON.stringify(Array.from(wanted));
+  const query = `?symbols=${encodeURIComponent(reqSymbols)}`;
   const res = await fetch(FETCH_URL + query);
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`binance fetch failed: ${res.status} ${t}`);
+    throw new Error(`binance fetch failed: ${res.status} ${t} for symbol(s) ${reqSymbols}`);
   }
   return res.json();
 }

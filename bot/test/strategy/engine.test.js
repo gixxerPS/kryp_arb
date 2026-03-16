@@ -33,7 +33,7 @@ function orderKeyFor(ex, sym) {
 }
 
 function setupEngineRuntime({ sym, cfg, fees }) {
-  const exchanges = cfg?.bot?.exchanges ?? [];
+  const exchanges = cfg?.enabledExchanges ?? [];
   const exchangesCfg = {};
   const symbolInfoByEx = {};
 
@@ -87,8 +87,9 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       asks: [ [100.6000, 952.8], [100.6001, 20491.0],],
     });
 
-    cfg.bot.symbols = [sym];
-    cfg.bot.exchanges = ['gate', 'binance'];
+    cfg.bot.execution_symbols = [sym];
+    cfg.bot.execution_exchanges = ['gate', 'binance'];
+    cfg.enabledExchanges = ['gate', 'binance'];
 
     const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState});
 
@@ -119,8 +120,9 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       asks: [ [100.5, 952.8], [101.0, 20491.0],],
     });
 
-    cfg.bot.symbols = [sym];
-    cfg.bot.exchanges = ['gate', 'binance'];
+    cfg.bot.execution_symbols = [sym];
+    cfg.bot.execution_exchanges = ['gate', 'binance'];
+    cfg.enabledExchanges = ['gate', 'binance'];
 
     const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState});
 
@@ -144,8 +146,9 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       asks: [ [100.0000, 952.8], [100.0001, 20491.0], ],
     });
 
-    cfg.bot.symbols = [sym];
-    cfg.bot.exchanges = ['gate', 'binance'];
+    cfg.bot.execution_symbols = [sym];
+    cfg.bot.execution_exchanges = ['gate', 'binance'];
+    cfg.enabledExchanges = ['gate', 'binance'];
 
     const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState});
 
@@ -161,14 +164,16 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
 
     const cfg = {
       bot: {
-        symbols: [sym],
-        exchanges: ['binance','bitget'],
+        execution_symbols: [sym],
+        execution_exchanges: ['binance','bitget'],
         slippage_pct: 0.00,
         raw_spread_buffer_pct: 0.05, // 0.05%
         q_min_usdt: 1,
         q_max_usdt: 1000,
         max_book_age_ms: 1500,
       }
+      ,
+      enabledExchanges: ['binance', 'bitget'],
     };
 
     const fees = { binance: { taker_fee_pct: 0.0 }, bitget: { taker_fee_pct: 0.0 } };
@@ -201,7 +206,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
 
     const cfg = {
       bot: {
-        exchanges: ['binance', 'bitget'],
+        execution_exchanges: ['binance', 'bitget'],
         // Stage 1
         raw_spread_buffer_pct: 0,
         slippage_pct: 0,
@@ -210,6 +215,7 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
         q_min_usdt: 1,
         q_max_usdt: 1_000_000,
       },
+      enabledExchanges: ['binance', 'bitget'],
     };
 
     // fees[ex].taker_fee_pct in Prozent
@@ -263,13 +269,14 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
 
     const cfg = {
       bot: {
-        exchanges: ['binance', 'bitget'],
+        execution_exchanges: ['binance', 'bitget'],
         raw_spread_buffer_pct: 0,
         slippage_pct: 1.0,          // 1% band for getQWithinSlippage
         max_book_age_ms: 1500,
         q_min_usdt: 10,
         q_max_usdt: 1_000_000,
       },
+      enabledExchanges: ['binance', 'bitget'],
     };
 
     const fees = {
@@ -312,13 +319,14 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
     });
     const cfg = {
       bot: {
-        exchanges: ['binance', 'bitget'],
+        execution_exchanges: ['binance', 'bitget'],
         raw_spread_buffer_pct: 0,
         slippage_pct: 1.0,
         max_book_age_ms: 1500,
         q_min_usdt: 1,
         q_max_usdt: 1_000_000,
       },
+      enabledExchanges: ['binance', 'bitget'],
     };
     const fees = {
       binance: { taker_fee_pct: 0 },
@@ -366,13 +374,14 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
 
     const cfg = {
       bot: {
-        exchanges: ['binance', 'bitget'],
+        execution_exchanges: ['binance', 'bitget'],
         raw_spread_buffer_pct: 0,
         slippage_pct: 1.0,
         max_book_age_ms: 1500,
         q_min_usdt: 10,          // bewusst höher als verfügbare Liquidität
         q_max_usdt: 1_000_000,
       },
+      enabledExchanges: ['binance', 'bitget'],
     };
     const fees = {
       binance: { taker_fee_pct: 0 },
@@ -408,8 +417,9 @@ suite('strategy/engine stage 1. detect trades from spread', () => {
       asks: [ [100.6000, 952.8], [100.6001, 20491.0],],
     });
 
-    cfg.bot.symbols = [sym];
-    cfg.bot.exchanges = ['gate', 'binance'];
+    cfg.bot.execution_symbols = [sym];
+    cfg.bot.execution_exchanges = ['gate', 'binance'];
+    cfg.enabledExchanges = ['gate', 'binance'];
 
     const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState:exStateBinanceFail});
 

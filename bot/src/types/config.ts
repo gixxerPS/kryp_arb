@@ -1,4 +1,5 @@
 import type { ExchangesCfg, SymbolInfoByEx } from './symbolinfo';
+import type { ExchangeId } from './common';
 
 export interface BotCfg {
     strategy: string;
@@ -16,8 +17,8 @@ export interface BotCfg {
   
     auto_fix_failed_orders: boolean;
   
-    symbols: string[];
-    exchanges: Array<'binance' | 'gate' | 'bitget'>;
+    execution_symbols: string[];
+    execution_exchanges: Array<'binance' | 'gate' | 'bitget'>;
   }
 
 export interface AppCfg {
@@ -40,8 +41,9 @@ export interface LogCfg {
 export interface AppConfig {
   app: AppCfg;
   bot: BotCfg;
-  symbols: { symbols: string[] } | { symbols: string[]; [k: string]: unknown };
+  symbols: string[];
   exchanges: ExchangesCfg;
+  enabledExchanges: ExchangeId[];
   db: DbCfg;
   ui: UiCfg;
   symbolInfoByEx: SymbolInfoByEx;

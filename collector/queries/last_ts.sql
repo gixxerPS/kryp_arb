@@ -1,17 +1,9 @@
 SELECT
-  exchange,
-  max(ts) AS last_ts,
-  now() - max(ts) AS age
-FROM bbo_ticks
-GROUP BY exchange
-ORDER BY exchange;
-
-SELECT
-  exchange,
-  symbol,
   ts,
-  now() - ts AS age
-FROM orderbook_depth
+  symbol,
+  buy_ex,
+  sell_ex,
+  expected_pnl_bps
+FROM trade_intent
 ORDER BY ts DESC
 LIMIT 10;
-

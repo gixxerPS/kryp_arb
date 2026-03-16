@@ -20,6 +20,8 @@ function loadConfig() {
   const db = readJson(absConfigPath('db.json'));
   const ui = readJson(absConfigPath('ui.json'));
   const symbols = symbolsFile.symbols || [];
+  const enabledExchanges = ['binance', 'gate', 'bitget']
+    .filter((ex) => exchanges?.[ex]?.enabled);
 
   const symbolinfoBinance = readJson(absConfigPath('symbolinfo', 'binance.spot.json'));
   const symbolinfoBitget  = readJson(absConfigPath('symbolinfo', 'bitget.spot.json'));
@@ -31,16 +33,12 @@ function loadConfig() {
     gate: symbolinfoGate,
   };
 
-  // exchanges list: bot.json exchanges fallback alle keys aus exchanges.json
-  const exchangeList = Array.isArray(bot.exchanges) && bot.exchanges.length > 0
-    ? bot.exchanges
-    : Object.keys(exchanges || {});
-
   const cfg = {
     app,
     bot,
     symbols,
     exchanges,
+    enabledExchanges,
     db,
     ui,
     symbolInfoByEx

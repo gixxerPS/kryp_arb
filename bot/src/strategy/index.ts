@@ -51,7 +51,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
   const ttlMs = Number(cfg.bot.intent_time_to_live_ms ?? 1500);
 
-  const symbolsSet = new Set(cfg.bot.symbols);
+  const symbolsSet = new Set(cfg.symbols);
 
   const latest = new Map<string, L2Snapshot>();
   const lastIntentAt = new Map<string, number>();
