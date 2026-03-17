@@ -87,8 +87,12 @@ function getQWithinSlippage(
 ): QWithinSlippageResult {
   const l = levels.length;
   const bestPx = Number(levels[0][0]); // best price
-  let targetQty = Number(levels[0][1]);
-  let q = bestPx * targetQty;
+  const bestQty = Number(levels[0][1]);
+  const bestLevelQ = bestPx * bestQty;
+  let q = Math.min(qMax, bestLevelQ);
+  let targetQty = bestLevelQ > qMax && bestPx !== 0.0
+    ? qMax / bestPx
+    : bestQty;
   let dir = 1; // 1 = buy, -1 = sell
   if (l > 1) {
     dir = Number(levels[1][0]) > Number(levels[0][0]) ? 1 : -1;
@@ -96,8 +100,6 @@ function getQWithinSlippage(
     if (bestPx === 0.0) { // avoid div-by-zero, should not happen
       return { q, limLvlIdx: 0, pxLim: 0, targetQty };
     }
-    // ganzes qMax wenn es passt, sonst ganzes level
-    targetQty = qMax < q ? qMax / bestPx : Number(levels[0][1]);
   }
   const pxLim = dir === 1 ? bestPx * (1 + slippage) : bestPx * (1 - slippage);
   let i = 1;

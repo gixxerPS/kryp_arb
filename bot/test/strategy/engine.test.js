@@ -563,6 +563,19 @@ suite('strategy/engine stage 2. determine possible q', () => {
     assert.equal(limLvlIdx, 0);
   });
 
+  test('getQWithinSlippage: multi-level book still caps targetQty at first level when qMax already hit', () => {
+    const levels = [
+      [1.2510, 1160.43],
+      [1.2511, 5000],
+    ];
+    const { q, targetQty, limLvlIdx } =
+      getQWithinSlippage({ levels, slippage: 0.0005, qMax: 500 });
+
+    assert.equal(q, 500);
+    assert.ok(Math.abs(targetQty - (500 / 1.2510)) < 1e-9);
+    assert.equal(limLvlIdx, 0);
+  });
+
 });
 //=============================================================================
 //
@@ -580,5 +593,58 @@ suite('strategy/engine stage 3. determine target qBuy, qSell for targetQty', () 
       targetQty: 3,
     });
     assert.equal(q, 100*1 + 100.05*2);
+  });
+
+  test('computeIntents keeps qBuy and targetQty capped when first level alone exceeds qMax', () => {
+    const nowMs = 1_000_000;
+    const sym = 'AXS_USDT';
+    const latest = new Map();
+
+    latest.set(`binance|${sym}`, {
+      tsMs: nowMs,
+      asks: [
+        [1.2510, 1160.43],
+        [1.2511, 5000],
+      ],
+      bids: [
+        [1.2509, 5000],
+        [1.2508, 5000],
+      ],
+    });
+
+    latest.set(`gate|${sym}`, {
+      tsMs: nowMs,
+      bids: [
+        [1.2546, 1160.43],
+        [1.2545, 5000],
+      ],
+      asks: [
+        [1.2547, 5000],
+        [1.2548, 5000],
+      ],
+    });
+
+    const cfg = {
+      bot: {
+        execution_exchanges: ['binance', 'gate'],
+        raw_spread_buffer_pct: 0,
+        slippage_pct: 0.05,
+        q_min_usdt: 100,
+        q_max_usdt: 500,
+      },
+      enabledExchanges: ['binance', 'gate'],
+    };
+
+    const fees = {
+      binance: { taker_fee_pct: 0 },
+      gate: { taker_fee_pct: 0 },
+    };
+
+    const intents = computeIntentsForSymWithInit({ sym, latest, fees, nowMs, cfg, exState });
+
+    assert.equal(intents.length, 1);
+    assert.ok(intents[0].qBuy <= 500 + 1e-9);
+    assert.ok(intents[0].qSell <= 500 + 1e-9);
+    assert.ok(intents[0].targetQty <= (500 / 1.2510) + 1e-9);
   });
 });
