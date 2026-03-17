@@ -1,4 +1,4 @@
-\set my_interval '24 hours';
+\set my_interval '24 days';
 \echo Auswerteinterval: :my_interval
 SELECT
   COUNT(*)                          AS trade_count,
@@ -6,9 +6,9 @@ SELECT
   ROUND(AVG(expected_pnl_quote), 2) AS avg_expected_pnl_quote,
   ROUND(MAX(expected_pnl_quote), 2) AS max_expected_pnl_quote,
   ROUND(MIN(expected_pnl_quote), 2) AS min_expected_pnl_quote,
-  ROUND(AVG(size_quote), 2)         AS avg_size_quote,
-  ROUND(MAX(size_quote), 2)         AS max_size_quote,
-  ROUND(MIN(size_quote), 2)         AS min_size_quote,
+  ROUND(AVG(sell_quote), 2)         AS avg_sell_quote,
+  ROUND(MAX(sell_quote), 2)         AS max_sell_quote,
+  ROUND(MIN(sell_quote), 2)         AS min_sell_quote,
   ROUND(AVG(target_qty), 2)         AS avg_target_qty
 FROM trade_intent
 WHERE ts >= now() - interval :'my_interval';
