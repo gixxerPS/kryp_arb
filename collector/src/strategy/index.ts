@@ -90,13 +90,13 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   }
 
   // debug
-  setInterval(() => {
-    log.debug({
-      latest: Object.fromEntries(
-        Array.from(latest.entries(), ([snapshotKey, snapshot]) => [snapshotKey, formatSnapshotForDebug(snapshot)])
-      ),
-    }, 'latest');
-  }, 10000);
+  // setInterval(() => {
+  //   log.debug({
+  //     latest: Object.fromEntries(
+  //       Array.from(latest.entries(), ([snapshotKey, snapshot]) => [snapshotKey, formatSnapshotForDebug(snapshot)])
+  //     ),
+  //   }, 'latest');
+  // }, 10000);
 
   appBus.on('md:l2', (m: L2Snapshot) => {
     latest.set(key(m.exchange, m.symbol), m);
