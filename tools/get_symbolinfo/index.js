@@ -47,6 +47,7 @@ const { SYMBOLINFO_DIR, BOT_CFG_PATH, SYMBOLS_CFG_PATH } = require("./paths");
 const { run: runBinance }   = require("./binance_spot");
 const { run: runGate } = require("./gate_spot");
 const { run: runBitget } = require("./bitget_spot");
+const { run: runMexc } = require("./mexc_spot");
 
 function loadWantedSymbols(botPath) {
   const bot = JSON.parse(fs.readFileSync(botPath, "utf8"));
@@ -79,6 +80,7 @@ async function main() {
   await runBinance(ctx);
   await runGate(ctx);
   await runBitget(ctx);
+  await runMexc(ctx);
 
   console.log("[symbolinfo] done");
 }

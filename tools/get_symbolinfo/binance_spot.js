@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { pow10Tick, asInt, asNumber } = require("./normalize");
+const { mergeAndWriteOutput } = require('./output');
 
 const BASE_URL = 'https://api.binance.com';
 const FETCH_URL = `${BASE_URL}/api/v3/exchangeInfo`;
@@ -116,12 +117,11 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
     };
   }
 
-  fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-  fs.writeFileSync(OUT_PATH, JSON.stringify(out, null, 2), "utf8");
+  const mergedOut = mergeAndWriteOutput(OUT_PATH, out);
 
-  const missing = Array.from(wanted).filter((sym) => !out.symbols[sym]);
+  const missing = Array.from(wanted).filter((sym) => !mergedOut.symbols[sym]);
 
-  console.log(`[binance] wrote ${Object.keys(out.symbols).length} symbols to ${OUT_PATH}`);
+  console.log(`[binance] wrote ${Object.keys(mergedOut.symbols).length} symbols to ${OUT_PATH}`);
   if (missing.length) {
     console.error(
       `[binance] missing (not TRADING or filtered): ` +

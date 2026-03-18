@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.binance.com/api/v3/exchangeInfo",
-    "fetchedAt": "2026-03-16T08:52:22.919Z",
+    "fetchedAt": "2026-03-18T07:43:52.170Z",
     "timezone": "UTC",
     "symbolCountRequested": 10
   },

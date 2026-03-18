@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.bitget.com/api/v2/spot/public/symbols",
-    "fetchedAt": "2026-03-16T08:52:28.792Z"
+    "fetchedAt": "2026-03-18T07:43:57.133Z"
   },
   "symbols": {
     "GALAUSDT": {

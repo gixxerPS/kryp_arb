@@ -93,7 +93,7 @@ export function compileRules(raw: RawSymbolInfo | null | undefined): CompiledRul
 }
 
 export function makeOrderKey(ex: ExchangeId, symMapped: string): string {
-  if (ex === 'binance' || ex === 'bitget') {
+  if (ex === 'binance' || ex === 'bitget' || ex === 'mexc') {
     return String(symMapped).replace('_', '').toUpperCase();
   }
   if (ex === 'gate') return String(symMapped);
@@ -104,7 +104,7 @@ export function makeMdKey(ex: ExchangeId, symMapped: string, subscription: { lev
   if (ex === 'binance') {
     return symToBinanceStreamSuffix(symToBinance(symMapped), subscription.levels, subscription.updateMs ?? 100);
   }
-  if (ex === 'bitget') return symToBitget(symMapped);
+  if (ex === 'bitget' || ex === 'mexc') return symToBitget(symMapped);
   if (ex === 'gate') return symToGate(symMapped);
   return symMapped;
 }

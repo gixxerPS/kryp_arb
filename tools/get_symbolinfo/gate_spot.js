@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { pow10Tick, asInt, asNumber, precisionToStep } = require("./normalize");
+const { mergeAndWriteOutput } = require('./output');
 
 const BASE_URL = 'https://api.gateio.ws';
 const FETCH_URL = `${BASE_URL}/api/v4/spot/currency_pairs`;
@@ -80,10 +81,10 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
   }
   
 
-  fs.writeFileSync(OUT_PATH, JSON.stringify(out, null, 2));
-  console.log(`[gate] wrote ${Object.keys(out.symbols).length} symbols to ${OUT_PATH}`);
+  const mergedOut = mergeAndWriteOutput(OUT_PATH, out);
+  console.log(`[gate] wrote ${Object.keys(mergedOut.symbols).length} symbols to ${OUT_PATH}`);
   
-  const missing = Array.from(wantedInternal).filter((sym) => !out.symbols[sym]);
+  const missing = Array.from(wantedInternal).filter((sym) => !mergedOut.symbols[sym]);
   if (missing.length) {
     console.error(
       `[gate] missing (not TRADING or filtered): ` +

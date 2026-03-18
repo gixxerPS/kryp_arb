@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { readJson } from './util';
@@ -26,6 +27,14 @@ function absConfigPath(...parts: string[]): string {
   return path.resolve(process.cwd(), 'config', ...parts);
 }
 
+function readOptionalSymbolInfo(name: string): SymbolInfoExchangeFile {
+  const fp = absConfigPath('symbolinfo', name);
+  if (!fs.existsSync(fp)) {
+    return { meta: { missing: true }, symbols: {} };
+  }
+  return readJson<SymbolInfoExchangeFile>(fp);
+}
+
 export function loadConfig(): LoadedConfig {
   if (cached) return cached;
 
@@ -35,13 +44,14 @@ export function loadConfig(): LoadedConfig {
   const symbols = readJson<SymbolsCfg>(absConfigPath('symbols.json')).symbols ?? [];
   const db = readJson<DbCfg>(absConfigPath('db.json'));
   const log = readJson<LogCfg>(absConfigPath('log.json'));
-  const enabledExchanges = (['binance', 'gate', 'bitget'] as ExchangeId[])
+  const enabledExchanges = (['binance', 'gate', 'bitget', 'mexc'] as ExchangeId[])
     .filter((ex) => exchanges[ex]?.enabled);
 
   const symbolInfoByEx = {
-    binance: readJson<SymbolInfoExchangeFile>(absConfigPath('symbolinfo', 'binance.spot.json')),
-    bitget: readJson<SymbolInfoExchangeFile>(absConfigPath('symbolinfo', 'bitget.spot.json')),
-    gate: readJson<SymbolInfoExchangeFile>(absConfigPath('symbolinfo', 'gate.spot.json')),
+    binance: readOptionalSymbolInfo('binance.spot.json'),
+    bitget: readOptionalSymbolInfo('bitget.spot.json'),
+    gate: readOptionalSymbolInfo('gate.spot.json'),
+    mexc: readOptionalSymbolInfo('mexc.spot.json'),
   };
 
   const cfg: AppConfig = {

@@ -11,7 +11,7 @@ export interface BotCfg {
   q_min_usdt: number;
   q_max_usdt: number;
   execution_symbols: string[];
-  execution_exchanges: Array<'binance' | 'gate' | 'bitget'>;
+  execution_exchanges: Array<'binance' | 'gate' | 'bitget' | 'mexc'>;
 }
 
 export interface AppCfg {

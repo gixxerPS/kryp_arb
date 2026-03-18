@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { pow10Tick, asInt, asNumber, precisionToStep } = require("./normalize");
+const { mergeAndWriteOutput } = require('./output');
 
 const BASE_URL = "https://api.bitget.com";
 const FETCH_URL = `${BASE_URL}/api/v2/spot/public/symbols`;
@@ -90,10 +91,10 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
     }
   }
 
-  fs.writeFileSync(OUT_PATH, JSON.stringify(out, null, 2));
-  console.log(`[bitget] wrote ${Object.keys(out.symbols).length} symbols to ${OUT_PATH}`);
+  const mergedOut = mergeAndWriteOutput(OUT_PATH, out);
+  console.log(`[bitget] wrote ${Object.keys(mergedOut.symbols).length} symbols to ${OUT_PATH}`);
 
-  const missing = Array.from(wanted).filter((sym) => !out.symbols[sym]);
+  const missing = Array.from(wanted).filter((sym) => !mergedOut.symbols[sym]);
   if (missing.length) {
     console.error(
       `[bitget] missing (not TRADING or filtered): ` +

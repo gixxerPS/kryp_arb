@@ -1,14 +1,15 @@
-const path = require("node:path");
+const path = require('node:path');
 
 // repo root: tools/get_symbolinfo/../.. => bot/
-const REPO_ROOT = path.resolve(__dirname, "../../collector");
-// const REPO_ROOT = path.resolve(__dirname, "../../bot");
+const REPO_ROOT = path.resolve(__dirname, '../../collector');
+// const REPO_ROOT = path.resolve(__dirname, '../../bot');
 
-const CONFIG_DIR = path.join(REPO_ROOT, "config");
-const SYMBOLINFO_DIR = path.join(CONFIG_DIR, "symbolinfo");
+const CONFIG_DIR = path.join(REPO_ROOT, 'config');
+// const SYMBOLINFO_DIR = path.join(CONFIG_DIR, 'symbolinfo');
+const SYMBOLINFO_DIR = path.resolve(__dirname, 'out');
 
-const BOT_CFG_PATH = path.join(CONFIG_DIR, "bot.json");
-const SYMBOLS_CFG_PATH = path.join(CONFIG_DIR, "symbols.json");
+const BOT_CFG_PATH = path.join(CONFIG_DIR, 'bot.json');
+const SYMBOLS_CFG_PATH = path.join(CONFIG_DIR, 'symbols.json');
 
 module.exports = {
     REPO_ROOT,

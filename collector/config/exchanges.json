@@ -45,11 +45,11 @@
     }
   },
     "mexc": {
-    "maker_fee_pct": 0.1,
-    "taker_fee_pct": 0.1,
+    "maker_fee_pct": 0.01,
+    "taker_fee_pct": 0.01,
     "timeout_no_msg_trade_warn_ms": 8000,
     "timeout_no_msg_trade_stop_ms": 60000,
-    "enabled": false,
+    "enabled": true,
     "subscription": {
       "levels": 10,
       "updateMs": 100

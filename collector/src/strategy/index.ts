@@ -13,6 +13,20 @@ function key(ex: L2Snapshot['exchange'], sym: string): string {
   return `${ex}|${sym}`;
 }
 
+function formatLevelsInline(levels: L2Snapshot['bids']): string {
+  return levels.map(([price, qty]) => `[${price}, ${qty}]`).join(' ');
+}
+
+function formatSnapshotForDebug(snapshot: L2Snapshot): Record<string, unknown> {
+  return {
+    tsMs: snapshot.tsMs,
+    exchange: snapshot.exchange,
+    symbol: snapshot.symbol,
+    bids: formatLevelsInline(snapshot.bids),
+    asks: formatLevelsInline(snapshot.asks),
+  };
+}
+
 function makeTradeIntent(draft: TradeIntentDraft, nowMs: number, ttlMs: number, uuidFn: () => string): TradeIntent {
   return {
     id: uuidFn(),
@@ -76,9 +90,13 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   }
 
   // debug
-  // setInterval(() => {
-  //   log.debug({latest:Object.fromEntries(latest) }, 'latest');
-  // }, 10000);
+  setInterval(() => {
+    log.debug({
+      latest: Object.fromEntries(
+        Array.from(latest.entries(), ([snapshotKey, snapshot]) => [snapshotKey, formatSnapshotForDebug(snapshot)])
+      ),
+    }, 'latest');
+  }, 10000);
 
   appBus.on('md:l2', (m: L2Snapshot) => {
     latest.set(key(m.exchange, m.symbol), m);
