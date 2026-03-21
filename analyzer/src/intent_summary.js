@@ -83,9 +83,9 @@ async function main() {
     intents: row.intents,
     sum_pnl_quote: num(row.sum_pnl_quote, 2),
     avg_pnl_quote: num(row.avg_pnl_quote, 2),
-    max_pnl_quote: num(max_pnl_quote, 2),
+    max_pnl_quote: num(row.max_pnl_quote, 2),
     avg_pnl_bps: num(row.avg_pnl_bps, 4),
-    avg_buy_quote: num(avg_buy_quote, 2),
+    avg_buy_quote: num(row.avg_buy_quote, 2),
     avg_target_qty: num(row.avg_target_qty, 6),
     last_seen: row.last_seen,
   })));
@@ -104,7 +104,7 @@ async function main() {
   // })));
   
   console.log('\n=== Total PnL ===');
-  console.log(num(totalPnl.rows[0].total_pnl, 2));
+  console.log(`${num(totalPnlRes.rows[0].total_pnl, 2)} USD`);
 
   await db.end();
 }
