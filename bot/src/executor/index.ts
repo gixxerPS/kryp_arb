@@ -112,6 +112,7 @@ export default async function startExecutor(
     return {
       today: { tsMs: nowFn(), pnlSum: 0, successCount: 0, failedCount: 0 },
       yesterday: { tsMs: 0, pnlSum: 0, successCount: 0, failedCount: 0 },
+      blockedRoutes: {},
     };
   }
 
@@ -123,8 +124,13 @@ export default async function startExecutor(
     ? {
       today: { ...restoredRuntimeState.today },
       yesterday: { ...restoredRuntimeState.yesterday },
+      blockedRoutes: restoredRuntimeState.blockedRoutes
+        ? structuredClone(restoredRuntimeState.blockedRoutes)
+        : {},
     }
     : makeDefaultRuntimeState();
+
+  runtimeState.blockedRoutes = runtimeState.blockedRoutes ?? {};
 
   function updateRuntimeState(params: UpdateRuntimeStateParams): void {
     if (params.buyOk && params.sellOk) {
@@ -153,7 +159,75 @@ export default async function startExecutor(
     return {
       today: { ...runtimeState.today },
       yesterday: { ...runtimeState.yesterday },
+      blockedRoutes: runtimeState.blockedRoutes
+        ? structuredClone(runtimeState.blockedRoutes)
+        : {},
     };
+  }
+
+  /**
+   * Route sperren wenn kein balance da ist. Dann koennen wir eh nicht kaufen / verkaufen und brauchen gar nicht weiter pruefen
+   * @param params 
+   */
+  function blockRoute(params: {
+    symbol: string;
+    exchange: ExchangeId;
+    side: 'BUY' | 'SELL';
+    asset: string;
+  }): void {
+    const {
+      symbol,
+      exchange,
+      side,
+      asset,
+    } = params;
+    runtimeState.blockedRoutes = runtimeState.blockedRoutes ?? {};
+    runtimeState.blockedRoutes[symbol] = runtimeState.blockedRoutes[symbol] ?? {};
+    runtimeState.blockedRoutes[symbol]![exchange] = runtimeState.blockedRoutes[symbol]![exchange] ?? {};
+    runtimeState.blockedRoutes[symbol]![exchange]![side] = {
+      blockedAtTsMs: nowFn(),
+      exchange,
+      asset,
+    };
+  }
+
+  /**
+   * Wenn balance auf einer exchange leer ist wird die route gesperrt, weil wir brauchen es ja gar nicht weiter versuchen.
+   * Wenn die balances aber geupdated wurden muss geprueft werden ob die route wieder freigegeben werden kann.
+   * Es koennte ja bestand durch rebalancing "extern" wieder draufgekommen sein.
+   * @param params 
+   * @returns 
+   */
+  function unblockRoutes(
+    symbol: string,
+    buyBalances: Record<string, number>,
+    sellBalances: Record<string, number>,
+  ): void {
+    const bySymbol = runtimeState.blockedRoutes?.[symbol];
+    if (!bySymbol) return;
+
+    for (const [exchange, sideMap] of Object.entries(bySymbol)) {
+      if (!sideMap) continue;
+
+      for (const [side, blockInfo] of Object.entries(sideMap)) {
+        if (!blockInfo) continue;
+
+        const balances = side === OrderSides.BUY ? buyBalances : sellBalances;
+        const currentBalance = balances[blockInfo.asset] ?? 0;
+        let requiredBalance = 0;
+        if (side === OrderSides.BUY) {
+          requiredBalance = cfg.bot.balance_minimum_usdt;
+        }
+        if (currentBalance < requiredBalance) continue;
+        delete bySymbol[exchange as ExchangeId]?.[side as 'BUY' | 'SELL'];
+      }
+      if (!Object.keys(sideMap).length) { // aufraeumen wenn moeglich
+        delete bySymbol[exchange as ExchangeId];
+      }
+    }
+    if (!Object.keys(bySymbol).length) { // aufraeumen wenn moeglich
+      delete runtimeState.blockedRoutes?.[symbol];
+    }
   }
 
   function getAccountStatus(): ExecutorAccountStatusByExchange {
@@ -304,6 +378,13 @@ export default async function startExecutor(
       const sellExchangeState = exState.getExchangeState(sellEx);
       const buyBalances = buyAd.getBalances();
       const sellBalances = sellAd.getBalances();
+      unblockRoutes(symbol, buyBalances, sellBalances); // pruefen ob wir ggf neue balances haben und sell|buy auf einer exchange wieder freigeben koennen
+      const buyBlocked = runtimeState.blockedRoutes?.[symbol]?.[buyEx]?.[OrderSides.BUY];
+      const sellBlocked = runtimeState.blockedRoutes?.[symbol]?.[sellEx]?.[OrderSides.SELL];
+      if (buyBlocked || sellBlocked) {
+        log.debug({ symbol, buyEx, sellEx, buyBlocked, sellBlocked }, 'dropping intent: route blocked due to insufficient balance');
+        return;
+      }
       //=======================================================================
       // 1.1) prechecks BUY (gegen den aktuellen bestands snapshot)
       //=======================================================================
@@ -314,7 +395,6 @@ export default async function startExecutor(
         prepSymbolInfo: buyExSymInfo,
         exState:  { enabled: buyExchangeState?.enabled ?? true, balances: buyBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
-        feeRate: getExchange(buyEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
       if (!resBuyCheck.ok) {
         if (resBuyCheck.reason === 'INT_INSUFFICIENT_BALANCE_USDT') {
@@ -331,6 +411,12 @@ export default async function startExecutor(
             orderQBuy = orderTargetQty * buyPxEff;
             orderQSell = orderTargetQty * sellPxEff;
           } else {
+            blockRoute({
+              symbol,
+              exchange: buyEx,
+              side: OrderSides.BUY,
+              asset: buyExSymInfo.base,
+            });
             log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason, floorReasonDesc:flooredBuy.reasonDesc },
               'dropping intent');
             const warnPrecheckEvent: TradeWarnPrecheckEvent = {
@@ -371,7 +457,6 @@ export default async function startExecutor(
         prepSymbolInfo: sellExSymInfo,
         exState:  { enabled: sellExchangeState?.enabled ?? true, balances: sellBalances },
         balance_minimum_usdt: cfg.bot.balance_minimum_usdt,
-        feeRate: getExchange(sellEx).taker_fee_pct*0.01, // @TODO: kann optimiert werden da faktor 1/100 statisch
       });
       if (!resSellCheck.ok) {
         if (resSellCheck.reason === 'INT_INSUFFICIENT_BALANCE_BASE') {
@@ -388,6 +473,12 @@ export default async function startExecutor(
             orderQBuy = orderTargetQty * buyPxEff;
             orderQSell = orderTargetQty * sellPxEff;
           } else {
+            blockRoute({
+              symbol,
+              exchange: sellEx,
+              side: OrderSides.SELL,
+              asset: sellExSymInfo.base,
+            });
             log.warn({ reason:'precheck sell order failed', intent, sellEx, checkReason:resSellCheck.reason, floorReasonDesc:flooredSell.reasonDesc },
               'dropping intent');
             const warnPrecheckEvent: TradeWarnPrecheckEvent = {
@@ -522,8 +613,7 @@ export default async function startExecutor(
           symbol,
           buyEx,
           sellEx,
-          // sellErr: sellR.ok ? null : sellR.errObj,
-          // sellRes: sellR.ok ? sellR.value : null,
+          sellErr: sellR.status === 'rejected' ? sellR.reason : null,
         }, 'sell failed after buy placed');
         if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
           return;
@@ -555,8 +645,7 @@ export default async function startExecutor(
           symbol,
           buyEx,
           sellEx,
-          // buyErr: buyR.ok ? null : buyR.errObj,
-          // buyRes: buyR.ok ? buyR.value : null,
+          buyErr: buyR.status === 'rejected' ? buyR.reason : null,
         }, 'buy failed after sell placed');
         if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
           return;

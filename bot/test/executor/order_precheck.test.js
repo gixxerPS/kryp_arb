@@ -29,6 +29,7 @@ suite('executor/order_precheck', () => {
             maxQty: 100,
             minNotional: 5,
             priceTick: '0.001',
+            taker_fee: 0.001
           }
         }
       }
@@ -54,7 +55,6 @@ suite('executor/order_precheck', () => {
       q: 5,
       prepSymbolInfo: symbolinfo.getSymbolInfo('AXS_USDT').binance,
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_SYMBOL_DISABLED');
@@ -66,7 +66,6 @@ suite('executor/order_precheck', () => {
       q: 50,
       prepSymbolInfo: symbolinfo.getSymbolInfo('AXS_USDT').binance,
       exState:  {enabled:false, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_EXCHANGE_DISABLED');
@@ -79,7 +78,6 @@ suite('executor/order_precheck', () => {
       targetQty: 0.01,
       prepSymbolInfo: symbolinfo.getSymbolInfo('AXS_USDT').binance, // minQty = 0.1
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_MIN_QTY');
@@ -92,7 +90,6 @@ suite('executor/order_precheck', () => {
       targetQty: 1e9,
       prepSymbolInfo: symbolinfo.getSymbolInfo('AXS_USDT').binance,
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_MAX_QTY');
@@ -107,7 +104,6 @@ suite('executor/order_precheck', () => {
       targetQty: 0.01,
       prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, true);
     assert.deepEqual(r.reason, null);
@@ -122,7 +118,6 @@ suite('executor/order_precheck', () => {
       targetQty: 1000,
       prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
       exState:  {enabled:true, balances: { USDC: 100, AXS: 2000 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, true);
     assert.deepEqual(r.reason, null);
@@ -135,7 +130,6 @@ suite('executor/order_precheck', () => {
       targetQty: 1,
       prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_MIN_NOTIONAL');
@@ -151,7 +145,6 @@ suite('executor/order_precheck', () => {
       targetQty: 10.09, // => floor() = 10
       prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      feeRate: 0.001,
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'EX_MIN_NOTIONAL');
@@ -170,26 +163,9 @@ suite('executor/order_precheck', () => {
       side: 'BUY',
       q: 20,
       targetQty: 10,
-      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
+      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'), // fees make it fail < minimum = 0.001
       exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
       balance_minimum_usdt: 100,
-      feeRate: 0.000,
-    });
-    assert.equal(r.ok, false);
-    assert.deepEqual(r.reason, 'INT_INSUFFICIENT_BALANCE_USDT');
-  });
-  test('NOK:BUY fails INT_INSUFFICIENT_BALANCE_USDT incl fee', () => {
-    initSymbolinfo();
-    const r = marketOrderPrecheckOk({
-      exchange: 'binance',
-      symbol: 'AXS_USDC',
-      side: 'BUY',
-      q: 20,
-      targetQty: 10,
-      prepSymbolInfo: symbolinfo.getEx('AXS_USDT','binance'),
-      exState:  {enabled:true, balances: { USDC: 100, AXS: 100 }},
-      balance_minimum_usdt: 100,
-      feeRate: 0.001, // fees make it fail < minimum
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.reason, 'INT_INSUFFICIENT_BALANCE_USDT');

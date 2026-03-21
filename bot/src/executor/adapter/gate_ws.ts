@@ -125,6 +125,12 @@ let balancesLoaded = false;
 let isLoggedIn = false;
 const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
+function makeGateWsError(message: string, context: Record<string, unknown>): Error {
+  const err = new Error(message) as Error & { context?: Record<string, unknown> };
+  err.context = context;
+  return err;
+}
+
 function sendFrame<T>(channel: string, payload: Record<string, unknown>,
   { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
@@ -144,14 +150,24 @@ function sendFrame<T>(channel: string, payload: Record<string, unknown>,
   return new Promise<T>((resolve, reject) => {
     const tmr = setTimeout(() => {
       pending.delete(reqId);
-      reject(new Error(`gate ws timeout channel=${channel} req_id=${reqId}`));
+      reject(makeGateWsError(`gate ws timeout channel=${channel} req_id=${reqId}`, {
+        channel,
+        reqId,
+        payload,
+      }));
     }, timeoutMs);
-    pending.set(reqId, { resolve, reject, tmr });
+    pending.set(reqId, {
+      resolve,
+      reject,
+      tmr,
+      requestContext: { method: channel, params: payload },
+    });
     try {
       wsRef?.send(JSON.stringify(frame));
     } catch (e) {
       clearTimeout(tmr);
       pending.delete(reqId);
+      log.error({ err: e, channel, reqId, payload, frame }, 'gate ws-api send failed');
       reject(e);
     }
   });
@@ -281,11 +297,19 @@ async function init(cfg: AppConfig): Promise<void> {
       if (status !== 200 || errs) {
         const label = errs?.label ?? 'GATE_WS_ERROR';
         const message = errs?.message ?? 'unknown error';
-        const e = new Error(`${label}: ${message}`);
-        (e as any).meta = {
+        log.error({
+          reqId,
           status,
-          raw: parsed,
-        };
+          channel: p.requestContext?.method,
+          payload: p.requestContext?.params,
+          rawErrorResponse: parsed,
+        }, 'gate ws-api request failed');
+        const e = makeGateWsError(`${label}: ${message}`, {
+          status,
+          channel: p.requestContext?.method,
+          payload: p.requestContext?.params,
+          rawErrorResponse: parsed,
+        });
         p.reject(e);
         return;
       }
@@ -430,7 +454,13 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     reqParam.amount = String(orderParams.quantity);
   }
   log.debug({reqParam}, 'ORDER!!!!');
-  const r = await sendReq<GatePlaceOrderResult>('spot.order_place', reqParam, { timeoutMs: 10_000 });
+  let r: GatePlaceOrderResult;
+  try {
+    r = await sendReq<GatePlaceOrderResult>('spot.order_place', reqParam, { timeoutMs: 10_000 });
+  } catch (err) {
+    log.error({ err, reqParam }, 'gate placeOrder failed');
+    throw err;
+  }
   log.debug({ reqParam, rawOrderResponse: r }, 'placeOrder raw response');
 
   // [2026-02-26 15:34:32.648 +0100] DEBUG (executor): placeOrder raw response
@@ -528,7 +558,13 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
     reqParam.order_id = idToGateText(String(p.orderId));
   }
 
-  const r = await sendReq<GateCancelOrderResult>('spot.order_cancel', reqParam, { timeoutMs: 10_000 });
+  let r: GateCancelOrderResult;
+  try {
+    r = await sendReq<GateCancelOrderResult>('spot.order_cancel', reqParam, { timeoutMs: 10_000 });
+  } catch (err) {
+    log.error({ err, reqParam }, 'gate cancelOrder failed');
+    throw err;
+  }
 
   return {
     exchange: ExchangeIds.gate,

@@ -212,6 +212,12 @@ let balances: Balances = {};
 let balancesLoaded = false;
 const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
+function makeWsApiError(message: string, context: Record<string, unknown>): Error {
+  const err = new Error(message) as Error & { context?: Record<string, unknown> };
+  err.context = context;
+  return err;
+}
+
 /**
  * @brief Send a WS-API request and await response by id.
  * 
@@ -236,16 +242,26 @@ function sendReq<T>(method: string, params: Record<string, unknown>,
   return new Promise<T>((resolve, reject) => {
     const tmr = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`binance ws timeout method=${method} id=${id}`));
+      reject(makeWsApiError(`binance ws timeout method=${method} id=${id}`, {
+        id,
+        method,
+        params,
+      }));
     }, timeoutMs);
 
-    pending.set(id, { resolve, reject, tmr });
+    pending.set(id, {
+      resolve,
+      reject,
+      tmr,
+      requestContext: { method, params },
+    });
 
     try {
       wsRef?.send(JSON.stringify({ id, method, params }));
     } catch (e) {
       clearTimeout(tmr);
       pending.delete(id);
+      log.error({ err: e, id, method, params }, 'binance ws-api send failed');
       reject(e);
     }
   });
@@ -327,7 +343,7 @@ async function init(cfg: AppConfig): Promise<void> {
       let parsed: any;
       try {
         parsed = JSON.parse(msg.toString());
-        log.debug({msg:parsed}, 'onMessage');
+        // log.debug({msg:parsed}, 'onMessage');
       } catch (e) {
         log.error({ err: e }, 'binance ws-api message parse error');
         return;
@@ -342,7 +358,20 @@ async function init(cfg: AppConfig): Promise<void> {
       pending.delete(parsed.id);
 
       if (parsed.status !== 200) {
-        p.reject(new Error(`binance ws-api error: ${JSON.stringify(parsed)}`));
+        log.error({
+          id: parsed.id,
+          status: parsed.status,
+          method: p.requestContext?.method,
+          params: p.requestContext?.params,
+          rawErrorResponse: parsed,
+        }, 'binance ws-api request failed');
+        p.reject(makeWsApiError('binance ws-api request failed', {
+          id: parsed.id,
+          status: parsed.status,
+          method: p.requestContext?.method,
+          params: p.requestContext?.params,
+          rawErrorResponse: parsed,
+        }));
       } else {
         p.resolve(parsed.result);
       }
@@ -558,7 +587,13 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
 
   log.debug({params}, 'ORDER!!!!');
 
-  const r = await sendReq<BinancePlaceOrderResult>(method, params, { timeoutMs: 10_000 });
+  let r: BinancePlaceOrderResult;
+  try {
+    r = await sendReq<BinancePlaceOrderResult>(method, params, { timeoutMs: 10_000 });
+  } catch (err) {
+    log.error({ err, params }, 'binance placeOrder failed');
+    throw err;
+  }
   log.debug({ rawOrderResponse: r }, 'placeOrder raw response');
 
 

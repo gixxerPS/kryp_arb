@@ -15,6 +15,7 @@ import {
   type PlaceOrderParams,
   type CancelOrderParams,
   type UpdateBalancesParams,
+  type PendingEntry,
   type ExecutorAdapter,
   OrderStates
 } from '../../types/executor';
@@ -42,6 +43,18 @@ type BitgetApiResponse<T> = {
   msg?: string;
   data?: T;
 };
+
+function makeBitgetRestError(message: string, context: Record<string, unknown>): Error {
+  const err = new Error(message) as Error & { context?: Record<string, unknown> };
+  err.context = context;
+  return err;
+}
+
+function makeBitgetWsError(message: string, context: Record<string, unknown>): Error {
+  const err = new Error(message) as Error & { context?: Record<string, unknown> };
+  err.context = context;
+  return err;
+}
 
 function hmacSha256Base64(secret: string, data: string): string {
   return crypto.createHmac('sha256', secret).update(data).digest('base64');
@@ -117,7 +130,15 @@ async function bitgetPrivateRest<T>(opts: {
   const json = (await res.json()) as BitgetApiResponse<T>;
   if (!res.ok || json?.code !== '00000') {
     const msg = json?.msg ?? `status=${res.status}`;
-    throw new Error(`bitget rest error ${opts.method} ${requestPathWithQuery}: ${msg}`);
+    throw makeBitgetRestError(`bitget rest error ${opts.method} ${requestPathWithQuery}: ${msg}`, {
+      method: opts.method,
+      path: opts.path,
+      query,
+      requestPathWithQuery,
+      body: opts.body,
+      status: res.status,
+      rawErrorResponse: json,
+    });
   }
   return json.data as T;
 }
@@ -139,6 +160,7 @@ function makeWsLoginArgs() {
 
 let mgr: ReturnType<typeof createReconnectWS> | null = null;
 let wsRef: WebSocket | null = null;
+const pending: Map<string, PendingEntry> = new Map();
 let balances: Balances = {};
 let balancesLoaded = false;
 let isLoggedIn = false;
@@ -159,6 +181,52 @@ function rejectLoginPending(err: unknown): void {
   loginPending = null;
 }
 
+function rejectAllPending(err: unknown): void {
+  for (const [id, p] of pending.entries()) {
+    clearTimeout(p.tmr);
+    p.reject(err);
+    pending.delete(id);
+  }
+}
+
+function sendTradeReq<T>(arg: Record<string, unknown>,
+  { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
+  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+    return Promise.reject(new Error('bitget ws not open (op=trade)'));
+  }
+
+  const id = String(arg.id ?? makeClientId()).slice(0, 40);
+  const requestArg = { ...arg, id };
+  const frame = { op: 'trade', args: [requestArg] };
+
+  return new Promise<T>((resolve, reject) => {
+    const tmr = setTimeout(() => {
+      pending.delete(id);
+      reject(makeBitgetWsError(`bitget ws timeout op=trade id=${id}`, {
+        id,
+        op: 'trade',
+        arg: requestArg,
+      }));
+    }, timeoutMs);
+
+    pending.set(id, {
+      resolve,
+      reject,
+      tmr,
+      requestContext: { method: 'trade', params: requestArg },
+    });
+
+    try {
+      wsRef?.send(JSON.stringify(frame));
+    } catch (err) {
+      clearTimeout(tmr);
+      pending.delete(id);
+      log.error({ err, frame }, 'bitget ws trade send failed');
+      reject(err);
+    }
+  });
+}
+
 async function loginWs(): Promise<void> {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     throw new Error('bitget ws not open');
@@ -168,10 +236,21 @@ async function loginWs(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const tmr = setTimeout(() => {
       loginPending = null;
-      reject(new Error('bitget ws login timeout'));
+      reject(makeBitgetWsError('bitget ws login timeout', {
+        op: 'login',
+        args,
+      }));
     }, 10_000);
     loginPending = { resolve, reject, tmr };
-    wsRef?.send(JSON.stringify({ op: 'login', args: [args] }));
+    const frame = { op: 'login', args: [args] };
+    try {
+      wsRef?.send(JSON.stringify(frame));
+    } catch (err) {
+      clearTimeout(tmr);
+      loginPending = null;
+      log.error({ err, frame }, 'bitget ws login send failed');
+      reject(err);
+    }
   });
   isLoggedIn = true;
 }
@@ -248,10 +327,42 @@ async function init(_cfg: AppConfig): Promise<void> {
           loginPending = null;
           return;
         }
-        const err = new Error(`bitget ws login failed: ${parsed?.msg ?? 'unknown error'}`);
+        log.error({ rawErrorResponse: parsed }, 'bitget ws login failed');
+        const err = makeBitgetWsError(`bitget ws login failed: ${parsed?.msg ?? 'unknown error'}`, {
+          rawErrorResponse: parsed,
+        });
         rejectLoginPending(err);
         return;
       }
+
+      const responseArg = Array.isArray(parsed?.arg) ? parsed.arg[0] : parsed?.arg;
+      const reqId = responseArg?.id ? String(responseArg.id) : null;
+      if (!reqId) return;
+
+      const p = pending.get(reqId);
+      if (!p) return;
+
+      clearTimeout(p.tmr);
+      pending.delete(reqId);
+
+      const code = String(parsed?.code ?? '');
+      if (parsed?.event === 'error' || code !== '0') {
+        log.error({
+          reqId,
+          op: p.requestContext?.method,
+          params: p.requestContext?.params,
+          rawErrorResponse: parsed,
+        }, 'bitget ws trade request failed');
+        p.reject(makeBitgetWsError(`bitget ws trade failed: ${parsed?.msg ?? 'unknown error'}`, {
+          reqId,
+          op: p.requestContext?.method,
+          params: p.requestContext?.params,
+          rawErrorResponse: parsed,
+        }));
+        return;
+      }
+
+      p.resolve(responseArg?.params ?? {});
     },
 
     onReconnect: () => {
@@ -262,6 +373,7 @@ async function init(_cfg: AppConfig): Promise<void> {
       exState.onWsState('bitget-ws-private', WS_STATE.CLOSED);
       wsRef = null;
       isLoggedIn = false;
+      rejectAllPending(new Error(`bitget ws closed code=${code} reason=${reason || ''}`));
       rejectLoginPending(new Error(`bitget ws closed code=${code} reason=${reason || ''}`));
       openReject?.(new Error('ws closed during init'));
     },
@@ -311,9 +423,15 @@ async function fetchBalances(): Promise<Balances> {
 function startBalanceRefreshLoop(): void {
   if (process.env.NODE_ENV === 'development') return;
   if (balanceRefreshTmr) return;
-  balanceRefreshTmr = setInterval(async () => {
-    balances = await fetchBalances();
-    balancesLoaded = true;
+  balanceRefreshTmr = setInterval(() => {
+    fetchBalances()
+      .then((nextBalances) => {
+        balances = nextBalances;
+        balancesLoaded = true;
+      })
+      .catch((err: unknown) => {
+        log.warn({ err }, 'balance refresh failed');
+      });
   }, BALANCE_REFRESH_MS);
   balanceRefreshTmr.unref?.();
 }
@@ -358,28 +476,42 @@ function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
 
 async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
   if (!isReady()) throw new Error('bitget ws not ready');
+  if (test) {
+    log.warn({ orderParams }, 'bitget ws placeOrder test flag ignored');
+  }
 
   const clientOid = orderParams.orderId ?? makeClientId();
-  const body: Record<string, unknown> = {
-    symbol: orderParams.symbol,
-    side: String(orderParams.side).toLowerCase(),
+  const params: Record<string, unknown> = {
     orderType: String(orderParams.type).toLowerCase(),
+    side: String(orderParams.side).toLowerCase(),
     force: orderParams.type === OrderTypes.MARKET ? 'ioc' : 'gtc',
     clientOid,
   };
 
   if (orderParams.type === OrderTypes.MARKET && orderParams.side === OrderSides.BUY && orderParams.q !== undefined) {
-    body.quoteSize = String(orderParams.q);
+    params.size = String(orderParams.q);
   } else {
-    body.size = String(orderParams.quantity);
+    params.size = String(orderParams.quantity);
+  }
+  if (orderParams.price !== undefined) {
+    params.price = String(orderParams.price);
   }
 
-  const endpoint = test ? '/api/v2/spot/trade/place-order' : '/api/v2/spot/trade/place-order';
-  const data = await bitgetPrivateRest<BitgetPlaceOrderData>({
-    method: 'POST',
-    path: endpoint,
-    body,
-  });
+  const reqArg = {
+    instType: 'SPOT',
+    instId: orderParams.symbol,
+    channel: 'place-order',
+    params,
+  };
+  log.debug({ reqArg }, 'ORDER!!!!');
+  let data: BitgetPlaceOrderData;
+  try {
+    data = await sendTradeReq<BitgetPlaceOrderData>(reqArg, { timeoutMs: 10_000 });
+  } catch (err) {
+    log.error({ err, reqArg }, 'bitget placeOrder failed');
+    throw err;
+  }
+  log.debug({ reqArg, rawOrderResponse: data }, 'placeOrder raw response');
 
   // Bitget place-order liefert i. d. R. nur IDs. Fill-Details kommen asynchron
   // oder via nachgelagerter Detail-API. Daher conservative Status=UNKNOWN.
@@ -402,23 +534,31 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
 async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
   if (!isReady()) throw new Error('bitget ws not ready');
 
-  const body: Record<string, unknown> = { symbol: p.symbol };
+  const params: Record<string, unknown> = {};
   if (p.orderId !== undefined) {
     const v = String(p.orderId);
     if (v.length > 0) {
       if (/^\d+$/.test(v)) {
-        body.orderId = v;
+        params.orderId = v;
       } else {
-        body.clientOid = v;
+        params.clientOid = v;
       }
     }
   }
+  const reqArg = {
+    instType: 'SPOT',
+    instId: p.symbol,
+    channel: 'cancel-order',
+    params,
+  };
 
-  const data = await bitgetPrivateRest<BitgetCancelOrderData>({
-    method: 'POST',
-    path: '/api/v2/spot/trade/cancel-order',
-    body,
-  });
+  let data: BitgetCancelOrderData;
+  try {
+    data = await sendTradeReq<BitgetCancelOrderData>(reqArg, { timeoutMs: 10_000 });
+  } catch (err) {
+    log.error({ err, reqArg }, 'bitget cancelOrder failed');
+    throw err;
+  }
 
   return {
     exchange: ExchangeIds.bitget,

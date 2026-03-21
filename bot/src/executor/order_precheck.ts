@@ -35,7 +35,6 @@ export type MarketOrderPrecheckParams = {
   prepSymbolInfo: ExSymbolInfo;
   exState: PrecheckExchangeState;
   balance_minimum_usdt?: number;
-  feeRate?: number;
 };
 
 export type FloorQuantityQToBalanceParams = {
@@ -148,11 +147,10 @@ export function floorQuantityQToBalance({
 export function marketOrderPrecheckOk({
   side, // "BUY" | "SELL"
   targetQty, // quantity, e.g. 123 AXS to SELL or BUY
-  q, // quote/notional in BASE, e.g. 123 AXS * 1 USDT/AXS = 100 USDT
+  q, // quote/notional in BASE, e.g. 123 AXS * 1 USDT/AXS = 123 USDT
   prepSymbolInfo, // prepared (precompiled) symbolinfo: { enabled, minNotional, minQty, maxQty, qtyStep }
   exState, // {enabled:true, balances:{ USDC: 100, AXS: 10 }}
   balance_minimum_usdt = 0, // dieser bestand soll auf dem konto nie unterschritten werden
-  feeRate = 0, // e.g. 0.001
 }: MarketOrderPrecheckParams): MarketOrderPrecheckResult {
   const ret: MarketOrderPrecheckResult = { ok: false, reason: null, reasonDesc: '', fixedTargetQtyStr: '' };
 
@@ -198,6 +196,7 @@ export function marketOrderPrecheckOk({
   //===========================================================================
   const exBalanceUSDT = exState.balances[prepSymbolInfo.quote] ?? 0;
   const exBalanceBase = exState.balances[prepSymbolInfo.base] ?? 0;
+  const feeRate = prepSymbolInfo.taker_fee;
 
   if (side === 'BUY') {
     // const qInclFees = q * (1 + feeRate);

@@ -81,7 +81,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
 
       const last = lastIntentAt.get(rk);
       if (last != null && nowMs - last < cooldownS * 1000) {
-        log.debug({ reason: 'cooldown violation', rk, age: nowMs - last, cooldownS }, 'dropped trade');
+        // log.debug({ reason: 'cooldown violation', rk, age: nowMs - last, cooldownS }, 'dropped trade');
         continue;
       }
       lastIntentAt.set(rk, nowMs);

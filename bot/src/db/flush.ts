@@ -81,12 +81,12 @@ export default function startDbFlush(cfg: AppConfig, pool: DpPool): () => void {
           await db.query(sql, values);
         }
       });
-      log.debug({
-          nIntent: intentBatch.length,
-          nOrder: orderBatch.length,
-          qIntent: intentQ.length,
-          qOrder: orderQ.length,
-        }, 'wrote db batch');
+      // log.debug({
+      //     nIntent: intentBatch.length,
+      //     nOrder: orderBatch.length,
+      //     qIntent: intentQ.length,
+      //     qOrder: orderQ.length,
+      //   }, 'wrote db batch');
     } catch (err) {
       log.error({ err, nIntent: intentBatch.length, nOrder: orderBatch.length }, 'db flush failed');
       // Performance-first: bei Fehler droppen wir den fehlgeschlagenen Batch

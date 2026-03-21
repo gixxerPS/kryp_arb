@@ -14,6 +14,10 @@ export type PendingEntry = {
   resolve: (v: any) => void;
   reject: (e: unknown) => void;
   tmr: NodeJS.Timeout;
+  requestContext?: {
+    method?: string;
+    params?: Record<string, unknown>;
+  };
 };
 
 export type PlaceOrderParams = {
@@ -90,9 +94,20 @@ export type ExecutorDayStats = {
   failedCount: number;  // one or both orders not filled
 };
 
+export type ExecutorBlockedRoute = {
+  blockedAtTsMs: number;
+  exchange: ExchangeId;
+  asset: string;
+};
+
+export type ExecutorBlockedRoutes = Partial<
+  Record<string, Partial<Record<ExchangeId, Partial<Record<OrderSide, ExecutorBlockedRoute>>>>>
+>;
+
 export type ExecutorRuntimeState = {
   today: ExecutorDayStats;
   yesterday: ExecutorDayStats;
+  blockedRoutes?: ExecutorBlockedRoutes;
 };
 
 export type UpdateRuntimeStateParams = {

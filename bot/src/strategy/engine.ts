@@ -90,7 +90,7 @@ function getQWithinSlippage(
   const bestQty = Number(levels[0][1]);
   const bestLevelQ = bestPx * bestQty;
   let q = Math.min(qMax, bestLevelQ);
-  let targetQty = bestLevelQ > qMax && bestPx !== 0.0
+  let targetQty = bestLevelQ > qMax && bestPx > 0.0
     ? qMax / bestPx
     : bestQty;
   let dir = 1; // 1 = buy, -1 = sell
