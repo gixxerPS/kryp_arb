@@ -32,8 +32,11 @@ async function main() {
       sell_ex,
       COUNT(*)::int AS intents,
       AVG(expected_pnl_quote) AS avg_pnl_quote,
+      MAX(expected_pnl_quote) AS max_pnl_quote,
       SUM(expected_pnl_quote) AS sum_pnl_quote,
       AVG(expected_pnl_bps) AS avg_pnl_bps,
+      AVG(buy_quote) AS avg_buy_quote,
+      MAX(buy_quote) AS max_buy_quote,
       AVG(target_qty) AS avg_target_qty,
       MAX(ts) AS last_seen
     FROM trade_intent
@@ -60,14 +63,17 @@ async function main() {
     LIMIT ${RECENT_LIMIT};
   `;
 
-  const [routesRes, recentRes] = await Promise.all([
+  const totalPnl = `
+  SELECT SUM(expected_pnl_quote) AS total_pnl
+  FROM trade_intent
+  WHERE ts >= now() - interval '${PERIOD}';
+  `;
+
+  const [routesRes, recentRes, totalPnlRes] = await Promise.all([
     db.query(routesQ),
     db.query(recentQ),
+    db.query(totalPnl),
   ]);
-
-
-
-
 
   console.log('\n=== Top Routes ===');
   console.table(routesRes.rows.map((row) => ({
@@ -75,9 +81,11 @@ async function main() {
     buy_ex: row.buy_ex,
     sell_ex: row.sell_ex,
     intents: row.intents,
-    sum_pnl_quote: num(row.sum_pnl_quote, 4),
-    avg_pnl_quote: num(row.avg_pnl_quote, 4),
-    avg_pnl_bps: num(row.avg_pnl_bps, 2),
+    sum_pnl_quote: num(row.sum_pnl_quote, 2),
+    avg_pnl_quote: num(row.avg_pnl_quote, 2),
+    max_pnl_quote: num(max_pnl_quote, 2),
+    avg_pnl_bps: num(row.avg_pnl_bps, 4),
+    avg_buy_quote: num(avg_buy_quote, 2),
     avg_target_qty: num(row.avg_target_qty, 6),
     last_seen: row.last_seen,
   })));
@@ -94,6 +102,9 @@ async function main() {
   //   sell_quote: num(row.sell_quote, 4),
   //   target_qty: num(row.target_qty, 6),
   // })));
+  
+  console.log('\n=== Total PnL ===');
+  console.log(num(totalPnl.rows[0].total_pnl, 2));
 
   await db.end();
 }
