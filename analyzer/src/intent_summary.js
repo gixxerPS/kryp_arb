@@ -13,6 +13,124 @@ function num(value, digits = 4) {
   if (!Number.isFinite(n)) return null;
   return Number(n.toFixed(digits));
 }
+function percentile(arr, p) {
+  if (!arr.length) return null;
+
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.ceil(p * sorted.length) - 1;
+
+  return sorted[Math.max(0, idx)];
+}
+
+/**
+ * kumulieren wieviel kapital benoetigt wird.
+ * das entspricht dem was mindestens je boerse vorgehalten werden muss(te).
+ * laufen die trades zb 100x von binance nach gate ist eine boerse irgendwann
+ * leer und die andere voll.
+ */
+function analyzeRequiredCapital(intents) {
+  // Map<symbol, Map<exchange, state>>
+  const symMap = new Map();
+  const pnlBySymbolMap = new Map();
+  const imbalanceSeriesBySymbol = new Map();
+
+  function getExchangeState(symbol, ex) {
+    if (!symMap.has(symbol)) {
+      symMap.set(symbol, new Map());
+    }
+    const entry = symMap.get(symbol);
+    if (!entry.has(ex)) {
+      entry.set(ex, {
+        cum_quote: 0,     // kumuliert ueber zeit
+        cum_qty: 0,       // evtl spaeter auch base qty tracken
+        max_cum_quote: 0, // maximaler ausschlag (verkaufen)
+        min_cum_quote: 0, // maximaler ausschlag (kaufen)
+        intents_as_buy_ex: 0,
+        intents_as_sell_ex: 0,
+      });
+    }
+    return entry.get(ex);
+  }
+
+  for (const row of intents) {
+    //===================================================================
+    // pnl map updaten
+    //===================================================================
+    const pnl = Number(row.expected_pnl_quote) || 0;
+    pnlBySymbolMap.set(row.symbol, (pnlBySymbolMap.get(row.symbol) || 0) + pnl);
+
+    //===================================================================
+    // cum quote map updaten
+    //===================================================================
+    const b = getExchangeState(row.symbol, row.buy_ex);
+    const s = getExchangeState(row.symbol, row.sell_ex);
+
+    // Quote fliesst von buy_ex weg
+    b.cum_quote -= Number(row.buy_quote) || 0;
+    b.intents_as_buy_ex += 1;
+    if (b.cum_quote > b.max_cum_quote) {
+      b.max_cum_quote = b.cum_quote;
+    }
+    if (b.cum_quote < b.min_cum_quote) {
+      b.min_cum_quote = b.cum_quote;
+    }
+    
+    // Quote fliesst zu sell_ex hin
+    s.cum_quote += Number(row.sell_quote) || 0;
+    s.intents_as_sell_ex += 1;
+    if (s.cum_quote > s.max_cum_quote) {
+      s.max_cum_quote = s.cum_quote;
+    }
+    if (s.cum_quote < s.min_cum_quote) {
+      s.min_cum_quote = s.cum_quote;
+    }
+
+    //===================================================================
+    // cum quote map updaten
+    //===================================================================
+    if (!imbalanceSeriesBySymbol.has(row.symbol)) {
+      imbalanceSeriesBySymbol.set(row.symbol, []);
+    }
+    const exMap = symMap.get(row.symbol);
+    // aktueller imbalance über alle exchanges dieses symbols
+    let currentImbalance = 0;
+    for (const s of exMap.values()) {
+      const v = Math.abs(Number(s.cum_quote) || 0);
+      if (v > currentImbalance) currentImbalance = v;
+    }
+    imbalanceSeriesBySymbol.get(row.symbol).push(currentImbalance);
+  }
+
+  const intervalDays = 
+  (new Date(intents[intents.length-1].ts) - new Date(intents[0].ts)) / (24 * 3600 * 1000);
+  const resultObj = {};
+  for (const [symbol, exMap] of symMap) {
+    if (!resultObj[symbol]) {
+      resultObj[symbol] = { symbol };
+    }
+    const row = resultObj[symbol];
+    let maxImbalance = 0.0; // ueber alle exchanges
+    let numIntents = 0; // ueber alle exchanges
+    for (const [exchange, s] of exMap) {
+      row[exchange] = num(s.cum_quote, 2);
+      maxImbalance = Math.max(Math.abs(s.min_cum_quote), Math.abs(s.max_cum_quote), maxImbalance);
+      numIntents += s.intents_as_sell_ex + s.intents_as_buy_ex;
+    }
+    const pnl = pnlBySymbolMap.get(symbol);
+    const series = imbalanceSeriesBySymbol.get(symbol) || [];
+    const p95Imbalance = percentile(series, 0.95);
+    row.capEff = p95Imbalance > 0 ? num(pnl / p95Imbalance, 4) : null;
+    row.pnl = num(pnl, 2);
+    // row.maxImbalance = num(maxImbalance, 2);
+    row.p95Imbalance = num(p95Imbalance, 2);
+    row.numIntents = numIntents;
+    row.numIntentsPerDay = num(numIntents / intervalDays, 0);
+  }
+
+  return {
+    peakReqCapArr: Object.values(resultObj)
+  };
+}
 
 async function main() {
   const db = new Client({ connectionString: process.env.POSTGRES_URL });
@@ -63,19 +181,34 @@ async function main() {
     LIMIT ${RECENT_LIMIT};
   `;
 
+  const rawIntentsQ = `
+  SELECT
+    ts,
+    symbol,
+    buy_ex,
+    sell_ex,
+    expected_pnl_quote,
+    buy_quote,
+    sell_quote
+  FROM trade_intent
+  WHERE ts >= now() - interval '${PERIOD}'
+  ORDER BY ts ASC;
+`;
+
   const totalPnl = `
   SELECT SUM(expected_pnl_quote) AS total_pnl
   FROM trade_intent
   WHERE ts >= now() - interval '${PERIOD}';
   `;
 
-  const [routesRes, recentRes, totalPnlRes] = await Promise.all([
+  const [routesRes, recentRes, rawIntentsQRes, totalPnlRes] = await Promise.all([
     db.query(routesQ),
     db.query(recentQ),
+    db.query(rawIntentsQ),
     db.query(totalPnl),
   ]);
 
-  console.log('\n=== Top Routes ===');
+  console.log('\n=== Top Routes by PnL ===');
   console.table(routesRes.rows.map((row) => ({
     symbol: row.symbol,
     buy_ex: row.buy_ex,
@@ -90,18 +223,10 @@ async function main() {
     last_seen: row.last_seen,
   })));
 
-  // console.log('\n=== Recent Intents ===');
-  // console.table(recentRes.rows.map((row) => ({
-  //   ts: row.ts,
-  //   symbol: row.symbol,
-  //   buy_ex: row.buy_ex,
-  //   sell_ex: row.sell_ex,
-  //   pnl_quote: num(row.expected_pnl_quote, 4),
-  //   pnl_bps: num(row.expected_pnl_bps, 2),
-  //   buy_quote: num(row.buy_quote, 4),
-  //   sell_quote: num(row.sell_quote, 4),
-  //   target_qty: num(row.target_qty, 6),
-  // })));
+  const capitalStats = analyzeRequiredCapital(rawIntentsQRes.rows);
+
+  console.log('\n=== Top symbols by capital efficiency & peak required capital ===');
+  console.table(capitalStats.peakReqCapArr.slice(0, 15));
   
   console.log('\n=== Total PnL ===');
   console.log(`${num(totalPnlRes.rows[0].total_pnl, 2)} USD`);
