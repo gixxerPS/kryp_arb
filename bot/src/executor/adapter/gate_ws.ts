@@ -12,7 +12,9 @@ import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { makeClientId } from '../../common/util';
+import { getCanonFromOderSym, getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
+import appBus from '../../bus';
 
 import {
   type Balances,
@@ -56,6 +58,44 @@ type GateCancelOrderResult = {
 type GateTickerRow = {
   currency_pair?: string;
   last?: string; // letzter Preis
+};
+
+type GateOrderUpdateRow = {
+  id: string;
+  text?: string;
+  create_time_ms?: string | number;
+  update_time_ms?: string | number;
+  currency_pair: string;
+  side: string;
+  filled_amount?: string;
+  filled_total?: string;
+  avg_deal_price?: string;
+  fee?: string;
+  fee_currency?: string;
+  gt_fee?: string;
+  event?: string;
+  finish_as?: string;
+  status?: string;
+};
+
+type GateUserTradeRow = {
+  id: number | string;
+  order_id: string;
+  currency_pair: string;
+  create_time_ms?: string | number;
+  side: string;
+  amount: string;
+  price: string;
+  fee?: string;
+  fee_currency?: string;
+  gt_fee?: string;
+  text?: string;
+};
+
+type GateStreamMsg<T> = {
+  channel?: string;
+  event?: string;
+  result?: T[];
 };
 
 function sha512Hex(data: string): string {
@@ -117,6 +157,7 @@ function idFromGateText(text?: string): string {
 
 let mgr: ReturnType<typeof createReconnectWS> | null = null;
 let wsRef: WebSocket | null = null;
+let busRef: any;
 const pending: Map<string, PendingEntry> = new Map();
 const apiKey = process.env.GATE_API_KEY!;
 const apiSecret = process.env.GATE_API_SECRET!;
@@ -215,7 +256,8 @@ let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
 let balanceRefreshTmr: NodeJS.Timeout | null = null;
 
-async function init(cfg: AppConfig): Promise<void> {
+async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
+  busRef = deps?.bus ?? appBus;
   if (openPromise) { // should not happen
     await openPromise;
     
@@ -225,11 +267,9 @@ async function init(cfg: AppConfig): Promise<void> {
     }
     return;
   }
-
   if (!apiKey || !apiSecret) {
     throw new Error('Missing Gate API credentials');
   }
-
   openPromise = new Promise<void>((res, rej) => {
     openResolve = res;
     openReject = rej;
@@ -259,6 +299,7 @@ async function init(cfg: AppConfig): Promise<void> {
 
       try {
         await loginWs();
+        await subscribeUserData();
         log.info({}, 'log in successful');
         if (openResolve) {
           openResolve();
@@ -279,6 +320,20 @@ async function init(cfg: AppConfig): Promise<void> {
         // log.debug({ msg: parsed }, 'onMessage');
       } catch (e) {
         log.error({ err: e }, 'gate ws-api message parse error');
+        return;
+      }
+
+      // spot.orders mit event 'update' wird gefeuert bei order fill!
+      if (parsed?.channel === 'spot.orders' && parsed?.event === 'update') {
+        handleOrdersStream(parsed);
+        return;
+      }
+      // if (parsed?.channel === 'spot.usertrades' && parsed?.event === 'update') {
+      //   handleUserTradesStream(parsed);
+      //   return;
+      // }
+      if ((parsed?.event === 'subscribe' || parsed?.event === 'unsubscribe') && parsed?.channel) {
+        log.debug({ channel: parsed.channel, event: parsed.event }, 'gate private stream ack');
         return;
       }
 
@@ -359,6 +414,22 @@ async function init(cfg: AppConfig): Promise<void> {
   startBalanceRefreshLoop();
 }
 
+function makeSubscribeFrame(channel: string, payload: string[]): string {
+  const time = Math.floor(Date.now() / 1000);
+  const sign = hmacSha512Hex(apiSecret, `channel=${channel}&event=subscribe&time=${time}`);
+  return JSON.stringify({
+    time,
+    channel,
+    event: 'subscribe',
+    payload,
+    auth: {
+      method: 'api_key',
+      KEY: apiKey,
+      SIGN: sign,
+    },
+  });
+}
+
 /**
  * Holt Bestaende via REST
  */
@@ -426,7 +497,97 @@ function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
 }
 
 async function subscribeUserData() {
-  throw new Error('subscribeUserData not implemented');
+  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+    throw new Error('gate ws not open');
+  }
+
+  wsRef.send(makeSubscribeFrame('spot.orders', ['!all']));
+  wsRef.send(makeSubscribeFrame('spot.usertrades', ['!all']));
+  log.info({ scope: '!all' }, 'gate private streams subscribed');
+}
+
+function handleOrdersStream(msgObj: GateStreamMsg<GateOrderUpdateRow>): void {
+  if (!Array.isArray(msgObj.result)) return;
+
+  for (const row of msgObj.result) {
+    const canonSym = getCanonFromOderSym(row.currency_pair, ExchangeIds.gate);
+    if (!canonSym) {
+      log.warn({ row }, 'gate order update symbol mapping missing');
+      continue;
+    }
+
+    const status = row.finish_as === 'filled' || row.status === 'closed'
+      ? OrderStates.FILLED
+      : row.finish_as === 'cancelled' || row.finish_as === 'ioc' || row.finish_as === 'stp'
+        ? OrderStates.CANCELLED
+        : OrderStates.UNKNOWN;
+
+    if (status !== OrderStates.FILLED && status !== OrderStates.CANCELLED) {
+      continue;
+    }
+
+    const executedQty = Number(row.filled_amount ?? 0);
+    const cummulativeQuoteQty = Number(row.filled_total ?? 0);
+    const side = row.side === 'buy' ? OrderSides.BUY : OrderSides.SELL;
+    const feeAmount = Number(row.gt_fee ?? row.fee ?? 0);
+    const feeCurrency = row.gt_fee && Number(row.gt_fee) > 0
+      ? 'GT'
+      : String(row.fee_currency ?? '');
+    let feeUsd = 0;
+    if (feeAmount > 0 && feeCurrency) {
+      const feeAssetPrice = getAssetPrice(ExchangeIds.gate, feeCurrency);
+      if (feeAssetPrice == null) {
+        log.warn({ currency: feeCurrency }, 'missing cached asset price');
+      } else {
+        feeUsd = feeAssetPrice * feeAmount;
+      }
+    }
+
+    busRef.emit('trade:order_result', {
+      exchange: ExchangeIds.gate,
+      symbol: row.currency_pair,
+      status,
+      orderId: row.id,
+      clientOrderId: idFromGateText(row.text),
+      transactTime: Number(row.update_time_ms ?? row.create_time_ms ?? Date.now()),
+      executedQty,
+      cummulativeQuoteQty,
+      priceVwap: executedQty > 0 ? cummulativeQuoteQty / executedQty : Number(row.avg_deal_price ?? 0),
+      fee_amount: Number.isFinite(feeAmount) ? feeAmount : 0,
+      fee_currency: feeCurrency,
+      fee_usd: feeUsd,
+    });
+
+    updateBalancesFromOrderData({
+      side,
+      baseAsset: getEx(canonSym, ExchangeIds.gate)!.base,
+      quoteAsset: getEx(canonSym, ExchangeIds.gate)!.quote,
+      executedQty,
+      cummulativeQuoteQty,
+    });
+  }
+}
+
+function handleUserTradesStream(msgObj: GateStreamMsg<GateUserTradeRow>): void {
+  if (!Array.isArray(msgObj.result)) return;
+
+  for (const row of msgObj.result) {
+    const canonSym = getCanonFromOderSym(row.currency_pair, ExchangeIds.gate);
+    if (!canonSym) {
+      log.warn({ row }, 'gate user trade symbol mapping missing');
+      continue;
+    }
+
+    updateBalancesFromOrderData({
+      side: row.side === 'buy' ? OrderSides.BUY : OrderSides.SELL,
+      baseAsset: getEx(canonSym, ExchangeIds.gate)!.base,
+      quoteAsset: getEx(canonSym, ExchangeIds.gate)!.quote,
+      executedQty: Number(row.amount ?? 0),
+      cummulativeQuoteQty: Number(row.amount ?? 0) * Number(row.price ?? 0),
+    });
+  }
+
+  log.debug({ tradesCount: msgObj.result.length }, 'gate user trades update');
 }
 
 async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {

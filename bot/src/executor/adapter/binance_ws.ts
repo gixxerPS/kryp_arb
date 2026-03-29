@@ -84,6 +84,7 @@ import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { getCanonFromOderSym } from '../../common/symbolinfo';
+import { getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
 import appBus from '../../bus';
 import { OrderSides, ExchangeIds  } from '../../types/common';
@@ -329,6 +330,64 @@ async function loginWs(): Promise<void> {
   isLoggedIn = true;
 }
 
+function handleUserTradesStream(event: BinanceUserDataEvent): void {
+  const canonSym = event.s ? getCanonFromOderSym(event.s, ExchangeIds.binance) : null;
+  if (!canonSym) {
+    log.warn({ event }, 'binance executionReport symbol mapping missing');
+    return;
+  }
+
+  const side = event.S === 'BUY' ? OrderSides.BUY : OrderSides.SELL;
+  const executedQty = Number(event.z ?? 0);
+  const cummulativeQuoteQty = Number(event.Z ?? 0);
+  const priceVwap = executedQty > 0 ? cummulativeQuoteQty / executedQty : 0;
+  const feeAmount = Number(event.n ?? 0);
+  const feeCurrency = String(event.N ?? '');
+  let feeUsd = 0;
+  if (feeAmount > 0 && feeCurrency) {
+    const feeAssetPrice = getAssetPrice(ExchangeIds.binance, feeCurrency);
+    if (feeAssetPrice == null) {
+      log.warn({ currency: feeCurrency }, 'missing cached asset price');
+    } else {
+      feeUsd = feeAssetPrice * feeAmount;
+    }
+  }
+
+  busRef.emit('trade:order_result', {
+    exchange: ExchangeIds.binance,
+    symbol: event.s ?? '',
+    status: event.X === 'FILLED'
+      ? OrderStates.FILLED
+      : event.X === 'PARTIALLY_FILLED'
+        ? OrderStates.PARTIALLY_FILLED
+        : event.X === 'CANCELED'
+          ? OrderStates.CANCELLED
+          : OrderStates.UNKNOWN,
+    orderId: event.i ?? '',
+    clientOrderId: event.c,
+    transactTime: Number(event.T ?? event.E ?? Date.now()),
+    executedQty,
+    cummulativeQuoteQty,
+    priceVwap,
+    fee_amount: Number.isFinite(feeAmount) ? feeAmount : 0,
+    fee_currency: feeCurrency,
+    fee_usd: feeUsd,
+  });
+
+  updateBalancesFromOrderData({
+    side,
+    baseAsset: getEx(canonSym, ExchangeIds.binance)!.base,
+    quoteAsset: getEx(canonSym, ExchangeIds.binance)!.quote,
+    executedQty,
+    cummulativeQuoteQty,
+  });
+}
+
+/**
+ * orders und balance events
+ * @param msgObj 
+ * @returns 
+ */
 function handleUserDataStream(msgObj: BinanceUserDataMessage): void {
   const event = msgObj.event;
   if (!event?.e) return;
@@ -349,47 +408,7 @@ function handleUserDataStream(msgObj: BinanceUserDataMessage): void {
   // alle orders betreffend
   //==========================================================================
   if (event.e === 'executionReport') {
-    const canonSym = event.s ? getCanonFromOderSym(event.s, ExchangeIds.binance) : null;
-    if (!canonSym) {
-      log.warn({ event }, 'binance executionReport symbol mapping missing');
-      return;
-    }
-    const side = event.S === 'BUY' ? OrderSides.BUY : OrderSides.SELL;
-    const executedQty = Number(event.z ?? 0);
-    const cummulativeQuoteQty = Number(event.Z ?? 0);
-    const priceVwap = executedQty > 0 ? cummulativeQuoteQty / executedQty : 0;
-    const feeAmount = Number(event.n ?? 0);
-    const feeCurrency = String(event.N ?? '');
-    let feeUsd = 0;
-    if (feeAmount > 0 && feeCurrency) {
-      const feeAssetPrice = getAssetPrice(ExchangeIds.binance, feeCurrency);
-      if (feeAssetPrice == null) {
-        log.warn({ currency: feeCurrency }, 'missing cached asset price');
-      } else {
-        feeUsd = feeAssetPrice * feeAmount;
-      }
-    }
-
-    busRef.emit('trade:order_result', {
-      exchange: ExchangeIds.binance,
-      symbol: event.s ?? '',
-      status: event.X === 'FILLED'
-        ? OrderStates.FILLED
-        : event.X === 'PARTIALLY_FILLED'
-          ? OrderStates.PARTIALLY_FILLED
-          : event.X === 'CANCELED'
-            ? OrderStates.CANCELLED
-            : OrderStates.UNKNOWN,
-      orderId: event.i ?? '',
-      clientOrderId: event.c,
-      transactTime: Number(event.T ?? event.E ?? Date.now()),
-      executedQty,
-      cummulativeQuoteQty,
-      priceVwap,
-      fee_amount: Number.isFinite(feeAmount) ? feeAmount : 0,
-      fee_currency: feeCurrency,
-      fee_usd: feeUsd,
-    });
+    handleUserTradesStream(event);
   }
 
   log.debug({
