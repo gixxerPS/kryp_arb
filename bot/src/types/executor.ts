@@ -3,6 +3,7 @@ import type { ExchangeId, OrderSide, OrderType } from './common';
 
 export const OrderStates = {
     FILLED: 'FILLED',
+    PARTIALLY_FILLED: 'PARTIALLY_FILLED',
     CANCELLED: 'CANCELLED',
     UNKNOWN: 'UNKNOWN',
 } as const;
@@ -55,28 +56,25 @@ export type CommonOrderResult = {
   cummulativeQuoteQty: number;
   priceVwap: number;
   slippage?: number;
-  fee_amount: number;
-  fee_currency: string;
-  fee_usd: number;
+  fee_amount: number; // rohmenge in BGB, BNB, GT, etc
+  fee_currency: string; // 'BGB' | 'BNB' | 'GT' , | ....
+  fee_usd: number; // USD aequivalenter wert der fees
 }
 
 export interface ExecutorAdapter {
-  init(cfg: AppConfig): Promise<void>;
+  init(cfg: AppConfig, deps?: { bus?: any }): Promise<void>;
 
   isReady(): boolean;
 
   getBalances(): Balances;
 
-  updateBalancesFromOrderData(params: UpdateBalancesParams): void;
-
   placeOrder(
-    test: boolean,
     params: PlaceOrderParams
-  ): Promise<CommonOrderResult>;
+  ): Promise<void>;
 
   cancelOrder(
     params: CancelOrderParams
-  ): Promise<CommonOrderResult>;
+  ): Promise<void>;
 }
 
 export type FeePriceData = {

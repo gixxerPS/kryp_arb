@@ -429,14 +429,10 @@ async function subscribeUserData() {
   throw new Error('subscribeUserData not implemented');
 }
 
-async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
+async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
   if (!isLoggedIn) {
     throw new Error('gate ws-api not logged in');
   }
-  if (!orderParams.symbol) {
-    throw new Error('gate placeOrder requires symbol');
-  }
-
   const reqParam: Record<string, unknown> = {
     currency_pair: orderParams.symbol,
     side: String(orderParams.side).toLowerCase(),
@@ -508,42 +504,42 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
   //     "finish_as": "filled"
   //   }
 
-  const cumQuote : number = Number(r.filled_total);
-  const totalCommission = Number(r.gt_fee);
-  let feeUsd = 0.0;
-  if (totalCommission > 0.0) {
-    const feeAssetPrice = getAssetPrice(ExchangeIds.gate, 'GT');
-    if (feeAssetPrice == null) {
-      log.warn({ currency: 'GT' }, 'missing cached asset price');
-    } else {
-      feeUsd = feeAssetPrice * totalCommission;
-    }
-  } else { // no gt_fee ?
-    feeUsd = Number(r.fee); // assume usd fee
-    if (feeUsd <= 1e-6) {
-      log.warn({currency:r.fee_currency}, 'unknown fee currency');
-      feeUsd = 0.0;
-    }
-  }
-  const out : CommonOrderResult = {
-    exchange: ExchangeIds.gate,
-    symbol: r.currency_pair,
-    status: r.status === 'closed' ? OrderStates.FILLED : OrderStates.UNKNOWN,
-    orderId: r.id,
-    clientOrderId: idFromGateText(r.text),
-    transactTime: Number(r.create_time_ms),
-    executedQty: Number(r.filled_amount),
-    cummulativeQuoteQty: cumQuote,
-    priceVwap: Number(r.avg_deal_price),
-    slippage: Number(r.slippage),
-    fee_amount: totalCommission,
-    fee_currency: r.fee_currency,
-    fee_usd: feeUsd,
-  };
-  return out;
+  // const cumQuote : number = Number(r.filled_total);
+  // const totalCommission = Number(r.gt_fee);
+  // let feeUsd = 0.0;
+  // if (totalCommission > 0.0) {
+  //   const feeAssetPrice = getAssetPrice(ExchangeIds.gate, 'GT');
+  //   if (feeAssetPrice == null) {
+  //     log.warn({ currency: 'GT' }, 'missing cached asset price');
+  //   } else {
+  //     feeUsd = feeAssetPrice * totalCommission;
+  //   }
+  // } else { // no gt_fee ?
+  //   feeUsd = Number(r.fee); // assume usd fee
+  //   if (feeUsd <= 1e-6) {
+  //     log.warn({currency:r.fee_currency}, 'unknown fee currency');
+  //     feeUsd = 0.0;
+  //   }
+  // }
+  // const out : CommonOrderResult = {
+  //   exchange: ExchangeIds.gate,
+  //   symbol: r.currency_pair,
+  //   status: r.status === 'closed' ? OrderStates.FILLED : OrderStates.UNKNOWN,
+  //   orderId: r.id,
+  //   clientOrderId: idFromGateText(r.text),
+  //   transactTime: Number(r.create_time_ms),
+  //   executedQty: Number(r.filled_amount),
+  //   cummulativeQuoteQty: cumQuote,
+  //   priceVwap: Number(r.avg_deal_price),
+  //   slippage: Number(r.slippage),
+  //   fee_amount: totalCommission,
+  //   fee_currency: r.fee_currency,
+  //   fee_usd: feeUsd,
+  // };
+  // return out;
 }
 
-async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
+async function cancelOrder(p: CancelOrderParams): Promise<void> {
   if (!isLoggedIn) {
     throw new Error('gate ws-api not logged in');
   }
@@ -557,7 +553,6 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
   if (p.orderId !== undefined) {
     reqParam.order_id = idToGateText(String(p.orderId));
   }
-
   let r: GateCancelOrderResult;
   try {
     r = await sendReq<GateCancelOrderResult>('spot.order_cancel', reqParam, { timeoutMs: 10_000 });
@@ -565,21 +560,6 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
     log.error({ err, reqParam }, 'gate cancelOrder failed');
     throw err;
   }
-
-  return {
-    exchange: ExchangeIds.gate,
-    symbol: r.currency_pair,
-    status: r.status === 'cancelled' ? OrderStates.CANCELLED : OrderStates.UNKNOWN,
-    orderId: r.id,
-    clientOrderId: r.text,
-    transactTime: r.create_time_ms,
-    executedQty: 0,
-    cummulativeQuoteQty: 0,
-    priceVwap: 0,
-    fee_amount: 0,
-    fee_currency: '',
-    fee_usd: 0,
-  };
 }
 
 
@@ -603,7 +583,6 @@ export const adapter: ExecutorAdapter = {
   init,
   isReady,
   getBalances,
-  updateBalancesFromOrderData,
   placeOrder,
   cancelOrder,
 };

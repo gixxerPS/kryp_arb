@@ -235,11 +235,9 @@ suite('executor/index', () => {
       AXS_USDT: {
         binance: {
           BUY: {
-            reason: 'INT_INSUFFICIENT_BALANCE_USDT',
             blockedAtTsMs: 1_700_000_000_000,
             exchange: 'binance',
             asset: 'USDC',
-            requiredBalance: 20,
           },
         },
       },

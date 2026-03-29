@@ -69,3 +69,15 @@ CREATE TABLE IF NOT EXISTS public.trade_fill (
 CREATE INDEX IF NOT EXISTS idx_fill_intent ON trade_fill(intent_id);
 CREATE INDEX IF NOT EXISTS idx_fill_symbol_ts ON trade_fill(symbol, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_trade_fill_ts_desc ON public.trade_fill(ts DESC);
+
+-- Metrik hilfstabelle
+CREATE TABLE IF NOT EXISTS public.market_activity (
+  ts TIMESTAMPTZ NOT NULL,             
+
+  symbol TEXT NOT NULL,
+  ex TEXT NOT NULL,
+
+  l2_updates       integer     NOT NULL DEFAULT 0,
+  trade_updates    integer     NOT NULL DEFAULT 0,
+  bbo_changes      integer     NOT NULL DEFAULT 0
+);

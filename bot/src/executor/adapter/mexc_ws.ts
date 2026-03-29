@@ -219,7 +219,7 @@ function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
   log.warn({ side: params.side }, 'skip updateBalances: unsupported side');
 }
 
-async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
+async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
   if (!isReady()) throw new Error('mexc adapter not ready');
 
   const params: Record<string, string | number | undefined> = {
@@ -236,7 +236,7 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     params.quantity = String(orderParams.quantity);
   }
 
-  const path = test ? '/api/v3/order/test' : '/api/v3/order';
+  const path = '/api/v3/order';
   log.debug({ params }, 'ORDER!!!!');
 
   let response: MexcNewOrderResponse | Record<string, never>;
@@ -250,44 +250,10 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
     log.error({ err, params, path }, 'mexc placeOrder failed');
     throw err;
   }
-
   log.debug({ params, rawOrderResponse: response }, 'placeOrder raw response');
-
-  if (test) {
-    return {
-      exchange: ExchangeIds.mexc,
-      symbol: orderParams.symbol,
-      status: OrderStates.UNKNOWN,
-      orderId: orderParams.orderId ?? '',
-      clientOrderId: orderParams.orderId,
-      transactTime: Date.now(),
-      executedQty: 0,
-      cummulativeQuoteQty: 0,
-      priceVwap: 0,
-      fee_amount: 0,
-      fee_currency: '',
-      fee_usd: 0,
-    };
-  }
-
-  const r = response as MexcNewOrderResponse;
-  return {
-    exchange: ExchangeIds.mexc,
-    symbol: r.symbol,
-    status: OrderStates.UNKNOWN,
-    orderId: r.orderId,
-    clientOrderId: orderParams.orderId,
-    transactTime: Number(r.transactTime ?? Date.now()),
-    executedQty: Number(r.origQty ?? 0),
-    cummulativeQuoteQty: 0,
-    priceVwap: Number(r.price ?? 0),
-    fee_amount: 0,
-    fee_currency: '',
-    fee_usd: 0,
-  };
 }
 
-async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
+async function cancelOrder(p: CancelOrderParams): Promise<void> {
   if (!isReady()) throw new Error('mexc adapter not ready');
 
   const params: Record<string, string | number | undefined> = {
@@ -314,21 +280,6 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
     log.error({ err, params }, 'mexc cancelOrder failed');
     throw err;
   }
-
-  return {
-    exchange: ExchangeIds.mexc,
-    symbol: response.symbol,
-    status: response.status === 'CANCELED' ? OrderStates.CANCELLED : OrderStates.UNKNOWN,
-    orderId: response.orderId,
-    clientOrderId: response.origClientOrderId,
-    transactTime: Date.now(),
-    executedQty: Number(response.executedQty ?? 0),
-    cummulativeQuoteQty: Number(response.cummulativeQuoteQty ?? 0),
-    priceVwap: Number(response.price ?? 0),
-    fee_amount: 0,
-    fee_currency: '',
-    fee_usd: 0,
-  };
 }
 
 // TODO(mexc): echte User-Data-WS-Anbindung ergaenzen, sobald ListenKey / Protobuf
@@ -338,7 +289,6 @@ export const adapter: ExecutorAdapter = {
   init,
   isReady,
   getBalances,
-  updateBalancesFromOrderData,
   placeOrder,
   cancelOrder,
 };

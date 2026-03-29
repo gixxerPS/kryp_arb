@@ -83,7 +83,9 @@ const log = getLogger('executor').child({ exchange: 'binance' });
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
+import { getCanonFromOderSym } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
+import appBus from '../../bus';
 import { OrderSides, ExchangeIds  } from '../../types/common';
 
 import { 
@@ -168,6 +170,38 @@ type BinanceAccountCommissionResult = {
   };
 }
 
+type BinanceUserDataSubscribeResult = {
+  subscriptionId?: number;
+};
+
+type BinanceUserDataBalance = {
+  a?: string;
+  f?: string;
+  l?: string;
+};
+
+type BinanceUserDataEvent = {
+  e?: string;
+  E?: number;
+  B?: BinanceUserDataBalance[];
+  s?: string;
+  c?: string;
+  S?: 'BUY' | 'SELL' | string;
+  X?: string;
+  i?: number | string;
+  T?: number;
+  z?: string;
+  Z?: string;
+  L?: string;
+  n?: string;
+  N?: string | null;
+};
+
+type BinanceUserDataMessage = {
+  subscriptionId?: number;
+  event?: BinanceUserDataEvent;
+};
+
 function buildPayload(params: Record<string, string | number | boolean | undefined | null>): string {
   return Object.keys(params)
     .filter(k => params[k] !== undefined && params[k] !== null)
@@ -202,14 +236,25 @@ function makeSignedParams(extra: WsParams = {}): SignedParams {
   return { ...params, signature };
 }
 
+function makeSessionParams(extra: WsParams = {}): WsParams & { timestamp: number; recvWindow: number } {
+  return {
+    ...extra,
+    timestamp: Date.now(),
+    recvWindow: 15000,
+  };
+}
+
 // --- Adapter factory (singleton-ish) ---
 
 let mgr : ReturnType<typeof createReconnectWS> | null = null;
 let wsRef : WebSocket | null = null; // current websocket instance from mgr.connect()
 let ed25519PrivateKeyPem : string  = '';     // string
+let busRef: any;
 const pending: Map<string, PendingEntry> = new Map(); // id -> { resolve, reject, tmr }
 let balances: Balances = {};
 let balancesLoaded = false;
+let isLoggedIn = false;
+let userDataSubscriptionId: number | null = null;
 const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
 
 function makeWsApiError(message: string, context: Record<string, unknown>): Error {
@@ -275,6 +320,94 @@ function rejectAllPending(err: unknown): void {
   }
 }
 
+async function loginWs(): Promise<void> {
+  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+    throw new Error('binance ws not open');
+  }
+  const params = makeSignedParams();
+  await sendReq<Record<string, unknown>>('session.logon', params, { timeoutMs: 10_000 });
+  isLoggedIn = true;
+}
+
+function handleUserDataStream(msgObj: BinanceUserDataMessage): void {
+  const event = msgObj.event;
+  if (!event?.e) return;
+
+  //==========================================================================
+  // account balance betreffend
+  //==========================================================================
+  if (event.e === 'outboundAccountPosition') {
+    for (const b of event.B ?? []) {
+      const asset = String(b?.a ?? '');
+      if (!asset) continue;
+      balances[asset] = Number(b?.f ?? 0);
+    }
+    balancesLoaded = true;
+  }
+
+  //==========================================================================
+  // alle orders betreffend
+  //==========================================================================
+  if (event.e === 'executionReport') {
+    const canonSym = event.s ? getCanonFromOderSym(event.s, ExchangeIds.binance) : null;
+    if (!canonSym) {
+      log.warn({ event }, 'binance executionReport symbol mapping missing');
+      return;
+    }
+    const side = event.S === 'BUY' ? OrderSides.BUY : OrderSides.SELL;
+    const executedQty = Number(event.z ?? 0);
+    const cummulativeQuoteQty = Number(event.Z ?? 0);
+    const priceVwap = executedQty > 0 ? cummulativeQuoteQty / executedQty : 0;
+    const feeAmount = Number(event.n ?? 0);
+    const feeCurrency = String(event.N ?? '');
+    let feeUsd = 0;
+    if (feeAmount > 0 && feeCurrency) {
+      const feeAssetPrice = getAssetPrice(ExchangeIds.binance, feeCurrency);
+      if (feeAssetPrice == null) {
+        log.warn({ currency: feeCurrency }, 'missing cached asset price');
+      } else {
+        feeUsd = feeAssetPrice * feeAmount;
+      }
+    }
+
+    busRef.emit('trade:order_result', {
+      exchange: ExchangeIds.binance,
+      symbol: event.s ?? '',
+      status: event.X === 'FILLED'
+        ? OrderStates.FILLED
+        : event.X === 'PARTIALLY_FILLED'
+          ? OrderStates.PARTIALLY_FILLED
+          : event.X === 'CANCELED'
+            ? OrderStates.CANCELLED
+            : OrderStates.UNKNOWN,
+      orderId: event.i ?? '',
+      clientOrderId: event.c,
+      transactTime: Number(event.T ?? event.E ?? Date.now()),
+      executedQty,
+      cummulativeQuoteQty,
+      priceVwap,
+      fee_amount: Number.isFinite(feeAmount) ? feeAmount : 0,
+      fee_currency: feeCurrency,
+      fee_usd: feeUsd,
+    });
+  }
+
+  log.debug({
+    eventType: event.e,
+    subscriptionId: msgObj.subscriptionId,
+  }, 'binance user data event');
+}
+
+async function subscribeUserDataStream(): Promise<void> {
+  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+    throw new Error('binance ws not open');
+  }
+
+  const result = await sendReq<BinanceUserDataSubscribeResult>('userDataStream.subscribe', {}, { timeoutMs: 10_000 });
+  userDataSubscriptionId = result.subscriptionId ?? null;
+  log.info({ subscriptionId: userDataSubscriptionId }, 'binance user data stream subscribed');
+}
+
 /**
  * init(): opens and maintains the WS connection (reconnect logic via createReconnectWS)
  * getStartupBalances(): performs account.status over the same WS
@@ -289,7 +422,8 @@ let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
 let balanceRefreshTmr: NodeJS.Timeout | null = null;
 
-async function init(cfg: AppConfig): Promise<void> {
+async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
+  busRef = deps?.bus ?? appBus;
   if (openPromise) { // should not happen
     await openPromise;
     
@@ -329,12 +463,21 @@ async function init(cfg: AppConfig): Promise<void> {
 
     onOpen: async (ws: WebSocket) => {
       wsRef = ws;
+      isLoggedIn = false;
+      userDataSubscriptionId = null;
       exState.onWsState('binance-ws-api', WS_STATE.OPEN);
       log.debug({ url }, 'binance ws-api connected');
-      if (openResolve) {
-        openResolve();
-        openResolve = null;
-        openReject = null;
+      try {
+        await loginWs();
+        await subscribeUserDataStream();
+        if (openResolve) {
+          openResolve();
+          openResolve = null;
+          openReject = null;
+        }
+      } catch (err) {
+        log.error({ err }, 'binance ws-api login failed');
+        openReject?.(err);
       }
     },
 
@@ -346,6 +489,11 @@ async function init(cfg: AppConfig): Promise<void> {
         // log.debug({msg:parsed}, 'onMessage');
       } catch (e) {
         log.error({ err: e }, 'binance ws-api message parse error');
+        return;
+      }
+
+      if (!parsed?.id && parsed?.event) {
+        handleUserDataStream(parsed);
         return;
       }
 
@@ -388,12 +536,16 @@ async function init(cfg: AppConfig): Promise<void> {
       exState.onWsState('binance-ws-api', WS_STATE.CLOSED);
       // log.warn({code, reason}, 'ws closed');
       wsRef = null;
+      userDataSubscriptionId = null;
+      isLoggedIn = false;
       rejectAllPending(new Error(`binance ws closed code=${code} reason=${reason || ''}`));
       openReject?.(new Error('ws closed during init'));
     },
 
     onError: (err: Error) => {
       exState.onWsError('binance-ws-api', err);
+      userDataSubscriptionId = null;
+      isLoggedIn = false;
       openReject?.(err);
     },
 
@@ -482,7 +634,7 @@ async function fetchBalancesWs(): Promise<Balances> {
 }
 
 function isReady(): boolean {
-  return wsRef !== null && wsRef.readyState === WebSocket.OPEN;
+  return wsRef !== null && wsRef.readyState === WebSocket.OPEN && isLoggedIn;
 }
 
 function getBalances(): Balances {
@@ -565,17 +717,8 @@ async function getAccountCommission(sym : string) {
   };
 }
 
-// Phase-2 stubs
-async function subscribeUserData(/* handler */) {
-  throw new Error('subscribeUserData not implemented');
-}
-
-
-async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
-  const method = test ? 'order.test' : 'order.place';
-  // const method = 'order.test';
-  
-  const params = makeSignedParams({
+async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
+  const params = makeSessionParams({
     symbol: orderParams.symbol,
     side: orderParams.side,
     type: orderParams.type,
@@ -589,13 +732,12 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
 
   let r: BinancePlaceOrderResult;
   try {
-    r = await sendReq<BinancePlaceOrderResult>(method, params, { timeoutMs: 10_000 });
+    r = await sendReq<BinancePlaceOrderResult>('order.place', params, { timeoutMs: 10_000 });
   } catch (err) {
     log.error({ err, params }, 'binance placeOrder failed');
     throw err;
   }
   log.debug({ rawOrderResponse: r }, 'placeOrder raw response');
-
 
   // beispielantwort von binance api:
 // [2026-02-24 19:08:44.610 +0100] DEBUG (executor): placeOrder raw response
@@ -629,72 +771,57 @@ async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise
 //     }
   
   // preis ermitteln
-  const cumQuote : number = Number(r.cummulativeQuoteQty);
-  const exeQty : number = Number(r.executedQty);
-  let priceVwap = 0.0;
-  if (exeQty > 1e-3) {
-    priceVwap = cumQuote / exeQty;
-  }
+  // const cumQuote : number = Number(r.cummulativeQuoteQty);
+  // const exeQty : number = Number(r.executedQty);
+  // let priceVwap = 0.0;
+  // if (exeQty > 1e-3) {
+  //   priceVwap = cumQuote / exeQty;
+  // }
   
-  // fees ermitteln
-  const totalCommission = (r.fills ?? []).reduce((sum, f) => {
-    const c = Number(f.commission ?? 0);
-    return Number.isFinite(c) ? sum + c : sum;
-  }, 0);
-  const commissionAsset = r.fills?.[0]?.commissionAsset;
-  let feeUsd = 0.0;
-  if (commissionAsset) {
-    const feeAssetPrice = getAssetPrice(ExchangeIds.binance, commissionAsset);
-    if (feeAssetPrice == null) {
-      log.warn({ currency: commissionAsset }, 'missing cached asset price');
-    } else {
-      feeUsd = feeAssetPrice * totalCommission;
-    }
-  } else {
-    log.warn({ currency: commissionAsset }, 'unknown fee currency');
-    feeUsd = 0.0;
-  }
+  // // fees ermitteln
+  // const totalCommission = (r.fills ?? []).reduce((sum, f) => {
+  //   const c = Number(f.commission ?? 0);
+  //   return Number.isFinite(c) ? sum + c : sum;
+  // }, 0);
+  // const commissionAsset = r.fills?.[0]?.commissionAsset;
+  // let feeUsd = 0.0;
+  // if (commissionAsset) {
+  //   const feeAssetPrice = getAssetPrice(ExchangeIds.binance, commissionAsset);
+  //   if (feeAssetPrice == null) {
+  //     log.warn({ currency: commissionAsset }, 'missing cached asset price');
+  //   } else {
+  //     feeUsd = feeAssetPrice * totalCommission;
+  //   }
+  // } else {
+  //   log.warn({ currency: commissionAsset }, 'unknown fee currency');
+  //   feeUsd = 0.0;
+  // }
 
-  const out : CommonOrderResult = {
-    exchange: ExchangeIds.binance,
-    symbol: r.symbol,
-    status: r.status === 'FILLED' ? OrderStates.FILLED : OrderStates.UNKNOWN,
-    orderId: r.orderId,
-    clientOrderId: r.clientOrderId,
-    transactTime: r.transactTime,
-    executedQty: exeQty,
-    cummulativeQuoteQty: cumQuote,
-    priceVwap: priceVwap,
-    fee_amount: Number(totalCommission),
-    fee_currency: commissionAsset ? commissionAsset : 'UNKNOWN',
-    fee_usd: feeUsd,
-  };
-  return out;
+  // const out : CommonOrderResult = {
+  //   exchange: ExchangeIds.binance,
+  //   symbol: r.symbol,
+  //   status: r.status === 'FILLED' ? OrderStates.FILLED : OrderStates.UNKNOWN,
+  //   orderId: r.orderId,
+  //   clientOrderId: r.clientOrderId,
+  //   transactTime: r.transactTime,
+  //   executedQty: exeQty,
+  //   cummulativeQuoteQty: cumQuote,
+  //   priceVwap: priceVwap,
+  //   fee_amount: Number(totalCommission),
+  //   fee_currency: commissionAsset ? commissionAsset : 'UNKNOWN',
+  //   fee_usd: feeUsd,
+  // };
+  // return out;
 }
 
-async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
-  const params = makeSignedParams({
+async function cancelOrder(p: CancelOrderParams): Promise<void> {
+  const params = makeSessionParams({
     symbol: p.symbol,
     origClientOrderId: p.orderId,
     orderId: p.orderId
   });
 
   const r = await sendReq<BinanceCancelOrderResult>('order.cancel', params, { timeoutMs: 10_000 });
-
-  return {
-    exchange: ExchangeIds.binance,
-    symbol: r.symbol,
-    status: r.status === 'CANCELLED' ? OrderStates.CANCELLED : OrderStates.UNKNOWN,
-    orderId: r.orderId,
-    clientOrderId: r.origClientOrderId,
-    transactTime: r.transactTime,
-    executedQty: 0,
-    cummulativeQuoteQty: 0,
-    priceVwap: 0,
-    fee_amount: 0,
-    fee_currency: '',
-    fee_usd: 0,
-  };
 }
 
 function startBalanceRefreshLoop(): void {
@@ -717,7 +844,6 @@ export const adapter : ExecutorAdapter = {
   init,
   isReady,
   getBalances,
-  updateBalancesFromOrderData,
   placeOrder,
   cancelOrder
 }

@@ -10,11 +10,14 @@ import { floorQuantityQToBalance, marketOrderPrecheckOk } from './order_precheck
 import appBus from '../bus';
 import { adapter as binanceAdapter } from './adapter/binance_ws';
 import { adapter as gateAdapter } from './adapter/gate_ws';
+import { adapter as bitgetAdapter } from './adapter/bitget_ws';
+import { adapter as mexcAdapter } from './adapter/mexc_ws';
 
 import type { AppConfig } from '../types/config';
 import type { ExchangeId } from '../types/common';
 import { OrderTypes, OrderSides, ExchangeIds } from '../types/common';
 import {
+  type CommonOrderResult,
   type ExecutorAdapter,
   type PlaceOrderParams,
   type ExecutorDayStats,
@@ -39,6 +42,14 @@ type Deps = {
   adapters?: Partial<Record<ExchangeId, ExecutorAdapter>>;
   nowFn?: () => number;
   enableIntentHandling?: boolean;
+};
+
+type PendingExecution = {
+  intent: TradeIntent;
+  createdAtTsMs: number;
+  tmr?: NodeJS.Timeout;
+  buy?: CommonOrderResult;
+  sell?: CommonOrderResult;
 };
 
 // function getEnabledSymbols(cfg: AppConfig) {
@@ -74,14 +85,18 @@ export default async function startExecutor(
     if (!ex.enabled) {
       continue;
     }
-    if (ex.exchange === 'binance') {
+    if (ex.exchange === ExchangeIds.binance) {
       adapters.binance = binanceAdapter;
-      await adapters.binance.init(cfg);
-    } else if (ex.exchange === 'bitget') {
-      ;//adapters.bitget = binanceAdapter;
-    } else if (ex.exchange === 'gate') {
+      await adapters.binance.init(cfg, {bus});
+    } else if (ex.exchange === ExchangeIds.bitget) {
+      adapters.bitget = bitgetAdapter;
+      await adapters.bitget.init(cfg, {bus});
+    } else if (ex.exchange === ExchangeIds.gate) {
       adapters.gate = gateAdapter;
-      await adapters.gate.init(cfg);
+      await adapters.gate.init(cfg, {bus});
+    } else if (ex.exchange === ExchangeIds.mexc) {
+      ;//adapters.mexc = mexcAdapter;
+      ;//await adapters.mexc.init(cfg);
     }
   }
 
@@ -125,12 +140,15 @@ export default async function startExecutor(
       today: { ...restoredRuntimeState.today },
       yesterday: { ...restoredRuntimeState.yesterday },
       blockedRoutes: restoredRuntimeState.blockedRoutes
-        ? structuredClone(restoredRuntimeState.blockedRoutes)
+        ? restoredRuntimeState.blockedRoutes
         : {},
     }
     : makeDefaultRuntimeState();
 
   runtimeState.blockedRoutes = runtimeState.blockedRoutes ?? {};
+  const blockedRoutes = runtimeState.blockedRoutes;
+  const pendingExecutions = new Map<string, PendingExecution>();
+  const PENDING_EXECUTION_TIMEOUT_MS = 30_000;
 
   function updateRuntimeState(params: UpdateRuntimeStateParams): void {
     if (params.buyOk && params.sellOk) {
@@ -159,10 +177,106 @@ export default async function startExecutor(
     return {
       today: { ...runtimeState.today },
       yesterday: { ...runtimeState.yesterday },
-      blockedRoutes: runtimeState.blockedRoutes
-        ? structuredClone(runtimeState.blockedRoutes)
-        : {},
+      blockedRoutes,
     };
+  }
+
+  function clearPendingExecutionTimeout(pendingExecution?: PendingExecution): void {
+    if (!pendingExecution?.tmr) return;
+    clearTimeout(pendingExecution.tmr);
+    pendingExecution.tmr = undefined;
+  }
+
+  function handleOrderResult(orderResult: CommonOrderResult): void {
+    const intentId = orderResult.clientOrderId;
+    if (!intentId) {
+      log.warn({ orderResult }, 'skip order result without clientOrderId');
+      return;
+    }
+    const pendingExecution = pendingExecutions.get(intentId);
+    if (!pendingExecution) {
+      log.warn({ intentId, orderResult }, 'pending execution missing for order result');
+      return;
+    }
+    if (orderResult.exchange === pendingExecution.intent.buyEx) {
+      pendingExecution.buy = orderResult;
+    } else if (orderResult.exchange === pendingExecution.intent.sellEx) {
+      pendingExecution.sell = orderResult;
+    } else {
+      log.warn({
+        intentId,
+        orderExchange: orderResult.exchange,
+        buyEx: pendingExecution.intent.buyEx,
+        sellEx: pendingExecution.intent.sellEx,
+      }, 'order result exchange does not match pending execution');
+      return;
+    }
+    log.debug({
+      intentId,
+      buyReceived: Boolean(pendingExecution.buy),
+      sellReceived: Boolean(pendingExecution.sell),
+      orderResult,
+    }, 'pending execution updated');
+
+    // wenn trade komplett, dann auswerten
+    let pnl = 0.0;
+    const buyR = pendingExecution.buy;
+    const sellR = pendingExecution.sell;
+    const buyOk = buyR?.status === OrderStates.FILLED;       // order result
+    const sellOk = sellR?.status === OrderStates.FILLED;      // order result
+    if (buyOk && sellOk) {
+      let arbQty=0.0, deltaBalanceBase=0.0, buyFeeArb=0.0, sellFeeArb=0.0;
+      // nur qty die auf beiden legs ausgefuehrt wurde in die pnl berechnung einbeziehen
+      arbQty = Math.min(sellR.executedQty, buyR.executedQty);
+
+      // anteilige fee berechnen der rest gehoert zu delta balance anteil
+      if (buyR.executedQty > 0.0 && sellR.executedQty > 0.0) {
+        buyFeeArb = arbQty / buyR.executedQty * buyR.fee_usd;
+        sellFeeArb = arbQty / sellR.executedQty * sellR.fee_usd;
+      }
+
+      pnl = (sellR.priceVwap  - buyR.priceVwap) * arbQty - buyFeeArb - sellFeeArb;
+        // sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
+      
+      // bestand der sich aendert / driftet
+      // +: mehr gekauft als verkauft => bestand wird aufgebaut
+      // -: mehr verkauft als gekauft => bestand wird abgebaut
+      deltaBalanceBase = buyR.executedQty - sellR.executedQty;
+      
+      log.debug({
+          id: pendingExecution.intent.id,
+          symbol: pendingExecution.intent.symbol,
+          buyEx: pendingExecution.intent.buyEx,
+          sellEx: pendingExecution.intent.sellEx,
+          pnl,
+          deltaBalanceBase,
+          buyQ               : buyR.cummulativeQuoteQty,
+          buyP               : buyR.priceVwap,
+          buyFeeUsd          : buyR.fee_usd,
+          sellQ              : sellR.cummulativeQuoteQty,
+          sellP              : sellR.priceVwap,
+          sellFeeUsd         : sellR.fee_usd,
+        },
+        'orders executed'
+      );
+      clearPendingExecutionTimeout(pendingExecution);
+      pendingExecutions.delete(intentId); // aus der map entfernen
+    
+      // und app (z.b. datenbank) informieren
+      const ordersOkEvent: TradeOrdersOkEvent = {
+        id: intentId,
+        ts: new Date(),
+        symbol: pendingExecution.intent.symbol,
+        buy: buyR,
+        sell: sellR,
+        pnl,
+        deltaBalanceBase
+      };
+      bus.emit('trade:orders_ok', ordersOkEvent);
+    }
+    if (buyR && sellR) { // wenn trade komplett dann auswerten kann ok / failed sein
+      updateRuntimeState({ buyOk, sellOk, pnl });
+    }
   }
 
   /**
@@ -175,16 +289,11 @@ export default async function startExecutor(
     side: 'BUY' | 'SELL';
     asset: string;
   }): void {
-    const {
-      symbol,
-      exchange,
-      side,
-      asset,
-    } = params;
-    runtimeState.blockedRoutes = runtimeState.blockedRoutes ?? {};
-    runtimeState.blockedRoutes[symbol] = runtimeState.blockedRoutes[symbol] ?? {};
-    runtimeState.blockedRoutes[symbol]![exchange] = runtimeState.blockedRoutes[symbol]![exchange] ?? {};
-    runtimeState.blockedRoutes[symbol]![exchange]![side] = {
+    const { symbol, exchange, side, asset } = params;
+    const bySymbol = blockedRoutes[symbol] ??= {};
+    const byExchange = bySymbol[exchange] ??= {};
+
+    byExchange[side] = {
       blockedAtTsMs: nowFn(),
       exchange,
       asset,
@@ -203,7 +312,7 @@ export default async function startExecutor(
     buyBalances: Record<string, number>,
     sellBalances: Record<string, number>,
   ): void {
-    const bySymbol = runtimeState.blockedRoutes?.[symbol];
+    const bySymbol = blockedRoutes[symbol];
     if (!bySymbol) return;
 
     for (const [exchange, sideMap] of Object.entries(bySymbol)) {
@@ -226,7 +335,7 @@ export default async function startExecutor(
       }
     }
     if (!Object.keys(bySymbol).length) { // aufraeumen wenn moeglich
-      delete runtimeState.blockedRoutes?.[symbol];
+      delete blockedRoutes[symbol];
     }
   }
 
@@ -242,107 +351,16 @@ export default async function startExecutor(
   }
 
   // TEST FUNKTIONIEEEERT :)
-  // if (adapters.binance) {
-  //   await adapters.binance.placeOrder(false, {
-  //     symbol: 'AXSUSDC',
+  // if (adapters.bitget) {
+  //   await adapters.bitget.placeOrder({
+  //     symbol: 'AXSUSDT',
   //     side: 'BUY',
   //     type: 'MARKET',
   //     // qty/quoteQty je nach Ansatz
   //     quantity:10,
-  //     orderId: '123456789',
+  //     q:12,
+  //     orderId: 'my-123456789',
   //   });
-  // }
-  // if (adapters.gate) {
-  //   const gateSym = getEx('AXS_USDT', ExchangeIds.gate);
-  //   if (!gateSym?.orderKey) {
-  //     log.warn({ symbol: 'AXS_USDT', exchange: ExchangeIds.gate }, 'skip gate test order: missing orderKey');
-  //   } else {
-  //     const buyPO  = adapters.gate.placeOrder(false, {
-  //       symbol: gateSym.orderKey,
-  //       side: OrderSides.BUY,
-  //       type: OrderTypes.MARKET,
-  //       // qty/quoteQty je nach Ansatz
-  //       quantity:10,
-  //       q: 13.6,
-  //       orderId: '123456789',
-  //     }); 
-  //     // Promises sofort starten (parallel), aber Fehler in op() abfangen
-  //     const [buyR] = await Promise.allSettled([buyPO]);
-      
-  //     const buyOk  = isFulfilled(buyR) // promise result
-  //       && buyR.value.status === OrderStates.FILLED;       // order result
-  //     if (buyOk) {
-  //       log.debug({rValue:buyR.value}, 'ORDER EXECUTED');
-//         [2026-02-26 16:47:32.554 +0100] DEBUG (executor): placeOrder raw response
-//     exchange: "gate"
-//     reqParam: {
-//       "currency_pair": "AXS_USDT",
-//       "side": "buy",
-//       "type": "market",
-//       "text": "t-123456789",
-//       "action_mode": "FULL",
-//       "time_in_force": "fok",
-//       "amount": "13.6"
-//     }
-//     rawOrderResponse: {
-//       "id": "1021226213356",
-//       "text": "t-123456789",
-//       "amend_text": "-",
-//       "create_time": "1772120852",
-//       "update_time": "1772120852",
-//       "create_time_ms": 1772120852424,
-//       "update_time_ms": 1772120852424,
-//       "status": "closed",
-//       "currency_pair": "AXS_USDT",
-//       "type": "market",
-//       "account": "spot",
-//       "side": "buy",
-//       "amount": "13.6",
-//       "price": "0",
-//       "time_in_force": "fok",
-//       "iceberg": "0",
-//       "left": "0.00642",
-//       "filled_amount": "10.01",
-//       "fill_price": "13.59358",
-//       "filled_total": "13.59358",
-//       "avg_deal_price": "1.358",
-//       "fee": "0",
-//       "fee_currency": "AXS",
-//       "point_fee": "0",
-//       "gt_fee": "0.00173044158415841584",
-//       "gt_maker_fee": "0",
-//       "gt_taker_fee": "0.0009",
-//       "gt_discount": true,
-//       "rebated_fee": "0",
-//       "rebated_fee_currency": "USDT",
-//       "finish_as": "filled"
-//     }
-// [2026-02-26 16:47:32.555 +0100] DEBUG (executor): ORDER EXECUTED
-//     rValue: {
-//       "exchange": "gate",
-//       "symbol": "AXS_USDT",
-//       "status": "FILLED",
-//       "orderId": "1021226213356",
-//       "clientOrderId": "123456789",
-//       "transactTime": 1772120852424,
-//       "executedQty": 10.01,
-//       "cummulativeQuoteQty": 13.59358,
-//       "priceVwap": 1.358,
-//       "slippage": null,
-//       "fee_amount": 0.0017304415841584157,
-//       "fee_currency": "AXS",
-//       "fee_usd": 0.012234222
-//     }
-
-  //     } else {
-  //       log.error({rStatus:buyR.status}, 'ORDER NOT EXECUTED');
-  //     }
-  //   }
-  // }
-
-  // spaeter:
-  // for (const [ex, ad] of Object.entries(adapters)) {
-  //   await ad.subscribeUserData((evt) => onUserEvent(ex, evt));
   // }
 
   let busy = false;
@@ -379,8 +397,8 @@ export default async function startExecutor(
       const buyBalances = buyAd.getBalances();
       const sellBalances = sellAd.getBalances();
       unblockRoutes(symbol, buyBalances, sellBalances); // pruefen ob wir ggf neue balances haben und sell|buy auf einer exchange wieder freigeben koennen
-      const buyBlocked = runtimeState.blockedRoutes?.[symbol]?.[buyEx]?.[OrderSides.BUY];
-      const sellBlocked = runtimeState.blockedRoutes?.[symbol]?.[sellEx]?.[OrderSides.SELL];
+      const buyBlocked = blockedRoutes[symbol]?.[buyEx]?.[OrderSides.BUY];
+      const sellBlocked = blockedRoutes[symbol]?.[sellEx]?.[OrderSides.SELL];
       if (buyBlocked || sellBlocked) {
         log.debug({ symbol, buyEx, sellEx, buyBlocked, sellBlocked }, 'dropping intent: route blocked due to insufficient balance');
         return;
@@ -415,7 +433,7 @@ export default async function startExecutor(
               symbol,
               exchange: buyEx,
               side: OrderSides.BUY,
-              asset: buyExSymInfo.base,
+              asset: buyExSymInfo.quote,
             });
             log.warn({ reason:'precheck buy order failed', intent, buyEx, checkReason:resBuyCheck.reason, floorReasonDesc:flooredBuy.reasonDesc },
               'dropping intent');
@@ -512,6 +530,16 @@ export default async function startExecutor(
       //=======================================================================
       // 2) orders schicken (parallel)
       //=======================================================================
+      const pendingExecution: PendingExecution = {
+        intent,
+        createdAtTsMs: Date.now(),
+      };
+      pendingExecution.tmr = setTimeout(() => { // wir erwarten eine antwort auf beide orders innerhalb von 30s !!!
+        pendingExecutions.delete(id);
+        log.warn({ intentId: id, symbol, buyEx, sellEx }, 'pending execution expired');
+      }, PENDING_EXECUTION_TIMEOUT_MS);
+      pendingExecution.tmr.unref?.();
+      pendingExecutions.set(id, pendingExecution); // erst in die map eintragen was wir vorhaben
       const buyParams: PlaceOrderParams = {
         type: OrderTypes.MARKET,
         side: OrderSides.BUY,
@@ -520,7 +548,9 @@ export default async function startExecutor(
         q: orderQBuy,
         orderId: id,
       };
-      const buyPO  = buyAd.placeOrder(false, buyParams); 
+      buyAd.placeOrder(buyParams).catch((err) => {
+        log.error({ err, intentId: id, exchange: buyEx, buyParams }, 'buy placeOrder failed');
+      });
       const sellParams: PlaceOrderParams = {
         type: OrderTypes.MARKET,
         side: OrderSides.SELL,
@@ -529,160 +559,161 @@ export default async function startExecutor(
         q: orderQSell,
         orderId: id,
       };
-      const sellPO = sellAd.placeOrder(false, sellParams);
+      sellAd.placeOrder(sellParams).catch((err) => {
+        log.error({ err, intentId: id, exchange: sellEx, sellParams }, 'sell placeOrder failed');
+      });
       // Promises sofort starten (parallel), aber Fehler in op() abfangen
-      const [buyR, sellR] = await Promise.allSettled([buyPO, sellPO]);
       
       //=======================================================================
       // 3) exchange antwort auswerten
       //=======================================================================
-      const buyOk  = isFulfilled(buyR) // promise result
-        && buyR.value.status === OrderStates.FILLED;       // order result
-      const sellOk = isFulfilled(sellR) // promise result
-        && sellR.value.status === OrderStates.FILLED;      // order result
+      // const buyOk  = isFulfilled(buyR) // promise result
+      //   && buyR.value.status === OrderStates.FILLED;       // order result
+      // const sellOk = isFulfilled(sellR) // promise result
+      //   && sellR.value.status === OrderStates.FILLED;      // order result
 
-      let arbQty=0.0, pnl=0.0, deltaBalanceBase=0.0;
-      if (buyOk && sellOk) {
-        // nur qty die auf beiden legs ausgefuehrt wurde in die pnl berechnung einbeziehen
-        arbQty = Math.min(sellR.value.executedQty, buyR.value.executedQty);
+      // let arbQty=0.0, pnl=0.0, deltaBalanceBase=0.0;
+      // if (buyOk && sellOk) {
+      //   // nur qty die auf beiden legs ausgefuehrt wurde in die pnl berechnung einbeziehen
+      //   arbQty = Math.min(sellR.value.executedQty, buyR.value.executedQty);
 
-        // anteilige fee berechnen der rest gehoert zu delta balance anteil
-        const buyFeeArb = arbQty / buyR.value.executedQty * buyR.value.fee_usd;
-        const sellFeeArb = arbQty / sellR.value.executedQty * sellR.value.fee_usd;
+      //   // anteilige fee berechnen der rest gehoert zu delta balance anteil
+      //   const buyFeeArb = arbQty / buyR.value.executedQty * buyR.value.fee_usd;
+      //   const sellFeeArb = arbQty / sellR.value.executedQty * sellR.value.fee_usd;
 
-        pnl = (sellR.value.priceVwap  - buyR.value.priceVwap) * arbQty - buyFeeArb - sellFeeArb;
-          // sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
+      //   pnl = (sellR.value.priceVwap  - buyR.value.priceVwap) * arbQty - buyFeeArb - sellFeeArb;
+      //     // sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
         
-        // bestand der sich aendert / driftet
-        // +: mehr gekauft als verkauft => bestand wird aufgebaut
-        // -: mehr verkauft als gekauft => bestand wird abgebaut
-        deltaBalanceBase = buyR.value.executedQty - sellR.value.executedQty;
-      }
-      updateRuntimeState({ buyOk, sellOk, pnl });
-      if (buyOk) {
-        buyAd.updateBalancesFromOrderData({
-          side: OrderSides.BUY,
-          baseAsset: buyExSymInfo.base,
-          quoteAsset: buyExSymInfo.quote,
-          executedQty: buyR.value.executedQty ?? orderTargetQty,
-          cummulativeQuoteQty: buyR.value.cummulativeQuoteQty,
-        });
-      }
-      if (sellOk) {
-        sellAd.updateBalancesFromOrderData({
-          side: OrderSides.SELL,
-          baseAsset: sellExSymInfo.base,
-          quoteAsset: sellExSymInfo.quote,
-          executedQty: sellR.value.executedQty ?? orderTargetQty,
-          cummulativeQuoteQty: sellR.value.cummulativeQuoteQty,
-        });
-      }
-      if (buyOk && sellOk) {
-        log.debug({
-            id,
-            symbol,
-            buyEx,
-            sellEx,
-            pnl,
-            deltaBalanceBase,
-            buyQ               : buyR.value.cummulativeQuoteQty,
-            buyP               : buyR.value.priceVwap,
-            buyFeeUsd          : buyR.value.fee_usd,
-            sellQ              : sellR.value.cummulativeQuoteQty,
-            sellP              : sellR.value.priceVwap,
-            sellFeeUsd         : sellR.value.fee_usd,
-          },
-          'orders executed'
-        );
+      //   // bestand der sich aendert / driftet
+      //   // +: mehr gekauft als verkauft => bestand wird aufgebaut
+      //   // -: mehr verkauft als gekauft => bestand wird abgebaut
+      //   deltaBalanceBase = buyR.value.executedQty - sellR.value.executedQty;
+      // }
+      // updateRuntimeState({ buyOk, sellOk, pnl });
+      // if (buyOk) {
+      //   buyAd.updateBalancesFromOrderData({
+      //     side: OrderSides.BUY,
+      //     baseAsset: buyExSymInfo.base,
+      //     quoteAsset: buyExSymInfo.quote,
+      //     executedQty: buyR.value.executedQty ?? orderTargetQty,
+      //     cummulativeQuoteQty: buyR.value.cummulativeQuoteQty,
+      //   });
+      // }
+      // if (sellOk) {
+      //   sellAd.updateBalancesFromOrderData({
+      //     side: OrderSides.SELL,
+      //     baseAsset: sellExSymInfo.base,
+      //     quoteAsset: sellExSymInfo.quote,
+      //     executedQty: sellR.value.executedQty ?? orderTargetQty,
+      //     cummulativeQuoteQty: sellR.value.cummulativeQuoteQty,
+      //   });
+      // }
+      // if (buyOk && sellOk) {
+      //   log.debug({
+      //       id,
+      //       symbol,
+      //       buyEx,
+      //       sellEx,
+      //       pnl,
+      //       deltaBalanceBase,
+      //       buyQ               : buyR.value.cummulativeQuoteQty,
+      //       buyP               : buyR.value.priceVwap,
+      //       buyFeeUsd          : buyR.value.fee_usd,
+      //       sellQ              : sellR.value.cummulativeQuoteQty,
+      //       sellP              : sellR.value.priceVwap,
+      //       sellFeeUsd         : sellR.value.fee_usd,
+      //     },
+      //     'orders executed'
+      //   );
       
-        const ordersOkEvent: TradeOrdersOkEvent = {
-          id, // intent_id
-          ts: new Date(),
-          symbol,
-          buy: buyR.value,
-          sell: sellR.value,
-          pnl,
-          deltaBalanceBase
-        };
+      //   const ordersOkEvent: TradeOrdersOkEvent = {
+      //     id, // intent_id
+      //     ts: new Date(),
+      //     symbol,
+      //     buy: buyR.value,
+      //     sell: sellR.value,
+      //     pnl,
+      //     deltaBalanceBase
+      //   };
 
-        bus.emit('trade:orders_ok', ordersOkEvent);
+      //   bus.emit('trade:orders_ok', ordersOkEvent);
       
-      } else if (buyOk && !sellOk) {
-        log.error({
-          id,
-          symbol,
-          buyEx,
-          sellEx,
-          sellErr: sellR.status === 'rejected' ? sellR.reason : null,
-        }, 'sell failed after buy placed');
-        if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
-          return;
-        }
-        // Minimal: versuchen BUY zu canceln (wenn market sofort fillt, bringt cancel nichts, 
-        // aber bei rejected/partial schon)
-        const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
-          symbol: buyParams.symbol, orderId: buyParams.orderId }) );
-        if (!resCancelBuy.ok) {
-          log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId,
-           }, 'cancel buy failed');
-          // wenn buy auch nicht mehr gecancelt werden konnte, dann wieder verkaufen, da sonst die
-          // bestaende weglaufen
-          const resellParams : PlaceOrderParams = {
-            symbol: buyParams.symbol,
-            side: OrderSides.SELL,
-            type: OrderTypes.MARKET,
-            quantity: buyParams.quantity,
-            orderId: `${buyParams.orderId}-RS`,
-          }
-          const resResell = await safeCall(() => buyAd.placeOrder(false, resellParams) );
-          if (!resResell.ok) {
-            log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId }, 'resell failed');
-          }
-        }
-      } else if (!buyOk && sellOk) {
-        log.error({
-          id,
-          symbol,
-          buyEx,
-          sellEx,
-          buyErr: buyR.status === 'rejected' ? buyR.reason : null,
-        }, 'buy failed after sell placed');
-        if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
-          return;
-        }
-        // Minimal: versuchen SELL zu canceln (wenn market sofort fillt, bringt cancel nichts, 
-        // aber bei rejected/partial schon)
-        const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
-          symbol: sellParams.symbol, orderId: sellParams.orderId }) );
-        if (!resCancelSell.ok) {
-          log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId }, 
-            'cancel sell failed');
+    //   } else if (buyOk && !sellOk) {
+    //     log.error({
+    //       id,
+    //       symbol,
+    //       buyEx,
+    //       sellEx,
+    //       sellErr: sellR.status === 'rejected' ? sellR.reason : null,
+    //     }, 'sell failed after buy placed');
+    //     if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
+    //       return;
+    //     }
+    //     // Minimal: versuchen BUY zu canceln (wenn market sofort fillt, bringt cancel nichts, 
+    //     // aber bei rejected/partial schon)
+    //     const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
+    //       symbol: buyParams.symbol, orderId: buyParams.orderId }) );
+    //     if (!resCancelBuy.ok) {
+    //       log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId,
+    //        }, 'cancel buy failed');
+    //       // wenn buy auch nicht mehr gecancelt werden konnte, dann wieder verkaufen, da sonst die
+    //       // bestaende weglaufen
+    //       const resellParams : PlaceOrderParams = {
+    //         symbol: buyParams.symbol,
+    //         side: OrderSides.SELL,
+    //         type: OrderTypes.MARKET,
+    //         quantity: buyParams.quantity,
+    //         orderId: `${buyParams.orderId}-RS`,
+    //       }
+    //       const resResell = await safeCall(() => buyAd.placeOrder(resellParams) );
+    //       if (!resResell.ok) {
+    //         log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId }, 'resell failed');
+    //       }
+    //     }
+    //   } else if (!buyOk && sellOk) {
+    //     log.error({
+    //       id,
+    //       symbol,
+    //       buyEx,
+    //       sellEx,
+    //       buyErr: buyR.status === 'rejected' ? buyR.reason : null,
+    //     }, 'buy failed after sell placed');
+    //     if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
+    //       return;
+    //     }
+    //     // Minimal: versuchen SELL zu canceln (wenn market sofort fillt, bringt cancel nichts, 
+    //     // aber bei rejected/partial schon)
+    //     const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
+    //       symbol: sellParams.symbol, orderId: sellParams.orderId }) );
+    //     if (!resCancelSell.ok) {
+    //       log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId }, 
+    //         'cancel sell failed');
 
-          // wenn sell auch nicht mehr gecancelt werden konnte, dann wieder kaufen, da sonst die
-          // bestaende weglaufen
-          const reBuyParams : PlaceOrderParams = {
-            symbol: sellParams.symbol,
-            side: OrderSides.BUY,
-            type: OrderTypes.MARKET,
-            quantity: sellParams.quantity,
-            orderId: `${sellParams.orderId}-RB`,
-          }
-          const resRebuy = await safeCall(() => sellAd.placeOrder(false, reBuyParams) );
-          if (!resRebuy.ok) {
-            log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId, }, 
-              'rebuy failed');
-          }
-        }
-      } else { // beide failed
-        log.warn({
-            id,
-            symbol,
-            buyEx,
-            sellEx,
-            // buyErr: buyR.reason,
-            // sellErr: sellR.reason,
-          }, 'both orders failed');
-      }
+    //       // wenn sell auch nicht mehr gecancelt werden konnte, dann wieder kaufen, da sonst die
+    //       // bestaende weglaufen
+    //       const reBuyParams : PlaceOrderParams = {
+    //         symbol: sellParams.symbol,
+    //         side: OrderSides.BUY,
+    //         type: OrderTypes.MARKET,
+    //         quantity: sellParams.quantity,
+    //         orderId: `${sellParams.orderId}-RB`,
+    //       }
+    //       const resRebuy = await safeCall(() => sellAd.placeOrder(reBuyParams) );
+    //       if (!resRebuy.ok) {
+    //         log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId, }, 
+    //           'rebuy failed');
+    //       }
+    //     }
+    //   } else { // beide failed
+    //     log.warn({
+    //         id,
+    //         symbol,
+    //         buyEx,
+    //         sellEx,
+    //         // buyErr: buyR.reason,
+    //         // sellErr: sellR.reason,
+    //       }, 'both orders failed');
+    //   }
     } catch (err) {
       log.error({ err, intent }, 'handle intent failed');
     } finally {
@@ -701,6 +732,9 @@ export default async function startExecutor(
     handleIntent(intent).catch((err) => {
       log.error({ err, intent }, 'executor intent failed');
     });
+  });
+  bus.on('trade:order_result', (result :CommonOrderResult) => {
+    handleOrderResult(result);
   });
 
   // once a day ...

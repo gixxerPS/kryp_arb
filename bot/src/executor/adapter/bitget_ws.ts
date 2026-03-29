@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import fs from 'fs';
 import WebSocket from 'ws';
 
 import { getLogger } from '../../common/logger';
@@ -8,10 +9,14 @@ import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { makeClientId } from '../../common/util';
+import { getEx, getCanonFromOderSym } from '../../common/symbolinfo';
+import { getAssetPrice } from '../../common/symbolinfo_price';
+import appBus from '../../bus';
 
 import {
   type Balances,
   type CommonOrderResult,
+  type OrderState,
   type PlaceOrderParams,
   type CancelOrderParams,
   type UpdateBalancesParams,
@@ -38,10 +43,75 @@ type BitgetCancelOrderData = {
   clientOid?: string;
 };
 
+type BitgetTradeArg<TParams> = {
+  id?: string;
+  instType?: string;
+  channel?: string;
+  instId?: string;
+  params?: TParams;
+};
+
+// type BitgetPlaceOrderResult = {
+//   event?: string;
+//   code?: string | number;
+//   msg?: string;
+//   arg?: BitgetTradeArg<BitgetPlaceOrderData>[];
+// };
+
+type BitgetCancelOrderResult = {
+  event?: string;
+  code?: string | number;
+  msg?: string;
+  arg?: BitgetTradeArg<BitgetCancelOrderData>[];
+};
+
 type BitgetApiResponse<T> = {
   code?: string;
   msg?: string;
   data?: T;
+};
+
+type BitgetOrderRef = {
+  symbol: string;
+  orderId?: string;
+  clientOid?: string;
+  status: OrderState;
+  orderChannelTmr?: NodeJS.Timeout;
+};
+
+type BitgetOrdersChannelFeeDetail = {
+  feeCoin: string;
+  fee: string;
+};
+
+type BitgetOrdersChannelRow = {
+  instId: string;
+  orderId: string;
+  clientOid?: string;
+  side: string;
+  fillTime?: string;
+  uTime?: string;
+  cTime?: string;
+  accBaseVolume?: string;
+  baseVolume?: string;
+  priceAvg?: string;
+  fillPrice?: string;
+  notional?: string;
+  fillFee?: string;
+  fillFeeCoin?: string;
+  feeDetail?: BitgetOrdersChannelFeeDetail[];
+  status?: string;
+};
+
+type BitgetOrdersChannelMsg = {
+  action?: string;
+  arg?: {
+    channel?: string;
+    instId?: string;
+    instType?: string;
+  };
+  data?: BitgetOrdersChannelRow[];
+  ts?: number | string;
 };
 
 function makeBitgetRestError(message: string, context: Record<string, unknown>): Error {
@@ -56,24 +126,24 @@ function makeBitgetWsError(message: string, context: Record<string, unknown>): E
   return err;
 }
 
-function hmacSha256Base64(secret: string, data: string): string {
-  return crypto.createHmac('sha256', secret).update(data).digest('base64');
+function signRsaSha256Base64(privateKeyPem: string, data: string): string {
+  return crypto.sign('RSA-SHA256', Buffer.from(data), privateKeyPem).toString('base64');
 }
 
 function makeBitgetSign(opts: {
-  secret: string;
+  privateKeyPem: string;
   timestamp: string;
   method: string;
   requestPathWithQuery: string;
   body: string;
 }): string {
   const prehash = `${opts.timestamp}${opts.method.toUpperCase()}${opts.requestPathWithQuery}${opts.body}`;
-  return hmacSha256Base64(opts.secret, prehash);
+  return signRsaSha256Base64(opts.privateKeyPem, prehash);
 }
 
 function bitgetRestHeaders(opts: {
   apiKey: string;
-  apiSecret: string;
+  privateKeyPem: string;
   passphrase: string;
   method: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH';
   requestPathWithQuery: string;
@@ -82,7 +152,7 @@ function bitgetRestHeaders(opts: {
 }): Record<string, string> {
   const ts = opts.timestamp ?? String(Date.now());
   const sign = makeBitgetSign({
-    secret: opts.apiSecret,
+    privateKeyPem: opts.privateKeyPem,
     timestamp: ts,
     method: opts.method,
     requestPathWithQuery: opts.requestPathWithQuery,
@@ -106,15 +176,17 @@ async function bitgetPrivateRest<T>(opts: {
 }): Promise<T> {
   const host = process.env.BITGET_REST_HOST ?? 'https://api.bitget.com';
   const apiKey = process.env.BITGET_API_KEY!;
-  const apiSecret = process.env.BITGET_API_SECRET!;
   const passphrase = process.env.BITGET_API_PASSPHRASE!;
+  if (!rsaPrivateKeyPem) {
+    throw new Error('Missing Bitget RSA private key');
+  }
 
   const query = opts.query ?? '';
   const bodyStr = opts.body ? JSON.stringify(opts.body) : '';
   const requestPathWithQuery = `${opts.path}${query ? `?${query}` : ''}`;
   const headers = bitgetRestHeaders({
     apiKey,
-    apiSecret,
+    privateKeyPem: rsaPrivateKeyPem,
     passphrase,
     method: opts.method,
     requestPathWithQuery,
@@ -126,9 +198,9 @@ async function bitgetPrivateRest<T>(opts: {
     headers,
     body: opts.method === 'GET' ? undefined : bodyStr,
   });
-
   const json = (await res.json()) as BitgetApiResponse<T>;
-  if (!res.ok || json?.code !== '00000') {
+  const codeNum = Number(json?.code);
+  if (!res.ok || !Number.isFinite(codeNum) || codeNum !== 0) {
     const msg = json?.msg ?? `status=${res.status}`;
     throw makeBitgetRestError(`bitget rest error ${opts.method} ${requestPathWithQuery}: ${msg}`, {
       method: opts.method,
@@ -143,24 +215,11 @@ async function bitgetPrivateRest<T>(opts: {
   return json.data as T;
 }
 
-function makeWsLoginArgs() {
-  const apiKey = process.env.BITGET_API_KEY!;
-  const apiSecret = process.env.BITGET_API_SECRET!;
-  const passphrase = process.env.BITGET_API_PASSPHRASE!;
-  const timestampSec = String(Math.floor(Date.now() / 1000));
-  const sign = hmacSha256Base64(apiSecret, `${timestampSec}GET/user/verify`);
-
-  return {
-    apiKey,
-    passphrase,
-    timestamp: timestampSec,
-    sign,
-  };
-}
-
 let mgr: ReturnType<typeof createReconnectWS> | null = null;
 let wsRef: WebSocket | null = null;
+let busRef: any;
 const pending: Map<string, PendingEntry> = new Map();
+const pendingOrderRefs: Map<string, BitgetOrderRef> = new Map();
 let balances: Balances = {};
 let balancesLoaded = false;
 let isLoggedIn = false;
@@ -168,7 +227,9 @@ let balanceRefreshTmr: NodeJS.Timeout | null = null;
 let openResolve: (() => void) | null = null;
 let openReject: ((err: unknown) => void) | null = null;
 let openPromise: Promise<void> | undefined;
+let rsaPrivateKeyPem = '';
 const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] 15 min
+const ORDER_CHANNEL_PENDING_TTL_MS = 30_000;
 
 let loginPending:
   | { resolve: () => void; reject: (err: unknown) => void; tmr: NodeJS.Timeout }
@@ -189,22 +250,29 @@ function rejectAllPending(err: unknown): void {
   }
 }
 
-function sendTradeReq<T>(arg: Record<string, unknown>,
+function clearOrderChannelTimeout(ref?: BitgetOrderRef): void {
+  if (!ref?.orderChannelTmr) return;
+  clearTimeout(ref.orderChannelTmr);
+  ref.orderChannelTmr = undefined;
+}
+
+function sendFrame<T>(op: 'trade' | 'login', payload: Record<string, unknown>,
   { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
-    return Promise.reject(new Error('bitget ws not open (op=trade)'));
+    return Promise.reject(new Error(`bitget ws not open (op=${op})`));
   }
 
-  const id = String(arg.id ?? makeClientId()).slice(0, 40);
-  const requestArg = { ...arg, id };
-  const frame = { op: 'trade', args: [requestArg] };
+  const id = String(payload.id ?? makeClientId()).slice(0, 40);
+  const requestArg = { ...payload, id };
+  const frame = { op, args: [requestArg] };
+  log.debug({frame}, 'sendFrame');
 
   return new Promise<T>((resolve, reject) => {
     const tmr = setTimeout(() => {
       pending.delete(id);
-      reject(makeBitgetWsError(`bitget ws timeout op=trade id=${id}`, {
+      reject(makeBitgetWsError(`bitget ws timeout op=${op} id=${id}`, {
         id,
-        op: 'trade',
+        op,
         arg: requestArg,
       }));
     }, timeoutMs);
@@ -213,7 +281,7 @@ function sendTradeReq<T>(arg: Record<string, unknown>,
       resolve,
       reject,
       tmr,
-      requestContext: { method: 'trade', params: requestArg },
+      requestContext: { method: op, params: requestArg },
     });
 
     try {
@@ -221,18 +289,33 @@ function sendTradeReq<T>(arg: Record<string, unknown>,
     } catch (err) {
       clearTimeout(tmr);
       pending.delete(id);
-      log.error({ err, frame }, 'bitget ws trade send failed');
+      log.error({ err, frame }, 'bitget ws send failed');
       reject(err);
     }
   });
+}
+
+function sendReq<T>(reqArg: Record<string, unknown>,
+  { timeoutMs = 10_000 }: { timeoutMs?: number } = {}): Promise<T> {
+  return sendFrame<T>('trade', reqArg, { timeoutMs });
 }
 
 async function loginWs(): Promise<void> {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     throw new Error('bitget ws not open');
   }
-
-  const args = makeWsLoginArgs();
+  const apiKey = process.env.BITGET_API_KEY!;
+  const passphrase = process.env.BITGET_API_PASSPHRASE!;
+  if (!rsaPrivateKeyPem) {
+    throw new Error('Missing Bitget RSA private key');
+  }
+  const timestamp = String(Date.now());
+  const args = {
+    apiKey,
+    passphrase,
+    timestamp,
+    sign: signRsaSha256Base64(rsaPrivateKeyPem, `${timestamp}GET/user/verify`),
+  };
   await new Promise<void>((resolve, reject) => {
     const tmr = setTimeout(() => {
       loginPending = null;
@@ -255,7 +338,199 @@ async function loginWs(): Promise<void> {
   isLoggedIn = true;
 }
 
-async function init(_cfg: AppConfig): Promise<void> {
+async function subscribeOrders(cfg: AppConfig): Promise<void> {
+  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+    throw new Error('bitget ws not open');
+  }
+  const args = [];
+  for (const sym of cfg.bot.execution_symbols) {
+    const instId = getEx(sym, ExchangeIds.bitget)?.orderKey;
+    if (!instId) {
+      throw new Error(`${sym} is missing. check symbolinfo for bitget`);
+    };
+    args.push({
+      instType: 'SPOT',
+      channel: 'orders',
+      instId,
+    });
+  }
+  if (args.length === 0) {
+    return;
+  }
+  const frame = {
+    op: 'subscribe',
+    args,
+  };
+  wsRef.send(JSON.stringify(frame));
+  // log.debug({ symbolsCount: args.length }, 'bitget orders subscribe sent');
+}
+
+function handleOrdersChannelMsg(msgObj: BitgetOrdersChannelMsg) {
+//   [2026-03-25 08:21:19.588 +0100] DEBUG (executor): onMessage
+//     exchange: "bitget"
+//     parsed: {
+//       "action": "snapshot",
+//       "arg": {
+//         "instType": "SPOT",
+//         "channel": "orders",
+//         "instId": "AXSUSDT"
+//       },
+//       "data": [
+//         {
+//           "instId": "AXSUSDT",
+//           "orderId": "1420599686759628800",
+//           "clientOid": "my-123456789",
+//           "size": "12",
+//           "newSize": "12",
+//           "notional": "12",
+//           "orderType": "market",
+//           "force": "gtc",
+//           "side": "buy",
+//           "fillPrice": "1.115",
+//           "tradeId": "1420599686786174976",
+//           "baseVolume": "10.7623",
+//           "fillTime": "1774423279472",
+//           "fillFee": "-0.0046916096178282",
+//           "fillFeeCoin": "BGB",
+//           "tradeScope": "T",
+//           "accBaseVolume": "10.7623",
+//           "priceAvg": "1.115",
+//           "status": "partially_filled",
+//           "cTime": "1774423279466",
+//           "uTime": "1774423279495",
+//           "feeDetail": [
+//             {
+//               "feeCoin": "BGB",
+//               "fee": "-0.0046916096178282"
+//             }
+//           ],
+//           "enterPointSource": "API",
+//           "stpMode": "none"
+//         }
+//       ],
+//       "ts": 1774423279501
+//     }
+// [2026-03-25 08:21:19.591 +0100] DEBUG (executor): onMessage
+//     exchange: "bitget"
+//     parsed: {
+//       "action": "snapshot",
+//       "arg": {
+//         "instType": "SPOT",
+//         "channel": "orders",
+//         "instId": "AXSUSDT"
+//       },
+//       "data": [
+//         {
+//           "instId": "AXSUSDT",
+//           "orderId": "1420599686759628800",
+//           "clientOid": "my-123456789",
+//           "size": "12",
+//           "newSize": "12",
+//           "notional": "12",
+//           "orderType": "market",
+//           "force": "gtc",
+//           "side": "buy",
+//           "accBaseVolume": "10.7623",
+//           "priceAvg": "1.115",
+//           "status": "filled",
+//           "cTime": "1774423279466",
+//           "uTime": "1774423279495",
+//           "feeDetail": [
+//             {
+//               "feeCoin": "BGB",
+//               "fee": "-0.0046916096178282"
+//             }
+//           ],
+//           "enterPointSource": "API",
+//           "stpMode": "none"
+//         }
+//       ],
+//       "ts": 1774423279503
+//     }
+  if (msgObj?.arg?.channel !== 'orders' || !Array.isArray(msgObj?.data)) {
+    return [];
+  }
+  const out: CommonOrderResult[] = [];
+  for (const row of msgObj.data) {
+    const ref = row.clientOid ? pendingOrderRefs.get(row.clientOid) : undefined;
+    let status: OrderState = OrderStates.UNKNOWN;
+    if (row.status === 'filled') {
+      status = OrderStates.FILLED;
+      clearOrderChannelTimeout(ref);
+    } else if (row.status === 'partially_filled') {
+      status = OrderStates.PARTIALLY_FILLED;
+    } else if (row.status === 'cancelled') {
+      status = OrderStates.CANCELLED;
+    }
+    if (ref) {
+      ref.status = status;
+    }
+    if (status !== OrderStates.FILLED) {
+      if (status === OrderStates.CANCELLED) {
+        log.warn({data:row}, 'order cancelled');
+      }
+      continue;
+    }
+
+    // fees ermitteln
+    let totalCommission = 0.0;
+    let feeUsd = 0.0;
+    let feeCurrency = '';
+    // gesamt fee in BGB und fee coin ermitteln (sollte immer BGB sein)
+    if (Array.isArray(row.feeDetail) && row.feeDetail.length > 0) {
+      feeCurrency = row.feeDetail[0].feeCoin;
+      row.feeDetail.forEach((f) => {totalCommission += Math.abs(Number(f.fee))});
+    }
+    if (totalCommission > 0.0) {
+      const feeAssetPrice = getAssetPrice(ExchangeIds.bitget, 'BGB'); // 15 min genauen preis holen
+      if (feeAssetPrice == null) {
+        log.warn({ currency: 'BGB' }, 'missing cached asset price');
+      } else {
+        feeUsd = feeAssetPrice * totalCommission;
+      }
+    }
+    const canonSym = getCanonFromOderSym(row.instId,ExchangeIds.bitget);
+    if (!canonSym) {
+      log.warn({sym: row.instId}, 'could not find canon symbol');
+      continue;
+    }
+    const symInfo = getEx(canonSym, ExchangeIds.bitget);
+    if (!symInfo) { // should not happen
+      log.warn({canonSym}, 'could not find symbolinfo');
+      continue;
+    }
+    const qty = Number(row.accBaseVolume);
+    const cumQuoteQty = Number(row.notional);
+    updateBalancesFromOrderData({
+      side: row.side === 'buy' ? OrderSides.BUY : OrderSides.SELL,
+      baseAsset: symInfo.base,
+      quoteAsset: symInfo.quote,
+      executedQty: qty,
+      cummulativeQuoteQty: cumQuoteQty,
+    });
+    busRef.emit('trade:order_result', {
+      exchange: ExchangeIds.bitget,
+      symbol: row.instId, // order key, nicht canon !!!
+      status,
+      orderId: row.orderId,
+      clientOrderId: row.clientOid, // sollte intent id entsprechen
+      transactTime: Number(row.fillTime),
+      executedQty: qty,
+      cummulativeQuoteQty: cumQuoteQty,
+      priceVwap: Number(row.priceAvg),
+      fee_amount: Number.isFinite(Number(
+        row.fillFee ?? (Array.isArray(row.feeDetail) ? row.feeDetail[0]?.fee : undefined) ?? 0
+      ))
+        ? Number(row.fillFee ?? (Array.isArray(row.feeDetail) ? row.feeDetail[0]?.fee : undefined) ?? 0)
+        : 0,
+      fee_currency : feeCurrency,
+      fee_usd: feeUsd,
+    });
+  }
+}
+
+async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
+  busRef = deps?.bus ?? appBus;
   if (openPromise) {
     await openPromise;
     if (!balancesLoaded) {
@@ -266,11 +541,18 @@ async function init(_cfg: AppConfig): Promise<void> {
   }
 
   const apiKey = process.env.BITGET_API_KEY;
-  const apiSecret = process.env.BITGET_API_SECRET;
+  const rsaPrivateKeyFile = process.env.BITGET_RSA_PRIVATE_KEY_FILE;
   const passphrase = process.env.BITGET_API_PASSPHRASE;
-  if (!apiKey || !apiSecret || !passphrase) {
-    throw new Error('Missing Bitget API credentials');
+  if (!apiKey ) {
+    throw new Error('Missing BITGET_API_KEY in .env');
   }
+  if (!passphrase) {
+    throw new Error('Missing BITGET_API_PASSPHRASE in .env');
+  }
+  if (!rsaPrivateKeyFile) {
+    throw new Error('Missing BITGET_RSA_PRIVATE_KEY_FILE in .env');
+  }
+  rsaPrivateKeyPem = fs.readFileSync(rsaPrivateKeyFile, 'utf8');
 
   openPromise = new Promise<void>((res, rej) => {
     openResolve = res;
@@ -299,6 +581,7 @@ async function init(_cfg: AppConfig): Promise<void> {
       log.debug({ wsUrl }, 'ws private connected');
       try {
         await loginWs();
+        await subscribeOrders(cfg);
         log.info({}, 'log in successful');
         openResolve?.();
         openResolve = null;
@@ -312,16 +595,20 @@ async function init(_cfg: AppConfig): Promise<void> {
     onMessage: (msg: Buffer) => {
       exState.onWsMessage('bitget-ws-private');
       let parsed: any;
+      const raw = msg.toString();
+      if (raw === 'pong') {
+        return;
+      }
       try {
-        parsed = JSON.parse(msg.toString());
+        parsed = JSON.parse(raw);
       } catch (err) {
         log.error({ err }, 'bitget ws message parse error');
         return;
       }
-
-      if (parsed?.event === 'login' && loginPending) {
-        const code = String(parsed?.code ?? '');
-        if (code === '0') {
+      if (parsed.event === 'login') {
+        if (!loginPending) return;
+        const code = Number(parsed?.code);
+        if (code === 0) {
           clearTimeout(loginPending.tmr);
           loginPending.resolve();
           loginPending = null;
@@ -333,13 +620,23 @@ async function init(_cfg: AppConfig): Promise<void> {
         });
         rejectLoginPending(err);
         return;
+      } else if (parsed.event === 'error') {
+        log.error({response:parsed}, 'onMessage error');
+        return;
+      } else if (parsed.event === 'subscribe') { // wird fuer jedes subscribed symbol einzeln empfangen (auch wenn diese per array requested wurden)
+        log.debug({ response: parsed }, 'bitget subscribe ack');
+        return;
+      } else if (parsed.arg?.channel === 'orders') {
+        handleOrdersChannelMsg(parsed);
+        return;
       }
+      log.debug({parsed}, 'onMessage');
 
       const responseArg = Array.isArray(parsed?.arg) ? parsed.arg[0] : parsed?.arg;
       const reqId = responseArg?.id ? String(responseArg.id) : null;
       if (!reqId) return;
 
-      const p = pending.get(reqId);
+      const p = pending.get(reqId); // wartet noch eine order auf eine antwort?
       if (!p) return;
 
       clearTimeout(p.tmr);
@@ -361,8 +658,12 @@ async function init(_cfg: AppConfig): Promise<void> {
         }));
         return;
       }
-
-      p.resolve(responseArg?.params ?? {});
+      p.resolve({
+        event: parsed?.event,
+        code: parsed?.code,
+        msg: parsed?.msg,
+        arg: responseArg ? [responseArg] : [],
+      });
     },
 
     onReconnect: () => {
@@ -474,64 +775,61 @@ function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
   log.warn({ side: params.side }, 'skip updateBalances: unsupported side');
 }
 
-async function placeOrder(test: boolean, orderParams: PlaceOrderParams): Promise<CommonOrderResult> {
-  if (!isReady()) throw new Error('bitget ws not ready');
-  if (test) {
-    log.warn({ orderParams }, 'bitget ws placeOrder test flag ignored');
-  }
-
-  const clientOid = orderParams.orderId ?? makeClientId();
-  const params: Record<string, unknown> = {
+async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
+  const reqBody: Record<string, unknown> = {
+    symbol: orderParams.symbol,
     orderType: String(orderParams.type).toLowerCase(),
     side: String(orderParams.side).toLowerCase(),
-    force: orderParams.type === OrderTypes.MARKET ? 'ioc' : 'gtc',
-    clientOid,
+    clientOid: orderParams.orderId,
   };
-
   if (orderParams.type === OrderTypes.MARKET && orderParams.side === OrderSides.BUY && orderParams.q !== undefined) {
-    params.size = String(orderParams.q);
+    reqBody.size = String(orderParams.q);
   } else {
-    params.size = String(orderParams.quantity);
+    reqBody.size = String(orderParams.quantity);
+  }
+  if (orderParams.type !== OrderTypes.MARKET) {
+    reqBody.force = 'gtc';
   }
   if (orderParams.price !== undefined) {
-    params.price = String(orderParams.price);
+    reqBody.price = String(orderParams.price);
   }
-
-  const reqArg = {
-    instType: 'SPOT',
-    instId: orderParams.symbol,
-    channel: 'place-order',
-    params,
-  };
-  log.debug({ reqArg }, 'ORDER!!!!');
-  let data: BitgetPlaceOrderData;
+  log.debug({ reqBody }, 'ORDER!!!!');
+  let r: BitgetPlaceOrderData;
   try {
-    data = await sendTradeReq<BitgetPlaceOrderData>(reqArg, { timeoutMs: 10_000 });
+    r = await bitgetPrivateRest<BitgetPlaceOrderData>({
+      method: 'POST',
+      path: '/api/v2/spot/trade/place-order',
+      body: reqBody,
+    });
   } catch (err) {
-    log.error({ err, reqArg }, 'bitget placeOrder failed');
+    log.error({ err, reqBody }, 'bitget placeOrder failed');
     throw err;
   }
-  log.debug({ reqArg, rawOrderResponse: data }, 'placeOrder raw response');
+  log.debug({ reqBody, rawOrderResponse: r }, 'placeOrder raw response');
 
-  // Bitget place-order liefert i. d. R. nur IDs. Fill-Details kommen asynchron
-  // oder via nachgelagerter Detail-API. Daher conservative Status=UNKNOWN.
-  return {
-    exchange: ExchangeIds.bitget,
+  if (!r) {
+    throw new Error('bitget placeOrder returned empty response');
+  }
+
+  const orderId = String(r.orderId ?? '');
+  const clientOid = r.clientOid ?? orderParams.orderId;
+  const orderRef: BitgetOrderRef = {
     symbol: orderParams.symbol,
+    orderId,
+    clientOid,
     status: OrderStates.UNKNOWN,
-    orderId: String(data?.orderId ?? ''),
-    clientOrderId: data?.clientOid ?? clientOid,
-    transactTime: Date.now(),
-    executedQty: 0,
-    cummulativeQuoteQty: 0,
-    priceVwap: 0,
-    fee_amount: 0,
-    fee_currency: '',
-    fee_usd: 0,
   };
+  if (clientOid) {
+    orderRef.orderChannelTmr = setTimeout(() => {
+      pendingOrderRefs.delete(clientOid);
+      log.warn({ clientOid, orderId, symbol: orderParams.symbol }, 'bitget pending order ref expired before orders channel event');
+    }, ORDER_CHANNEL_PENDING_TTL_MS);
+    orderRef.orderChannelTmr.unref?.();
+    pendingOrderRefs.set(clientOid, orderRef);
+  }
 }
 
-async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
+async function cancelOrder(p: CancelOrderParams): Promise<void> {
   if (!isReady()) throw new Error('bitget ws not ready');
 
   const params: Record<string, unknown> = {};
@@ -552,35 +850,19 @@ async function cancelOrder(p: CancelOrderParams): Promise<CommonOrderResult> {
     params,
   };
 
-  let data: BitgetCancelOrderData;
+  let data: BitgetCancelOrderResult;
   try {
-    data = await sendTradeReq<BitgetCancelOrderData>(reqArg, { timeoutMs: 10_000 });
+    data = await sendReq<BitgetCancelOrderResult>(reqArg, { timeoutMs: 10_000 });
   } catch (err) {
     log.error({ err, reqArg }, 'bitget cancelOrder failed');
     throw err;
   }
-
-  return {
-    exchange: ExchangeIds.bitget,
-    symbol: p.symbol,
-    status: OrderStates.CANCELLED,
-    orderId: String(data?.orderId ?? p.orderId ?? ''),
-    clientOrderId: data?.clientOid ?? (typeof p.orderId === 'string' ? p.orderId : undefined),
-    transactTime: Date.now(),
-    executedQty: 0,
-    cummulativeQuoteQty: 0,
-    priceVwap: 0,
-    fee_amount: 0,
-    fee_currency: '',
-    fee_usd: 0,
-  };
 }
 
 export const adapter: ExecutorAdapter = {
   init,
   isReady,
   getBalances,
-  updateBalancesFromOrderData,
   placeOrder,
   cancelOrder,
 };
