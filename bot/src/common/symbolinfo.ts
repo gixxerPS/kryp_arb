@@ -37,7 +37,12 @@ function symToBitget(sym: string): string {
   return String(sym).replace("_", "").toUpperCase();
 }
 
-// AXS_USDT -> axs_usdt (Anmerkung: euer Kommentar sagt das, die Funktion macht toUpperCase())
+// AXS_USDT -> AXSUSDT
+function symToMexc(sym: string): string {
+  return String(sym).replace("_", "").toUpperCase();
+}
+
+// axs_usdt -> AXS_USDT
 function symToGate(sym: string): string {
   return String(sym).toUpperCase();
 }
@@ -140,6 +145,9 @@ export function makeOrderKey(ex: ExchangeId, symMapped: string): string {
   if (ex === "binance" || ex === "bitget") {
     return String(symMapped).replace("_", "").toUpperCase();
   }
+  if (ex === "mexc") {
+    return symToMexc(symMapped);
+  }
   if (ex === "gate") {
     return String(symMapped);
   }
@@ -156,6 +164,7 @@ export function makeMdKey(ex: ExchangeId, symMapped: string, subscription: { lev
     );
   }
   if (ex === "bitget") return symToBitget(symMapped);
+  if (ex === "mexc") return symToMexc(symMapped);
   if (ex === "gate") return symToGate(symMapped);
   // fallback
   return symMapped;

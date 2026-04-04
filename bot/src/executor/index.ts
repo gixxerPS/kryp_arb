@@ -95,8 +95,8 @@ export default async function startExecutor(
       adapters.gate = gateAdapter;
       await adapters.gate.init(cfg, {bus});
     } else if (ex.exchange === ExchangeIds.mexc) {
-      ;//adapters.mexc = mexcAdapter;
-      ;//await adapters.mexc.init(cfg);
+      adapters.mexc = mexcAdapter;
+      await adapters.mexc.init(cfg, {bus});
     }
   }
 

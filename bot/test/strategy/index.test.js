@@ -9,7 +9,7 @@ function mkCfg(overrides = {}) {
   return {
     bot: {
       execution_symbols: ['FOO_USDT'],
-      cooldown_s: 10,
+      cooldown_ms: 10_000,
       throttle_ms: 200,
       ...overrides.bot,
     },
@@ -48,7 +48,7 @@ suite('strategy/index', () => {
     };
 
     const cfg = mkCfg({
-      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_ms: 10_000, throttle_ms: 0 },
       symbols: ['FOO_USDT'],
     });
 
@@ -79,7 +79,7 @@ suite('strategy/index', () => {
     ]);
 
     const cfg = mkCfg({
-      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 10, throttle_ms: 0 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_ms: 10_000, throttle_ms: 0 },
       symbols: ['FOO_USDT'],
     });
 
@@ -88,12 +88,12 @@ suite('strategy/index', () => {
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(emitted.length, 1);
 
-    // innerhalb cooldown_s => kein zweiter Intent
+    // innerhalb cooldown_ms => kein zweiter Intent
     now += 9_000;
     bus.emit('md:l2', { exchange: 'bitget', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(emitted.length, 1);
 
-    // nach cooldown_s => wieder erlaubt
+    // nach cooldown_ms => wieder erlaubt
     now += 2_000; // insgesamt 11s
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(emitted.length, 2);
@@ -115,7 +115,7 @@ suite('strategy/index', () => {
     };
 
     const cfg = mkCfg({
-      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 200 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_ms: 0, throttle_ms: 200 },
       symbols: ['FOO_USDT'],
     });
 
@@ -142,7 +142,7 @@ suite('strategy/index', () => {
     const computeIntentsForSymbol = () => { computeCalls++; return []; };
 
     const cfg = mkCfg({
-      bot: { execution_symbols: ['FOO_USDT'], cooldown_s: 0, throttle_ms: 0 },
+      bot: { execution_symbols: ['FOO_USDT'], cooldown_ms: 0, throttle_ms: 0 },
       symbols: ['FOO_USDT'],
     });
 

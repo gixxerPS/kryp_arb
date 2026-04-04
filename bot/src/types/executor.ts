@@ -48,6 +48,7 @@ export type UpdateBalancesParams = {
 export type CommonOrderResult = {
   exchange: ExchangeId;
   symbol: string;
+  side: OrderSide;
   status: OrderState;
   orderId: number | string;
   clientOrderId?: string;

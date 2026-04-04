@@ -43,6 +43,11 @@ BINANCE_ED25519_PUBLIC_KEY=<my_binance_api_key>
 BINANCE_ED25519_PRIVATE_KEY_FILE=/etc/krypto_arbitrage/secrets/binance-ed25519-prv.pem
 GATE_API_KEY=<my_gate_api_key>
 GATE_API_SECRET=<my_gate_api_secret>
+BITGET_API_KEY=<my_bitget_api_key>
+BITGET_API_PASSPHRASE=<my_bitget_api_pass>
+BITGET_RSA_PRIVATE_KEY_FILE=/etc/krypto_arbitrage/secrets/bitget_rsa_private.pem
+MEXC_API_KEY=<my_mexc_api_key>
+MEXC_API_SECRET=<my_mex_api_secret>
 EXPECTED_PUBLIC_IPS=111.222.333.444,555.666.777.888
 ```
 

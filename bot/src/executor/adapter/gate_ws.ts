@@ -542,11 +542,18 @@ function handleOrdersStream(msgObj: GateStreamMsg<GateOrderUpdateRow>): void {
         feeUsd = feeAssetPrice * feeAmount;
       }
     }
-
+    updateBalancesFromOrderData({
+      side,
+      baseAsset: getEx(canonSym, ExchangeIds.gate)!.base,
+      quoteAsset: getEx(canonSym, ExchangeIds.gate)!.quote,
+      executedQty,
+      cummulativeQuoteQty,
+    });
     busRef.emit('trade:order_result', {
       exchange: ExchangeIds.gate,
       symbol: row.currency_pair,
       status,
+      side,
       orderId: row.id,
       clientOrderId: idFromGateText(row.text),
       transactTime: Number(row.update_time_ms ?? row.create_time_ms ?? Date.now()),
@@ -558,13 +565,6 @@ function handleOrdersStream(msgObj: GateStreamMsg<GateOrderUpdateRow>): void {
       fee_usd: feeUsd,
     });
 
-    updateBalancesFromOrderData({
-      side,
-      baseAsset: getEx(canonSym, ExchangeIds.gate)!.base,
-      quoteAsset: getEx(canonSym, ExchangeIds.gate)!.quote,
-      executedQty,
-      cummulativeQuoteQty,
-    });
   }
 }
 

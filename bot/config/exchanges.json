@@ -31,6 +31,16 @@
     "subscription":{
       "levels": 15
     }
+  },
+  "mexc": {
+    "maker_fee_pct": 0.1,
+    "taker_fee_pct": 0.1,
+    "timeout_no_msg_trade_warn_ms": 8000,
+    "timeout_no_msg_trade_stop_ms": 60000,
+    "enabled": true,
+    "subscription":{
+      "levels": 10
+    }
   }
 }
 

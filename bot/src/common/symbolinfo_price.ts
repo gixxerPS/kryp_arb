@@ -67,7 +67,8 @@ function getTrackedPriceSymbols(exchange: ExchangeId): string[] {
 }
 
 function getSupportedExchanges(): ExchangeId[] {
-  return [ExchangeIds.binance, ExchangeIds.gate];
+  return [ExchangeIds.binance, ExchangeIds.gate, 
+    ExchangeIds.bitget, ExchangeIds.mexc];
 }
 
 async function fetchBinancePrices(symbols: string[]): Promise<Record<string, number>> {
@@ -118,9 +119,79 @@ async function fetchGatePrices(symbols: string[]): Promise<Record<string, number
   return out;
 }
 
+async function fetchBitgetPrice(symbol: string): Promise<number> {
+  const host = process.env.BITGET_REST_HOST ?? 'https://api.bitget.com';
+  const url = `${host}/api/v2/spot/market/tickers?symbol=${encodeURIComponent(symbol)}`;
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`bitget ticker failed status=${res.status} symbol=${symbol}`);
+
+  const body = (await res.json()) as {
+    code?: string;
+    msg?: string;
+    data?: Array<{ symbol?: string; lastPr?: string }>;
+  };
+  if (body?.code !== '00000') {
+    throw new Error(`bitget ticker failed code=${body?.code ?? 'unknown'} symbol=${symbol} msg=${body?.msg ?? ''}`);
+  }
+
+  const price = Number(body?.data?.[0]?.lastPr ?? NaN);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`invalid bitget price symbol=${symbol}`);
+  }
+  return price;
+}
+
+async function fetchBitgetPrices(symbols: string[]): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+
+  const results = await Promise.allSettled(
+    symbols.map(async (symbol) => [symbol, await fetchBitgetPrice(symbol)] as const)
+  );
+
+  const out: Record<string, number> = {};
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue;
+    const [symbol, price] = result.value;
+    out[symbol] = price;
+  }
+  return out;
+}
+
+async function fetchMexcPrice(symbol: string): Promise<number> {
+  const host = process.env.MEXC_REST_HOST ?? 'https://api.mexc.com';
+  const url = `${host}/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`;
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`mexc ticker failed status=${res.status} symbol=${symbol}`);
+
+  const body = (await res.json()) as { symbol?: string; price?: string };
+  const price = Number(body?.price ?? NaN);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`invalid mexc price symbol=${symbol}`);
+  }
+  return price;
+}
+
+async function fetchMexcPrices(symbols: string[]): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+
+  const results = await Promise.allSettled(
+    symbols.map(async (symbol) => [symbol, await fetchMexcPrice(symbol)] as const)
+  );
+
+  const out: Record<string, number> = {};
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue;
+    const [symbol, price] = result.value;
+    out[symbol] = price;
+  }
+  return out;
+}
+
 function getFetcher(exchange: ExchangeId): PriceFetcher | null {
   if (exchange === ExchangeIds.binance) return fetchBinancePrices;
   if (exchange === ExchangeIds.gate) return fetchGatePrices;
+  if (exchange === ExchangeIds.bitget) return fetchBitgetPrices;
+  if (exchange === ExchangeIds.mexc) return fetchMexcPrices;
   return null;
 }
 

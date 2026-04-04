@@ -33,6 +33,20 @@ function makeTradeIntent(
   };
 }
 
+function formatLevelsInline(levels: L2Snapshot['bids']): string {
+  return levels.map(([price, qty]) => `[${price}, ${qty}]`).join(' ');
+}
+
+function formatSnapshotForDebug(snapshot: L2Snapshot): Record<string, unknown> {
+  return {
+    tsMs: snapshot.tsMs,
+    exchange: snapshot.exchange,
+    symbol: snapshot.symbol,
+    bids: formatLevelsInline(snapshot.bids),
+    asks: formatLevelsInline(snapshot.asks),
+  };
+}
+
 export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): void {
   initStrategyEngine(cfg); // werte vorberechnen fuer schnellen hotpath
 
@@ -46,13 +60,13 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   if (!exState) {
     throw new Error('exchange_state not initialized');
   }
+  const exchangeState = exState;
 
-  const cooldownS = Number(cfg.bot.cooldown_s);
-  const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
-  const ttlMs = Number(cfg.bot.intent_time_to_live_ms ?? 1500);
+  const cooldownMs = Number(cfg.bot.cooldown_ms);
+  const throttleMs = Number(cfg.bot.throttle_ms);
+  const ttlMs = Number(cfg.bot.intent_time_to_live_ms);
 
   const symbolsSet = new Set(cfg.symbols);
-
   const latest = new Map<string, L2Snapshot>();
   const lastIntentAt = new Map<string, number>();
   const lastRunAt = new Map<string, number>();
@@ -73,20 +87,19 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
       fees: cfg.exchanges,
       nowMs,
       cfg,
-      exState,
+      exState: exchangeState,
     });
 
     for (const it of intents) {
       const rk = tradeRouteKey(it);
 
       const last = lastIntentAt.get(rk);
-      if (last != null && nowMs - last < cooldownS * 1000) {
-        // log.debug({ reason: 'cooldown violation', rk, age: nowMs - last, cooldownS }, 'dropped trade');
+      if (last != null && nowMs - last < cooldownMs) {
+        // log.debug({ reason: 'cooldown violation', rk, age: nowMs - last, cooldownMs }, 'dropped trade');
         continue;
       }
       lastIntentAt.set(rk, nowMs);
       const intent = makeTradeIntent(it, nowMs, ttlMs, uuidFn);
-
       log.debug({ intent }, 'trade:intent found');
       bus.emit('trade:intent', intent);
     }
@@ -97,9 +110,19 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
     tryComputeForSymbol(m.symbol);
   });
 
+  // debug output
+  const t = setInterval(() => {
+    log.debug({
+      latest: Object.fromEntries(
+        Array.from(latest.entries(), ([snapshotKey, snapshot]) => [snapshotKey, formatSnapshotForDebug(snapshot)])
+      ),
+    }, 'latest');
+  }, 10_000);
+  t.unref?.();
+
   log.debug({
       mode: 'event-driven',
-      cooldownS,
+      cooldownMs,
       throttleMs,
       rawSpreadBufferPct: cfg.bot.raw_spread_buffer_pct,
       slippagePct: cfg.bot.slippage_pct,

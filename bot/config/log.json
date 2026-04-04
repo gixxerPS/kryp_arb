@@ -11,6 +11,6 @@
     "executor": "debug",
     "db": "debug",
     "ui": "debug",
-    "symbolinfo_price": "debug"
+    "symbolinfo_price": "info"
   }
 }

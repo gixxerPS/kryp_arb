@@ -501,8 +501,9 @@ function handleOrdersChannelMsg(msgObj: BitgetOrdersChannelMsg) {
     }
     const qty = Number(row.accBaseVolume);
     const cumQuoteQty = Number(row.notional);
+    const side = row.side === 'buy' ? OrderSides.BUY : OrderSides.SELL;
     updateBalancesFromOrderData({
-      side: row.side === 'buy' ? OrderSides.BUY : OrderSides.SELL,
+      side,
       baseAsset: symInfo.base,
       quoteAsset: symInfo.quote,
       executedQty: qty,
@@ -512,6 +513,7 @@ function handleOrdersChannelMsg(msgObj: BitgetOrdersChannelMsg) {
       exchange: ExchangeIds.bitget,
       symbol: row.instId, // order key, nicht canon !!!
       status,
+      side,
       orderId: row.orderId,
       clientOrderId: row.clientOid, // sollte intent id entsprechen
       transactTime: Number(row.fillTime),

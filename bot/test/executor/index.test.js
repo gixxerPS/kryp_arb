@@ -100,11 +100,12 @@ suite('executor/index', () => {
         isReady: () => true,
         getBalances: () => balances,
         updateBalancesFromOrderData: () => {},
-        placeOrder: async (_test, params) => {
+        placeOrder: async (params) => {
           placed.push({ exchange, params });
-          return {
+          const result = {
             exchange,
             symbol: params.symbol,
+            side: params.side,
             status: 'FILLED',
             orderId: `${exchange}-1`,
             clientOrderId: String(params.orderId),
@@ -116,6 +117,8 @@ suite('executor/index', () => {
             fee_currency: 'USDT',
             fee_usd: 0,
           };
+          bus.emit('trade:order_result', result);
+          return result;
         },
         cancelOrder: async () => {
           throw new Error('not used');
@@ -143,9 +146,9 @@ suite('executor/index', () => {
       enableIntentHandling: true,
     });
 
+    const ordersOkPromise = once(bus, 'trade:orders_ok');
     bus.emit('trade:intent', mkIntent());
-
-    await once(bus, 'trade:orders_ok');
+    await ordersOkPromise;
 
     assert.equal(placed.length, 2);
     assert.deepEqual(placed[0], {
@@ -183,11 +186,12 @@ suite('executor/index', () => {
         isReady: () => true,
         getBalances: () => balances,
         updateBalancesFromOrderData: () => {},
-        placeOrder: async (_test, params) => {
+        placeOrder: async (params) => {
           placed.push({ exchange, params });
-          return {
+          const result = {
             exchange,
             symbol: params.symbol,
+            side: params.side,
             status: 'FILLED',
             orderId: `${exchange}-1`,
             clientOrderId: String(params.orderId),
@@ -199,6 +203,8 @@ suite('executor/index', () => {
             fee_currency: 'USDT',
             fee_usd: 0,
           };
+          bus.emit('trade:order_result', result);
+          return result;
         },
         cancelOrder: async () => {
           throw new Error('not used');
@@ -249,8 +255,9 @@ suite('executor/index', () => {
 
     buyBalances.USDC = 130;
 
+    const ordersOkPromise = once(bus, 'trade:orders_ok');
     bus.emit('trade:intent', mkIntent({ id: 'intent-3' }));
-    await once(bus, 'trade:orders_ok');
+    await ordersOkPromise;
     assert.equal(placed.length, 2);
     assert.deepEqual(executor.getRuntimeState().blockedRoutes, {});
   });

@@ -12,7 +12,10 @@ initLogger();
 const log = getLogger('app');
 import { initExchangeState } from './common/exchange_state';
 import { loadPersistent, savePersistent } from './common/persistent';
-import { init as initSymbolInfo } from './common/symbolinfo';
+import { init as initSymbolInfo,
+  getIndex, 
+  getReverseIndex
+ } from './common/symbolinfo';
 import { initSymbolInfoPrice } from './common/symbolinfo_price';
 
 import { init as initDb, ping as pingDb } from './db';
@@ -20,6 +23,7 @@ import { init as initDb, ping as pingDb } from './db';
 import startBinanceDepth from './collector/binance_depth';
 import startGateDepth from './collector/gate_depth';
 import startBitgetDepth from './collector/bitget_depth';
+import startMexcDepth from './collector/mexc_depth';
 import startExecutor from './executor';
 import startStrategy from './strategy';
 import { initTelegramBot } from './ui/telegram_bot';
@@ -44,6 +48,7 @@ async function main() {
   const { cfg } = loadConfig();
   // log.debug({ cfg }, 'startup config');
   log.info({  }, 'starting');
+  await verifyPublicIp();
 
   const loadedPersistent = await loadPersistent({ cfg, log });
   const persistentStore: PersistentStore = loadedPersistent ?? {};
@@ -55,12 +60,9 @@ async function main() {
     exchangesCfg: cfg.exchanges,
     symbolInfoByEx : cfg.symbolInfoByEx,
   });
+  // log.info({symInfoIdx:getIndex(), symInfoRevIdx:getReverseIndex()});
 
   await initSymbolInfoPrice();
-
-  // log.info({symInfoIdx:symbolinfo.getIndex(), symInfoRevIdx:symbolinfo.getReverseIndex()});
-
-  await verifyPublicIp();
 
   initDb(cfg);
   await pingDb();
@@ -68,9 +70,6 @@ async function main() {
   initExchangeState(cfg); // monitoring, heartbeat ueberwachung und logging der exchange zustaende
 
   // L2 collectors 
-  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // nur wenn in config/exchanges.json die exchange enabled ist werden daten gesammelt
-  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   if (cfg.exchanges.binance.enabled) {
     startBinanceDepth();
   } else {
@@ -85,6 +84,11 @@ async function main() {
     startBitgetDepth();
   } else {
     log.warn({exchange:'bitget'}, 'exchange disabled. no data collection');
+  }
+  if (cfg.exchanges.mexc?.enabled) {
+    startMexcDepth();
+  } else {
+    log.warn({ exchange: 'mexc' }, 'exchange disabled. no data collection');
   }
 
   startStrategy(cfg);

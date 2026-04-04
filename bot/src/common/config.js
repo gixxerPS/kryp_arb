@@ -20,17 +20,19 @@ function loadConfig() {
   const db = readJson(absConfigPath('db.json'));
   const ui = readJson(absConfigPath('ui.json'));
   const symbols = symbolsFile.symbols || [];
-  const enabledExchanges = ['binance', 'gate', 'bitget']
+  const enabledExchanges = ['binance', 'gate', 'bitget', 'mexc']
     .filter((ex) => exchanges?.[ex]?.enabled);
 
   const symbolinfoBinance = readJson(absConfigPath('symbolinfo', 'binance.spot.json'));
   const symbolinfoBitget  = readJson(absConfigPath('symbolinfo', 'bitget.spot.json'));
   const symbolinfoGate    = readJson(absConfigPath('symbolinfo', 'gate.spot.json'));
+  const symbolinfoMexc    = readJson(absConfigPath('symbolinfo', 'mexc.spot.json'));
 
   const symbolInfoByEx = {
     binance: symbolinfoBinance,
     bitget: symbolinfoBitget,
     gate: symbolinfoGate,
+    mexc: symbolinfoMexc,
   };
 
   const cfg = {

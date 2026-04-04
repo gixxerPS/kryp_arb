@@ -6,7 +6,7 @@ export interface BotCfg {
   
     throttle_ms: number;
     intent_time_to_live_ms: number;
-    cooldown_s: number;
+    cooldown_ms: number;
   
     raw_spread_buffer_pct: number;
     slippage_pct: number;

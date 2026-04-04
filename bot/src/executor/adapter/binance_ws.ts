@@ -97,7 +97,8 @@ import {
   type UpdateBalancesParams,
   type PendingEntry, 
   type ExecutorAdapter,
-  OrderStates} from '../../types/executor';
+  OrderStates,
+  OrderState} from '../../types/executor';
 import type { AppConfig } from '../../types/config';
 import type { WsParams } from '../../types/common';
 import type { ReconnectDelayOverrideArgs } from '../../types/ws_reconnect';
@@ -336,7 +337,14 @@ function handleUserTradesStream(event: BinanceUserDataEvent): void {
     log.warn({ event }, 'binance executionReport symbol mapping missing');
     return;
   }
-
+  let status : OrderState = OrderStates.UNKNOWN;
+  if (event.X === 'FILLED') {
+    status = OrderStates.FILLED;
+  } else if (event.X === 'PARTIALLY_FILLED') {
+    status = OrderStates.PARTIALLY_FILLED;
+  } else if (event.X === 'PARTIALLY_FILLED') {
+    status = OrderStates.CANCELLED;
+  }
   const side = event.S === 'BUY' ? OrderSides.BUY : OrderSides.SELL;
   const executedQty = Number(event.z ?? 0);
   const cummulativeQuoteQty = Number(event.Z ?? 0);
@@ -356,13 +364,8 @@ function handleUserTradesStream(event: BinanceUserDataEvent): void {
   busRef.emit('trade:order_result', {
     exchange: ExchangeIds.binance,
     symbol: event.s ?? '',
-    status: event.X === 'FILLED'
-      ? OrderStates.FILLED
-      : event.X === 'PARTIALLY_FILLED'
-        ? OrderStates.PARTIALLY_FILLED
-        : event.X === 'CANCELED'
-          ? OrderStates.CANCELLED
-          : OrderStates.UNKNOWN,
+    status,
+    side,
     orderId: event.i ?? '',
     clientOrderId: event.c,
     transactTime: Number(event.T ?? event.E ?? Date.now()),
