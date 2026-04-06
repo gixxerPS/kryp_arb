@@ -338,7 +338,9 @@ function handleUserTradesStream(event: BinanceUserDataEvent): void {
     return;
   }
   let status : OrderState = OrderStates.UNKNOWN;
-  if (event.X === 'FILLED') {
+  if (event.X === 'NEW') {
+    return; // wird direkt nach absetzen der order empfangen (=order bestaetigung)
+  } else if (event.X === 'FILLED') {
     status = OrderStates.FILLED;
   } else if (event.X === 'PARTIALLY_FILLED') {
     status = OrderStates.PARTIALLY_FILLED;
@@ -376,35 +378,43 @@ function handleUserTradesStream(event: BinanceUserDataEvent): void {
     fee_currency: feeCurrency,
     fee_usd: feeUsd,
   });
-
-  updateBalancesFromOrderData({
-    side,
-    baseAsset: getEx(canonSym, ExchangeIds.binance)!.base,
-    quoteAsset: getEx(canonSym, ExchangeIds.binance)!.quote,
-    executedQty,
-    cummulativeQuoteQty,
-  });
+  // wir nutzen fuer binance schon outboundAccountPosition event zum korrekten
+  // echtzeit updaten, daher keine "berechnung" mit orderdaten noetig
+  //
+  // updateBalancesFromOrderData({
+  //   side,
+  //   baseAsset: getEx(canonSym, ExchangeIds.binance)!.base,
+  //   quoteAsset: getEx(canonSym, ExchangeIds.binance)!.quote,
+  //   executedQty,
+  //   cummulativeQuoteQty,
+  // });
 }
 
 /**
  * orders und balance events
  * @param msgObj 
  * @returns 
- */
+*/
 function handleUserDataStream(msgObj: BinanceUserDataMessage): void {
   const event = msgObj.event;
   if (!event?.e) return;
+  // log.debug({
+  //   eventType: event.e,
+  //   subscriptionId: msgObj.subscriptionId,
+  // }, 'binance user data event');
 
   //==========================================================================
   // account balance betreffend
   //==========================================================================
   if (event.e === 'outboundAccountPosition') {
+    // log.debug({balances}, 'balances before update');
     for (const b of event.B ?? []) {
       const asset = String(b?.a ?? '');
       if (!asset) continue;
       balances[asset] = Number(b?.f ?? 0);
     }
     balancesLoaded = true;
+    // log.debug({balances}, 'balances after update');
   }
 
   //==========================================================================
@@ -413,11 +423,6 @@ function handleUserDataStream(msgObj: BinanceUserDataMessage): void {
   if (event.e === 'executionReport') {
     handleUserTradesStream(event);
   }
-
-  log.debug({
-    eventType: event.e,
-    subscriptionId: msgObj.subscriptionId,
-  }, 'binance user data event');
 }
 
 async function subscribeUserDataStream(): Promise<void> {
@@ -508,9 +513,9 @@ async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
       let parsed: any;
       try {
         parsed = JSON.parse(msg.toString());
-        // log.debug({msg:parsed}, 'onMessage');
+        // log.debug({msg:parsed, raw:msg.toString() }, 'onMessage');
       } catch (e) {
-        log.error({ err: e }, 'binance ws-api message parse error');
+        log.error({ err: e }, 'ws message parse error');
         return;
       }
 
@@ -749,9 +754,7 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     newClientOrderId: orderParams.orderId ? String(orderParams.orderId) : undefined,
     // computeCommissionRates: true
   });
-
   log.debug({params}, 'ORDER!!!!');
-
   let r: BinancePlaceOrderResult;
   try {
     r = await sendReq<BinancePlaceOrderResult>('order.place', params, { timeoutMs: 10_000 });
@@ -759,7 +762,7 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     log.error({ err, params }, 'binance placeOrder failed');
     throw err;
   }
-  log.debug({ rawOrderResponse: r }, 'placeOrder raw response');
+  // log.debug({ rawOrderResponse: r }, 'placeOrder raw response');
 
   // beispielantwort von binance api:
 // [2026-02-24 19:08:44.610 +0100] DEBUG (executor): placeOrder raw response

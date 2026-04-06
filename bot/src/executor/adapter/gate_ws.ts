@@ -24,6 +24,7 @@ import {
   type UpdateBalancesParams,
   type PendingEntry,
   type ExecutorAdapter,
+  type OrderState,
   OrderStates
 } from '../../types/executor';
 import type { AppConfig } from '../../types/config';
@@ -317,7 +318,7 @@ async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
       let parsed: any;
       try {
         parsed = JSON.parse(msg.toString());
-        // log.debug({ msg: parsed }, 'onMessage');
+        // log.debug({ msg: parsed, raw:msg.toString() }, 'onMessage');
       } catch (e) {
         log.error({ err: e }, 'gate ws-api message parse error');
         return;
@@ -492,7 +493,6 @@ function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
     balances[base] -= baseDelta;
     return;
   }
-
   log.warn({ side: params.side }, 'skip updateBalances: unsupported side');
 }
 
@@ -500,9 +500,8 @@ async function subscribeUserData() {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     throw new Error('gate ws not open');
   }
-
   wsRef.send(makeSubscribeFrame('spot.orders', ['!all']));
-  wsRef.send(makeSubscribeFrame('spot.usertrades', ['!all']));
+  // wsRef.send(makeSubscribeFrame('spot.usertrades', ['!all']));
   log.info({ scope: '!all' }, 'gate private streams subscribed');
 }
 
@@ -515,13 +514,13 @@ function handleOrdersStream(msgObj: GateStreamMsg<GateOrderUpdateRow>): void {
       log.warn({ row }, 'gate order update symbol mapping missing');
       continue;
     }
-
-    const status = row.finish_as === 'filled' || row.status === 'closed'
-      ? OrderStates.FILLED
-      : row.finish_as === 'cancelled' || row.finish_as === 'ioc' || row.finish_as === 'stp'
-        ? OrderStates.CANCELLED
-        : OrderStates.UNKNOWN;
-
+    let status : OrderState = OrderStates.UNKNOWN;
+    if (row.finish_as === 'filled') {
+      status = OrderStates.FILLED;
+    } else if (row.finish_as === 'cancelled') {
+      status = OrderStates.CANCELLED;
+    }
+    
     if (status !== OrderStates.FILLED && status !== OrderStates.CANCELLED) {
       continue;
     }
@@ -542,13 +541,15 @@ function handleOrdersStream(msgObj: GateStreamMsg<GateOrderUpdateRow>): void {
         feeUsd = feeAssetPrice * feeAmount;
       }
     }
-    updateBalancesFromOrderData({
-      side,
-      baseAsset: getEx(canonSym, ExchangeIds.gate)!.base,
-      quoteAsset: getEx(canonSym, ExchangeIds.gate)!.quote,
-      executedQty,
-      cummulativeQuoteQty,
-    });
+    if (status === OrderStates.FILLED) {
+      updateBalancesFromOrderData({
+        side,
+        baseAsset: getEx(canonSym, ExchangeIds.gate)!.base,
+        quoteAsset: getEx(canonSym, ExchangeIds.gate)!.quote,
+        executedQty,
+        cummulativeQuoteQty,
+      });
+    }
     busRef.emit('trade:order_result', {
       exchange: ExchangeIds.gate,
       symbol: row.currency_pair,

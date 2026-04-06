@@ -111,14 +111,14 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   });
 
   // debug output
-  const t = setInterval(() => {
-    log.debug({
-      latest: Object.fromEntries(
-        Array.from(latest.entries(), ([snapshotKey, snapshot]) => [snapshotKey, formatSnapshotForDebug(snapshot)])
-      ),
-    }, 'latest');
-  }, 10_000);
-  t.unref?.();
+  // const t = setInterval(() => {
+  //   log.debug({
+  //     latest: Object.fromEntries(
+  //       Array.from(latest.entries(), ([snapshotKey, snapshot]) => [snapshotKey, formatSnapshotForDebug(snapshot)])
+  //     ),
+  //   }, 'latest');
+  // }, 10_000);
+  // t.unref?.();
 
   log.debug({
       mode: 'event-driven',

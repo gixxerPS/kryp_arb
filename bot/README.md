@@ -14,3 +14,10 @@ Anmerkungen:
   den bot laufen zu lassen und trade chancen zu ermitteln ohne dass sie aktiv gehandelt werden
 - diese symbole sind canonical und koennen intern spaeter gemapped werden. hintergrund: binance ermoeglicht 
   in EU nur handel mit USDC also wird hierfuer bspw aus AXS_USDT -> AXS_USDC (fuer marktdaten abo und orders)
+
+## exchanges
+
+### mexc
+
+protobuf protocol definitionen:
+https://github.com/mexcdevelop/websocket-proto/tree/main

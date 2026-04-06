@@ -2,8 +2,8 @@
   "runtimeState": {
     "today": {
       "tsMs": 1774296694713,
-      "pnlSum": 0,
-      "successCount": 0,
+      "pnlSum": -0.09251876779196191,
+      "successCount": 5,
       "failedCount": 0
     },
     "yesterday": {

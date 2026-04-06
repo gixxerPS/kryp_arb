@@ -189,6 +189,7 @@ export default async function startExecutor(
 
   function handleOrderResult(orderResult: CommonOrderResult): void {
     const intentId = orderResult.clientOrderId;
+    // log.debug({size:pendingExecutions.size}, 'pending execution size @update start');
     if (!intentId) {
       log.warn({ orderResult }, 'skip order result without clientOrderId');
       return;
@@ -277,6 +278,7 @@ export default async function startExecutor(
     if (buyR && sellR) { // wenn trade komplett dann auswerten kann ok / failed sein
       updateRuntimeState({ buyOk, sellOk, pnl });
     }
+    // log.debug({size:pendingExecutions.size}, 'pending execution size @update end');
   }
 
   /**
@@ -363,12 +365,42 @@ export default async function startExecutor(
   //   });
   // }
 
-  let busy = false;
-
-  async function handleIntent(intent: TradeIntent) {
-    if (busy) {
-      log.warn({ reason:'executor busy', intent }, 'dropping intent');
-      return;
+  // test intents fuer smoketest
+  setTimeout(() => {
+    const now = Date.now();
+    const intent: TradeIntent = {
+      id: 'smoke-axs-10',
+      tsMs: now,
+      valid_until: new Date(now + 30_000),
+      symbol: 'AXS_USDT',
+      
+      buyEx: ExchangeIds.bitget,
+      sellEx: ExchangeIds.mexc,
+      
+      targetQty: 10,
+      net: 0.012,
+      qBuy: 11.14,
+      qSell: 11.24,
+      buyPxEff: 1.114,
+      sellPxEff: 1.124,
+      expectedPnl: 0.10,
+      buyAsk: 1.114,
+      sellBid: 1.124,
+      buyPxWorst: 1.114,
+      sellPxWorst: 1.124,
+    };
+    log.debug({ intent }, 'trade:intent TEST');
+    handleIntent(intent).catch((err) => {
+      log.error({ err, intent }, 'executor TEST intent failed');
+    });
+  }, 1_000);
+    
+    let busy = false;
+    
+    async function handleIntent(intent: TradeIntent) {
+      if (busy) {
+        log.warn({ reason:'executor busy', intent }, 'dropping intent');
+        return;
     }
     busy = true;
     try {
@@ -535,8 +567,11 @@ export default async function startExecutor(
         createdAtTsMs: Date.now(),
       };
       pendingExecution.tmr = setTimeout(() => { // wir erwarten eine antwort auf beide orders innerhalb von 30s !!!
+        log.warn({ intentId: id, symbol, buyEx, sellEx,
+          buyReceived: Boolean(pendingExecution.buy),
+          sellReceived: Boolean(pendingExecution.sell),
+         }, 'pending execution expired');
         pendingExecutions.delete(id);
-        log.warn({ intentId: id, symbol, buyEx, sellEx }, 'pending execution expired');
       }, PENDING_EXECUTION_TIMEOUT_MS);
       pendingExecution.tmr.unref?.();
       pendingExecutions.set(id, pendingExecution); // erst in die map eintragen was wir vorhaben

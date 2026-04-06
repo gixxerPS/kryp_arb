@@ -500,8 +500,14 @@ function handleOrdersChannelMsg(msgObj: BitgetOrdersChannelMsg) {
       continue;
     }
     const qty = Number(row.accBaseVolume);
-    const cumQuoteQty = Number(row.notional);
+    let cumQuoteQty : number = 0.0;
+    if (row.notional != undefined) {
+      cumQuoteQty = Number(row.notional);
+    } else if (row.accBaseVolume !== undefined && row.priceAvg !== undefined) {
+      cumQuoteQty = Number(row.accBaseVolume) * Number(row.priceAvg);
+    }
     const side = row.side === 'buy' ? OrderSides.BUY : OrderSides.SELL;
+    // log.debug({row}, 'before updateBalanceFromOrderData');
     updateBalancesFromOrderData({
       side,
       baseAsset: symInfo.base,
@@ -603,8 +609,9 @@ async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
       }
       try {
         parsed = JSON.parse(raw);
+        // log.debug({ msg: parsed, raw }, 'onMessage');
       } catch (err) {
-        log.error({ err }, 'bitget ws message parse error');
+        log.error({ err }, 'ws message parse error');
         return;
       }
       if (parsed.event === 'login') {
@@ -809,26 +816,26 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
   }
   log.debug({ reqBody, rawOrderResponse: r }, 'placeOrder raw response');
 
-  if (!r) {
-    throw new Error('bitget placeOrder returned empty response');
-  }
+  // if (!r) {
+  //   throw new Error('bitget placeOrder returned empty response');
+  // }
 
-  const orderId = String(r.orderId ?? '');
-  const clientOid = r.clientOid ?? orderParams.orderId;
-  const orderRef: BitgetOrderRef = {
-    symbol: orderParams.symbol,
-    orderId,
-    clientOid,
-    status: OrderStates.UNKNOWN,
-  };
-  if (clientOid) {
-    orderRef.orderChannelTmr = setTimeout(() => {
-      pendingOrderRefs.delete(clientOid);
-      log.warn({ clientOid, orderId, symbol: orderParams.symbol }, 'bitget pending order ref expired before orders channel event');
-    }, ORDER_CHANNEL_PENDING_TTL_MS);
-    orderRef.orderChannelTmr.unref?.();
-    pendingOrderRefs.set(clientOid, orderRef);
-  }
+  // const orderId = String(r.orderId ?? '');
+  // const clientOid = r.clientOid ?? orderParams.orderId;
+  // const orderRef: BitgetOrderRef = {
+  //   symbol: orderParams.symbol,
+  //   orderId,
+  //   clientOid,
+  //   status: OrderStates.UNKNOWN,
+  // };
+  // if (clientOid) {
+  //   orderRef.orderChannelTmr = setTimeout(() => {
+  //     pendingOrderRefs.delete(clientOid);
+  //     log.warn({ clientOid, orderId, symbol: orderParams.symbol }, 'bitget pending order ref expired before orders channel event');
+  //   }, ORDER_CHANNEL_PENDING_TTL_MS);
+  //   orderRef.orderChannelTmr.unref?.();
+  //   pendingOrderRefs.set(clientOid, orderRef);
+  // }
 }
 
 async function cancelOrder(p: CancelOrderParams): Promise<void> {

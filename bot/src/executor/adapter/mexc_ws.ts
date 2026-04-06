@@ -8,6 +8,10 @@ import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { getCanonFromOderSym, getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
+import {
+  debugMexcTopLevelFields,
+  decodeMexcPrivateDealsV3ApiWrapper,
+} from '../../collector/parsers/mexc_protobuf';
 import appBus from '../../bus';
 
 import {
@@ -259,7 +263,7 @@ function handleUserDataStream(msgObj: MexcUserDataMsg): void {
   // fees ermitteln
   const feeAmount = Number(r.feeAmount);
   const feeCurrency = r.feeCurrency;
-  const feeAssetPrice = getAssetPrice(ExchangeIds.bitget, 'MX'); // 15 min genauen preis holen
+  const feeAssetPrice = getAssetPrice(ExchangeIds.mexc, 'MX'); // 15 min genauen preis holen
   let feeUsd = 0;
   if (feeAssetPrice == null) {
     log.warn({ currency: 'MX' }, 'missing cached asset price');
@@ -365,9 +369,19 @@ async function init(_cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
       let parsed: any;
       try {
         parsed = JSON.parse(raw) as MexcUserDataMsg;
+        // log.debug({ msg: parsed, raw }, 'onMessage');
       } catch {
-        log.debug({ raw }, 'mexc user-data ws message');
-        return;
+        try {
+          parsed = decodeMexcPrivateDealsV3ApiWrapper(msg) as MexcUserDataMsg;
+          // log.debug({
+          //   decoded: parsed,
+          //   topLevelFields: debugMexcTopLevelFields(msg),
+          //   raw,
+          // }, 'onMessage protobuf decoded');
+        } catch (err) {
+          log.error({ err, raw }, 'ws message parse error');
+          return;
+        }
       }
       if (parsed.msg === 'PONG') {
         return;
@@ -459,9 +473,9 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
   const path = '/api/v3/order';
   log.debug({ params }, 'ORDER!!!!');
 
-  let response: MexcNewOrderResponse | Record<string, never>;
+  let r: MexcNewOrderResponse | Record<string, never>;
   try {
-    response = await mexcPrivateRest<MexcNewOrderResponse | Record<string, never>>({
+    r = await mexcPrivateRest<MexcNewOrderResponse | Record<string, never>>({
       method: 'POST',
       path,
       params,
@@ -470,7 +484,7 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     log.error({ err, params, path }, 'mexc placeOrder failed');
     throw err;
   }
-  log.debug({ params, rawOrderResponse: response }, 'placeOrder raw response');
+  log.debug({ params, rawOrderResponse: r }, 'placeOrder raw response');
 }
 
 async function cancelOrder(p: CancelOrderParams): Promise<void> {
@@ -502,9 +516,6 @@ async function cancelOrder(p: CancelOrderParams): Promise<void> {
   }
 }
 
-// TODO(mexc): echte User-Data-WS-Anbindung ergaenzen, sobald ListenKey / Protobuf
-// Entscheidung und Konfiguration im Projekt stehen. Bis dahin bildet dieser
-// Entwurf nur den Executor-Adapter mit signierten REST-Orderpfaden ab.
 export const adapter: ExecutorAdapter = {
   init,
   isReady,
