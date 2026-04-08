@@ -1,15 +1,15 @@
 {
   "runtimeState": {
     "today": {
-      "tsMs": 1774296694713,
-      "pnlSum": -0.09251876779196191,
-      "successCount": 5,
+      "tsMs": 1775629744694,
+      "pnlSum": 0,
+      "successCount": 0,
       "failedCount": 0
     },
     "yesterday": {
-      "tsMs": 0,
-      "pnlSum": 0,
-      "successCount": 0,
+      "tsMs": 1775543344694,
+      "pnlSum": 1.261282103771138,
+      "successCount": 8,
       "failedCount": 0
     },
     "blockedRoutes": {}
