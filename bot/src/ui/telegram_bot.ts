@@ -177,13 +177,15 @@ function buildAccountTable({
 
 function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextParams): string {
   const blocks: string[] = [];
-  let totalEstimate : number = 0.0;
+  let totalEstimate: number = 0.0;
+  let totalUsdLike: number = 0.0;
 
   for (const [ex, exCfg] of Object.entries(exchanges)) {
     if (exCfg?.enabled === false) continue;
 
     const exchangeId = ex as ExchangeId;
     const balances = balancesByExchange[exchangeId] ?? {};
+    const usdLikeBalance = Number(balances.USDT ?? 0) + Number(balances.USDC ?? 0);
     const entries = Object.entries(balances)
       .map(([asset, value]) => [asset, Number(value)] as const)
       .filter(([, value]) => Number.isFinite(value))
@@ -191,7 +193,8 @@ function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextP
 
     const estimate = estimateUsdBalance(exchangeId, balances);
     totalEstimate += estimate;
-    blocks.push(`=== ${ex} (${estimate.toFixed(2)} USD) ===`);
+    totalUsdLike += usdLikeBalance;
+    blocks.push(`=== ${ex} (${estimate.toFixed(2)} USD, USD-like ${n(usdLikeBalance, 2)}) ===`);
 
     if (entries.length === 0) {
       blocks.push('no balances');
@@ -204,8 +207,9 @@ function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextP
     }
     blocks.push('');
   }
-  blocks.push(`TOTAL= ${totalEstimate.toFixed(2)} USD`);
 
+  blocks.push(`TOTAL USD-LIKE= ${n(totalUsdLike, 2)} USD`);
+  blocks.push(`TOTAL= ${totalEstimate.toFixed(2)} USD`);
 
   return blocks.join('\n').trim();
 }
