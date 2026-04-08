@@ -1,3 +1,6 @@
+# persistent runtime data
+bot/data/
+
 package-lock.json
 .vscode/
 
