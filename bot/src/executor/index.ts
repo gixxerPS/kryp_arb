@@ -365,42 +365,14 @@ export default async function startExecutor(
   //   });
   // }
 
-  // test intents fuer smoketest
-  setTimeout(() => {
-    const now = Date.now();
-    const intent: TradeIntent = {
-      id: 'smoke-axs-10',
-      tsMs: now,
-      valid_until: new Date(now + 30_000),
-      symbol: 'AXS_USDT',
-      
-      buyEx: ExchangeIds.bitget,
-      sellEx: ExchangeIds.mexc,
-      
-      targetQty: 10,
-      net: 0.012,
-      qBuy: 11.14,
-      qSell: 11.24,
-      buyPxEff: 1.114,
-      sellPxEff: 1.124,
-      expectedPnl: 0.10,
-      buyAsk: 1.114,
-      sellBid: 1.124,
-      buyPxWorst: 1.114,
-      sellPxWorst: 1.124,
-    };
-    log.debug({ intent }, 'trade:intent TEST');
-    handleIntent(intent).catch((err) => {
-      log.error({ err, intent }, 'executor TEST intent failed');
-    });
-  }, 1_000);
-    
-    let busy = false;
-    
-    async function handleIntent(intent: TradeIntent) {
-      if (busy) {
-        log.warn({ reason:'executor busy', intent }, 'dropping intent');
-        return;
+  
+  
+  let busy = false;
+  
+  async function handleIntent(intent: TradeIntent) {
+    if (busy) {
+      log.warn({ reason:'executor busy', intent }, 'dropping intent');
+      return;
     }
     busy = true;
     try {
@@ -570,7 +542,7 @@ export default async function startExecutor(
         log.warn({ intentId: id, symbol, buyEx, sellEx,
           buyReceived: Boolean(pendingExecution.buy),
           sellReceived: Boolean(pendingExecution.sell),
-         }, 'pending execution expired');
+          }, 'pending execution expired');
         pendingExecutions.delete(id);
       }, PENDING_EXECUTION_TIMEOUT_MS);
       pendingExecution.tmr.unref?.();
@@ -597,158 +569,6 @@ export default async function startExecutor(
       sellAd.placeOrder(sellParams).catch((err) => {
         log.error({ err, intentId: id, exchange: sellEx, sellParams }, 'sell placeOrder failed');
       });
-      // Promises sofort starten (parallel), aber Fehler in op() abfangen
-      
-      //=======================================================================
-      // 3) exchange antwort auswerten
-      //=======================================================================
-      // const buyOk  = isFulfilled(buyR) // promise result
-      //   && buyR.value.status === OrderStates.FILLED;       // order result
-      // const sellOk = isFulfilled(sellR) // promise result
-      //   && sellR.value.status === OrderStates.FILLED;      // order result
-
-      // let arbQty=0.0, pnl=0.0, deltaBalanceBase=0.0;
-      // if (buyOk && sellOk) {
-      //   // nur qty die auf beiden legs ausgefuehrt wurde in die pnl berechnung einbeziehen
-      //   arbQty = Math.min(sellR.value.executedQty, buyR.value.executedQty);
-
-      //   // anteilige fee berechnen der rest gehoert zu delta balance anteil
-      //   const buyFeeArb = arbQty / buyR.value.executedQty * buyR.value.fee_usd;
-      //   const sellFeeArb = arbQty / sellR.value.executedQty * sellR.value.fee_usd;
-
-      //   pnl = (sellR.value.priceVwap  - buyR.value.priceVwap) * arbQty - buyFeeArb - sellFeeArb;
-      //     // sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
-        
-      //   // bestand der sich aendert / driftet
-      //   // +: mehr gekauft als verkauft => bestand wird aufgebaut
-      //   // -: mehr verkauft als gekauft => bestand wird abgebaut
-      //   deltaBalanceBase = buyR.value.executedQty - sellR.value.executedQty;
-      // }
-      // updateRuntimeState({ buyOk, sellOk, pnl });
-      // if (buyOk) {
-      //   buyAd.updateBalancesFromOrderData({
-      //     side: OrderSides.BUY,
-      //     baseAsset: buyExSymInfo.base,
-      //     quoteAsset: buyExSymInfo.quote,
-      //     executedQty: buyR.value.executedQty ?? orderTargetQty,
-      //     cummulativeQuoteQty: buyR.value.cummulativeQuoteQty,
-      //   });
-      // }
-      // if (sellOk) {
-      //   sellAd.updateBalancesFromOrderData({
-      //     side: OrderSides.SELL,
-      //     baseAsset: sellExSymInfo.base,
-      //     quoteAsset: sellExSymInfo.quote,
-      //     executedQty: sellR.value.executedQty ?? orderTargetQty,
-      //     cummulativeQuoteQty: sellR.value.cummulativeQuoteQty,
-      //   });
-      // }
-      // if (buyOk && sellOk) {
-      //   log.debug({
-      //       id,
-      //       symbol,
-      //       buyEx,
-      //       sellEx,
-      //       pnl,
-      //       deltaBalanceBase,
-      //       buyQ               : buyR.value.cummulativeQuoteQty,
-      //       buyP               : buyR.value.priceVwap,
-      //       buyFeeUsd          : buyR.value.fee_usd,
-      //       sellQ              : sellR.value.cummulativeQuoteQty,
-      //       sellP              : sellR.value.priceVwap,
-      //       sellFeeUsd         : sellR.value.fee_usd,
-      //     },
-      //     'orders executed'
-      //   );
-      
-      //   const ordersOkEvent: TradeOrdersOkEvent = {
-      //     id, // intent_id
-      //     ts: new Date(),
-      //     symbol,
-      //     buy: buyR.value,
-      //     sell: sellR.value,
-      //     pnl,
-      //     deltaBalanceBase
-      //   };
-
-      //   bus.emit('trade:orders_ok', ordersOkEvent);
-      
-    //   } else if (buyOk && !sellOk) {
-    //     log.error({
-    //       id,
-    //       symbol,
-    //       buyEx,
-    //       sellEx,
-    //       sellErr: sellR.status === 'rejected' ? sellR.reason : null,
-    //     }, 'sell failed after buy placed');
-    //     if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
-    //       return;
-    //     }
-    //     // Minimal: versuchen BUY zu canceln (wenn market sofort fillt, bringt cancel nichts, 
-    //     // aber bei rejected/partial schon)
-    //     const resCancelBuy = await safeCall(() => buyAd.cancelOrder({ 
-    //       symbol: buyParams.symbol, orderId: buyParams.orderId }) );
-    //     if (!resCancelBuy.ok) {
-    //       log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId,
-    //        }, 'cancel buy failed');
-    //       // wenn buy auch nicht mehr gecancelt werden konnte, dann wieder verkaufen, da sonst die
-    //       // bestaende weglaufen
-    //       const resellParams : PlaceOrderParams = {
-    //         symbol: buyParams.symbol,
-    //         side: OrderSides.SELL,
-    //         type: OrderTypes.MARKET,
-    //         quantity: buyParams.quantity,
-    //         orderId: `${buyParams.orderId}-RS`,
-    //       }
-    //       const resResell = await safeCall(() => buyAd.placeOrder(resellParams) );
-    //       if (!resResell.ok) {
-    //         log.warn({ intentId: id, buyEx, symbol, orderId: buyParams.orderId }, 'resell failed');
-    //       }
-    //     }
-    //   } else if (!buyOk && sellOk) {
-    //     log.error({
-    //       id,
-    //       symbol,
-    //       buyEx,
-    //       sellEx,
-    //       buyErr: buyR.status === 'rejected' ? buyR.reason : null,
-    //     }, 'buy failed after sell placed');
-    //     if (!CFG_AUTO_FIX_FAILED_ORDERS) { // nur wenn auch konfiguriert, versuchen zu reparieren
-    //       return;
-    //     }
-    //     // Minimal: versuchen SELL zu canceln (wenn market sofort fillt, bringt cancel nichts, 
-    //     // aber bei rejected/partial schon)
-    //     const resCancelSell = await safeCall(() => sellAd.cancelOrder({ 
-    //       symbol: sellParams.symbol, orderId: sellParams.orderId }) );
-    //     if (!resCancelSell.ok) {
-    //       log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId }, 
-    //         'cancel sell failed');
-
-    //       // wenn sell auch nicht mehr gecancelt werden konnte, dann wieder kaufen, da sonst die
-    //       // bestaende weglaufen
-    //       const reBuyParams : PlaceOrderParams = {
-    //         symbol: sellParams.symbol,
-    //         side: OrderSides.BUY,
-    //         type: OrderTypes.MARKET,
-    //         quantity: sellParams.quantity,
-    //         orderId: `${sellParams.orderId}-RB`,
-    //       }
-    //       const resRebuy = await safeCall(() => sellAd.placeOrder(reBuyParams) );
-    //       if (!resRebuy.ok) {
-    //         log.warn({ intentId: id, sellEx, symbol, orderId: sellParams.orderId, }, 
-    //           'rebuy failed');
-    //       }
-    //     }
-    //   } else { // beide failed
-    //     log.warn({
-    //         id,
-    //         symbol,
-    //         buyEx,
-    //         sellEx,
-    //         // buyErr: buyR.reason,
-    //         // sellErr: sellR.reason,
-    //       }, 'both orders failed');
-    //   }
     } catch (err) {
       log.error({ err, intent }, 'handle intent failed');
     } finally {
