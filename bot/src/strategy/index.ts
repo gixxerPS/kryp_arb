@@ -9,6 +9,9 @@ import type {
   ComputeIntentsForSym,
   L2Snapshot,
   StrategyDeps,
+  StrategyHandle,
+  StrategyLatestMapEntry,
+  StrategyLatestMapView,
   TradeIntent,
   TradeIntentDraft,
 } from '../types/strategy';
@@ -47,7 +50,18 @@ function formatSnapshotForDebug(snapshot: L2Snapshot): Record<string, unknown> {
   };
 }
 
-export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): void {
+function buildLatestMapEntry(snapshotKey: string, snapshot: L2Snapshot): StrategyLatestMapEntry {
+  return {
+    snapshotKey,
+    exchange: snapshot.exchange,
+    symbol: snapshot.symbol,
+    tsMs: snapshot.tsMs,
+    bids: formatLevelsInline(snapshot.bids),
+    asks: formatLevelsInline(snapshot.asks),
+  };
+}
+
+export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): StrategyHandle {
   initStrategyEngine(cfg); // werte vorberechnen fuer schnellen hotpath
 
   const bus = deps.bus ?? appBus;
@@ -70,6 +84,23 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   const latest = new Map<string, L2Snapshot>();
   const lastIntentAt = new Map<string, number>();
   const lastRunAt = new Map<string, number>();
+
+  function getLatestMap(symbol?: string): StrategyLatestMapView {
+    const normalizedSymbol = symbol?.trim();
+    const out: StrategyLatestMapView = {};
+
+    for (const [snapshotKey, snapshot] of latest.entries()) {
+      if (normalizedSymbol && snapshot.symbol !== normalizedSymbol) {
+        continue;
+      }
+      out[snapshotKey] = buildLatestMapEntry(snapshotKey, snapshot);
+    }
+    log.debug(
+      normalizedSymbol ? { symbol: normalizedSymbol, latest: out } : { latest: out },
+      normalizedSymbol ? 'latest strategy map for symbol' : 'latest strategy map'
+    );
+    return out;
+  }
 
   function tryComputeForSymbol(sym: string): void {
     if (!symbolsSet.has(sym)) return;
@@ -129,4 +160,8 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
       qMinUsdt: cfg.bot.q_min_usdt,
       qMaxUsdt: cfg.bot.q_max_usdt,
   },'started');
+
+  return {
+    getLatestMap,
+  };
 }

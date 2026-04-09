@@ -63,3 +63,18 @@ export type StrategyDeps = {
   nowFn?: () => number;
   uuidFn?: () => string;
 };
+
+export type StrategyLatestMapEntry = {
+  snapshotKey: string;
+  exchange: ExchangeId;
+  symbol: string;
+  tsMs: number;
+  bids: string;
+  asks: string;
+};
+
+export type StrategyLatestMapView = Record<string, StrategyLatestMapEntry>;
+
+export interface StrategyHandle {
+  getLatestMap(symbol?: string): StrategyLatestMapView;
+}

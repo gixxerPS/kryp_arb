@@ -91,7 +91,7 @@ async function main() {
     log.warn({ exchange: 'mexc' }, 'exchange disabled. no data collection');
   }
 
-  startStrategy(cfg);
+  const strategy = startStrategy(cfg);
   
   // executor (private exchange APIs: balances, user streams, orders)
   const executor = await startExecutor({
@@ -99,7 +99,7 @@ async function main() {
     restoredRuntimeState: persistentStore.runtimeState ?? null,
   });
 
-  const app = { cfg, executor}; // zentraler app-context für UI und andere Module
+  const app = { cfg, executor, strategy }; // zentraler app-context für UI und andere Module
   
   if (cfg.ui.telegram_enabled) {
     initTelegramBot({cfg, app}); // TODO: noch in (app) umbauen

@@ -20,6 +20,7 @@ import type {
   ExecutorRuntimeState,
 } from '../types/executor';
 import type { TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
+import type { StrategyHandle } from '../types/strategy';
 
 const log = getLogger('ui').child({ type: 'telegram' });
 
@@ -57,6 +58,7 @@ type ExchangeStateHandle = {
 type AppContext = {
   cfg: AppConfig;
   executor: ExecutorHandle;
+  strategy: StrategyHandle;
 };
 
 type BuildStatusTableParams = {
@@ -194,23 +196,20 @@ function buildBalancesText({ exchanges, balancesByExchange }: BuildBalancesTextP
     const estimate = estimateUsdBalance(exchangeId, balances);
     totalEstimate += estimate;
     totalUsdLike += usdLikeBalance;
-    blocks.push(`=== ${ex} (${estimate.toFixed(2)} USD, USD-like ${n(usdLikeBalance, 2)}) ===`);
+    blocks.push(`=== ${ex} (${estimate.toFixed(2)} USD, USDT/C ${n(usdLikeBalance, 2)}) ===`);
 
     if (entries.length === 0) {
       blocks.push('no balances');
       blocks.push('');
       continue;
     }
-
     for (const [asset, value] of entries) {
       blocks.push(`${pad(asset, 10)} ${n(value)}`);
     }
     blocks.push('');
   }
-
-  blocks.push(`TOTAL USD-LIKE= ${n(totalUsdLike, 2)} USD`);
-  blocks.push(`TOTAL= ${totalEstimate.toFixed(2)} USD`);
-
+  blocks.push(`TOTAL USDT/C balance = ${n(totalUsdLike, 2)} USD`);
+  blocks.push(`TOTAL value = ${totalEstimate.toFixed(2)} USD`);
   return blocks.join('\n').trim();
 }
 
@@ -276,6 +275,19 @@ function buildTradeWarnPrecheckText(ev: TradeWarnPrecheckEvent): string {
   ].join('\n');
 }
 
+function buildLatestMapText(symbol: string, latestMap: ReturnType<StrategyHandle['getLatestMap']>): string {
+  const body = Object.keys(latestMap).length
+    ? JSON.stringify(latestMap, null, 2)
+    : '{}';
+
+  return [
+    `latest map @ ${fmtNowIsoLocal()}`,
+    `symbol=${symbol}`,
+    '',
+    body,
+  ].join('\n');
+}
+
 function buildCommandsText(): string {
   return [
     'COMMANDS',
@@ -283,6 +295,7 @@ function buildCommandsText(): string {
     '/cmd    - Alias fuer /help',
     '/status - zeigt collector/account/runtime',
     '/balance - zeigt alle balances je boerse',
+    '/getlatest SYMBOL - zeigt latest strategy map fuer das Symbol',
     '/shutup - stoppt unaufgeforderte Push-Nachrichten',
     '/speak  - aktiviert unaufgeforderte Push-Nachrichten',
     '/kill   - setzt Trading auf OFF',
@@ -398,6 +411,25 @@ export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext 
       await bot.sendMessage(msg.chat.id, `<pre>${body}</pre>`, { parse_mode: 'HTML' });
     } catch (err) {
       log.error({ err }, 'telegram /balance failed');
+    }
+  });
+
+  bot.onText(/^\/getlatest\s+(\S+)$/, async (msg, match) => {
+    if (!isAllowed(msg)) {
+      log.error({ userId: msg.chat.id }, 'user id not authorized');
+      return;
+    }
+    const symbol = match?.[1]?.trim();
+    if (!symbol) {
+      await bot.sendMessage(msg.chat.id, 'Usage: /getlatest SYMBOL');
+      return;
+    }
+    try {
+      const latestMap = app.strategy.getLatestMap(symbol);
+      const body = buildLatestMapText(symbol, latestMap);
+      await bot.sendMessage(msg.chat.id, `<pre>${body}</pre>`, { parse_mode: 'HTML' });
+    } catch (err) {
+      log.error({ err, symbol }, 'telegram /getlatest failed');
     }
   });
 
