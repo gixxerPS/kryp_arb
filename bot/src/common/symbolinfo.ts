@@ -63,6 +63,11 @@ export interface StepMeta {
   stepInt: number;
 }
 
+export type FloorByStepMetaResult = {
+  q: number;
+  qStr: string;
+};
+
 function decimalsFromTickStr(tickStr: string): number {
   const s = String(tickStr);
   const dot = s.indexOf(".");
@@ -110,6 +115,17 @@ export function compileStepMeta(stepStr?: string | number, qtyPrecision?: number
   }
 
   return { decimals: 0, factor: 1, stepInt: 0 };
+}
+
+export function floorByStepMeta(value: number, meta: StepMeta): FloorByStepMetaResult {
+  const { factor, stepInt, decimals } = meta;
+  const safeFactor = factor > 0 ? factor : 1;
+  const safeStepInt = stepInt > 0 ? stepInt : 1;
+  const safeDecimals = decimals >= 0 ? decimals : 0;
+  const vInt = Math.floor(Number(value) * safeFactor);
+  const qInt = Math.floor(vInt / safeStepInt) * safeStepInt;
+  const q = qInt / safeFactor;
+  return { q, qStr: q.toFixed(safeDecimals) };
 }
 
 export function compileRules(raw: RawSymbolInfo | null | undefined): CompiledRules | null {

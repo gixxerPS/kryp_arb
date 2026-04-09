@@ -1,11 +1,7 @@
-import type { ExSymbolInfo, StepMeta } from '../types/symbolinfo';
+import { floorByStepMeta } from '../common/symbolinfo';
+import type { ExSymbolInfo } from '../types/symbolinfo';
 import type { OrderSide } from '../types/common';
 import type { TradeIntent } from '../types/strategy';
-
-type FloorByMetaResult = {
-  q: number;
-  qStr: string;
-};
 
 type PrecheckExchangeState = {
   enabled: boolean;
@@ -53,24 +49,6 @@ export type FloorQuantityQToBalanceResult = {
   q: number;
 };
 
-/**
- * bringt beliebige zahl in von der boerse vorgegebenes "zahlenraster". verlustfrei und schnell
- *
- * @param {Number} value - e.g. 1.2345
- * @param {Object} meta - {decimals: 2, factor: 100, stepInt:5}
- * @returns {{
- *   q    : Number, // e.g. 1.20
- *   qStr : String, // e.g. '1.20'
- * }}
- */
-function floorByMeta(value: number, meta: StepMeta): FloorByMetaResult {
-  const { factor, stepInt, decimals } = meta;
-  const vInt = Math.floor(Number(value) * factor); // floor(1.2345 * 100) = 123
-  const qInt = Math.floor(vInt / stepInt) * stepInt; // floor(123 / 5) * 5 = 24 * 5 = 120
-  const q = qInt / factor; // 120 / 100 = 1.20
-  return { q, qStr: q.toFixed(decimals) };
-}
-
 export function floorQuantityQToBalance({
   intent,
   side,
@@ -103,7 +81,7 @@ export function floorQuantityQToBalance({
     ? Math.max(0, (exBalanceQuote - balance_minimum_usdt) / pxEff)
     : Math.max(0, exBalanceBase);
   const cappedQty = Math.min(intent.targetQty, rawQtyCap);
-  const { q: fixedTargetQty, qStr: fixedTargetQtyStr } = floorByMeta(cappedQty, prepSymbolInfo.rules.qty);
+  const { q: fixedTargetQty, qStr: fixedTargetQtyStr } = floorByStepMeta(cappedQty, prepSymbolInfo.rules.qty);
   const fixedQ = fixedTargetQty * pxEff;
   const minQty = prepSymbolInfo.rules.minQty == null ? 0 : Number(prepSymbolInfo.rules.minQty);
   const minNotional = Number(prepSymbolInfo.rules.minNotional ?? 0);
@@ -173,7 +151,7 @@ export function marketOrderPrecheckOk({
   const rules = prepSymbolInfo.rules;
   const minQty = rules.minQty == null ? 0 : Number(rules.minQty);
   const maxQty = rules.maxQty == null ? Number.POSITIVE_INFINITY : Number(rules.maxQty);
-  const { q: fixedTargetQty, qStr: fixedTargetQtyStr } = floorByMeta(targetQty, rules.qty);
+  const { q: fixedTargetQty, qStr: fixedTargetQtyStr } = floorByStepMeta(targetQty, rules.qty);
 
   if (q < rules.minNotional) {
     ret.reason = 'EX_MIN_NOTIONAL';

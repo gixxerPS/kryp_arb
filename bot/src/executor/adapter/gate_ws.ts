@@ -12,7 +12,7 @@ import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { makeClientId } from '../../common/util';
-import { getCanonFromOderSym, getEx } from '../../common/symbolinfo';
+import { compileStepMeta, floorByStepMeta, getCanonFromOderSym, getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
 import appBus from '../../bus';
 
@@ -98,6 +98,19 @@ type GateStreamMsg<T> = {
   event?: string;
   result?: T[];
 };
+
+function getGateQuoteAmountString(symbol: string, q: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.gate);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.gate) : null;
+  const meta = compileStepMeta(exInfo?.rules?.priceTick ?? 0, 8);
+  return floorByStepMeta(q, meta).qStr.replace(/\.?0+$/, '');
+}
+
+function getGateBaseAmountString(symbol: string, quantity: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.gate);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.gate) : null;
+  return floorByStepMeta(quantity, exInfo?.rules?.qty ?? compileStepMeta(undefined, 8)).qStr.replace(/\.?0+$/, '');
+}
 
 function sha512Hex(data: string): string {
   return crypto.createHash('sha512').update(data).digest('hex');
@@ -607,9 +620,9 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     if (orderParams.q === undefined) {
       throw new Error('gate market buy requires q (quote amount)');
     }
-    reqParam.amount = String(orderParams.q);
+    reqParam.amount = getGateQuoteAmountString(orderParams.symbol, orderParams.q);
   } else if (orderParams.side === OrderSides.SELL) {
-    reqParam.amount = String(orderParams.quantity);
+    reqParam.amount = getGateBaseAmountString(orderParams.symbol, orderParams.quantity);
   }
   log.debug({reqParam}, 'ORDER!!!!');
   let r: GatePlaceOrderResult;

@@ -6,7 +6,7 @@ const log = getLogger('executor').child({ exchange: 'mexc' });
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
-import { getCanonFromOderSym, getEx } from '../../common/symbolinfo';
+import { compileStepMeta, floorByStepMeta, getCanonFromOderSym, getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
 import {
   debugMexcTopLevelFields,
@@ -103,6 +103,19 @@ function buildQuery(params: Record<string, string | number | undefined>): string
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
     .join('&');
+}
+
+function getMexcQuoteOrderQtyString(symbol: string, q: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.mexc);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.mexc) : null;
+  const meta = compileStepMeta(exInfo?.rules?.priceTick ?? 0, 8);
+  return floorByStepMeta(q, meta).qStr.replace(/\.?0+$/, '');
+}
+
+function getMexcQuantityString(symbol: string, quantity: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.mexc);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.mexc) : null;
+  return floorByStepMeta(quantity, exInfo?.rules?.qty ?? compileStepMeta(undefined, 8)).qStr.replace(/\.?0+$/, '');
 }
 
 async function mexcPrivateRest<T>(opts: {
@@ -466,9 +479,9 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     newClientOrderId: orderParams.orderId,
   };
   if (orderParams.type === OrderTypes.MARKET && orderParams.side === OrderSides.BUY && orderParams.q !== undefined) {
-    params.quoteOrderQty = String(orderParams.q);
+    params.quoteOrderQty = getMexcQuoteOrderQtyString(orderParams.symbol, orderParams.q);
   } else {
-    params.quantity = String(orderParams.quantity);
+    params.quantity = getMexcQuantityString(orderParams.symbol, orderParams.quantity);
   }
   const path = '/api/v3/order';
   log.debug({ params }, 'ORDER!!!!');
