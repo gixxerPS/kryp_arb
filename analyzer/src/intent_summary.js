@@ -4,7 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 const { Client } = require('pg');
 const log = require('./logger').getLogger('app');
 
-const PERIOD = '24 days';
+const PERIOD = '2 days';
 const TOP_ROUTES = 10;
 const RECENT_LIMIT = 10;
 

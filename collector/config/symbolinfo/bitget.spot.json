@@ -116,6 +116,22 @@
       "maxQty": 900000000000000000000,
       "minNotional": 1
     },
+    "MONUSDT": {
+      "symbol": "MONUSDT",
+      "baseAsset": "MON",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 1,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.1",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0,
+      "maxQty": 900000000000000000000,
+      "minNotional": 1
+    },
     "VETUSDT": {
       "symbol": "VETUSDT",
       "baseAsset": "VET",

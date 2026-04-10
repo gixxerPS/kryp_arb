@@ -3,9 +3,6 @@ import path from 'path';
 require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
 
 import { getPublicIp } from './common/util';
-import dns from 'node:dns';
-dns.setDefaultResultOrder('ipv4first');
-
 import { loadConfig } from './common/config';
 import { initLogger, getLogger } from './common/logger';
 initLogger();

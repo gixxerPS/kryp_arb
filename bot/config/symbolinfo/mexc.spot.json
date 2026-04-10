@@ -185,6 +185,21 @@
       "maxQty": null,
       "minNotional": null
     },
+    "MONUSDT": {
+      "symbol": "MONUSDT",
+      "baseAsset": "MON",
+      "quoteAsset": "USDT",
+      "status": "1",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 2,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": null,
+      "minQty": null,
+      "maxQty": null,
+      "minNotional": null
+    },
     "POLUSDT": {
       "symbol": "POLUSDT",
       "baseAsset": "POL",

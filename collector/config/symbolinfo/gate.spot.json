@@ -100,6 +100,22 @@
       "maxQty": null,
       "minNotional": 3
     },
+    "MON_USDT": {
+      "symbol": "MON_USDT",
+      "baseAsset": "MON",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 0,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "1",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 1,
+      "maxQty": null,
+      "minNotional": 3
+    },
     "ARB_USDT": {
       "symbol": "ARB_USDT",
       "baseAsset": "ARB",

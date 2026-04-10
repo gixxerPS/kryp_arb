@@ -9,6 +9,6 @@
   "q_max_usdt": 500,
   "balance_minimum_usdt": 10,
   "auto_fix_failed_orders": false,
-  "execution_symbols": ["AXS_USDT"],
+  "execution_symbols": ["AXS_USDT", "MON_USDT"],
   "execution_exchanges": ["binance", "gate", "bitget", "mexc"]
 }

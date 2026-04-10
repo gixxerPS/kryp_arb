@@ -77,10 +77,26 @@ async function main() {
     wantedInternal
   };
 
-  await runBinance(ctx);
-  await runGate(ctx);
-  await runBitget(ctx);
-  await runMexc(ctx);
+  try {
+    await runBinance(ctx);
+  } catch (e) {
+    console.error(e);
+  }
+  try {
+    await runGate(ctx);
+  } catch (e) {
+    console.error(e);
+  }
+  try {
+    await runBitget(ctx);
+  } catch (e) {
+    console.error(e);
+  }
+  try {
+    await runMexc(ctx);
+  } catch (e) {
+    console.error(e);
+  }
 
   console.log("[symbolinfo] done");
 }
