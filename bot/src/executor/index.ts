@@ -539,10 +539,14 @@ export default async function startExecutor(
         createdAtTsMs: Date.now(),
       };
       pendingExecution.tmr = setTimeout(() => { // wir erwarten eine antwort auf beide orders innerhalb von 30s !!!
+        const buyOk = Boolean(pendingExecution.buy);
+        const sellOk = Boolean(pendingExecution.sell);
+        const pnl = 0.0;
         log.warn({ intentId: id, symbol, buyEx, sellEx,
-          buyReceived: Boolean(pendingExecution.buy),
-          sellReceived: Boolean(pendingExecution.sell),
+          buyReceived: buyOk,
+          sellReceived: sellOk,
           }, 'pending execution expired');
+        updateRuntimeState({ buyOk, sellOk, pnl });
         pendingExecutions.delete(id);
       }, PENDING_EXECUTION_TIMEOUT_MS);
       pendingExecution.tmr.unref?.();

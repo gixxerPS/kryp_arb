@@ -77,6 +77,26 @@ type BuildBalancesTextParams = {
   balancesByExchange: ExecutorBalancesByExchange;
 };
 
+type ErrorLike = {
+  name?: string;
+  message?: string;
+  stack?: string;
+  code?: string;
+  errno?: string | number;
+  syscall?: string;
+  address?: string;
+  port?: string | number;
+  hostname?: string;
+  host?: string;
+  method?: string;
+  path?: string;
+  href?: string;
+  statusCode?: number;
+  response?: unknown;
+  cause?: unknown;
+  errors?: unknown[];
+};
+
 function parseAllowedUserIds(env?: string): Set<number> {
   return new Set(
     (env ?? '')
@@ -302,6 +322,90 @@ function buildCommandsText(): string {
   ].join('\n');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function buildTelegramErrorDetails(err: unknown, depth = 0): Record<string, unknown> {
+  if (depth > 4) return { truncated: true };
+  if (err instanceof AggregateError) {
+    return {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      errors: Array.from(err.errors ?? []).map((item) => buildTelegramErrorDetails(item, depth + 1)),
+    };
+  }
+  if (err instanceof Error) {
+    const errorLike = err as ErrorLike;
+    const details: Record<string, unknown> = {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+    };
+
+    for (const key of [
+      'code',
+      'errno',
+      'syscall',
+      'address',
+      'port',
+      'hostname',
+      'host',
+      'method',
+      'path',
+      'href',
+      'statusCode',
+    ] as const) {
+      const value = errorLike[key];
+      if (value != null) details[key] = value;
+    }
+
+    if (Array.isArray(errorLike.errors) && errorLike.errors.length > 0) {
+      details.errors = errorLike.errors.map((item) => buildTelegramErrorDetails(item, depth + 1));
+    }
+    if (errorLike.cause != null) {
+      details.cause = buildTelegramErrorDetails(errorLike.cause, depth + 1);
+    }
+    if (isRecord(errorLike.response)) {
+      details.response = errorLike.response;
+    }
+    return details;
+  }
+  if (isRecord(err)) {
+    const record = err as Record<string, unknown>;
+    const details: Record<string, unknown> = {};
+    for (const key of [
+      'type',
+      'name',
+      'message',
+      'code',
+      'errno',
+      'syscall',
+      'address',
+      'port',
+      'hostname',
+      'host',
+      'method',
+      'path',
+      'href',
+      'statusCode',
+    ]) {
+      if (record[key] != null) details[key] = record[key];
+    }
+    if (Array.isArray(record.errors) && record.errors.length > 0) {
+      details.errors = record.errors.map((item) => buildTelegramErrorDetails(item, depth + 1));
+    }
+    if (record.cause != null) {
+      details.cause = buildTelegramErrorDetails(record.cause, depth + 1);
+    }
+    if (record.stack != null) details.stack = record.stack;
+    if (record.response != null) details.response = record.response;
+    return Object.keys(details).length > 0 ? details : { value: record };
+  }
+  return { value: err };
+}
+
 export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext }): TelegramBotLike | null {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -316,7 +420,7 @@ export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext 
   }
 
   const bot = new TelegramBot(token, {
-    polling: { interval: 2000, params: { timeout: 30 } },
+    polling: { interval: 5000, params: { timeout: 30 } },
   });
 
   const exState = getExState() as ExchangeStateHandle;
@@ -457,7 +561,7 @@ export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext 
   });
 
   bot.on('polling_error', (err) => {
-    log.warn({ err }, 'telegram polling error');
+    log.warn({ err, errDetails: buildTelegramErrorDetails(err) }, 'telegram polling error');
   });
 
   log.info({}, 'telegram bot started');
