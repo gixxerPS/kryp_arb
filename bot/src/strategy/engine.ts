@@ -20,6 +20,12 @@ type EngineRuntime = {
   slippage: number;
   qMin: number;
   qMax: number;
+  overrides: {
+    addRawSpreadBuffer: {
+      byExchange: Partial<Record<ExchangeId, number>>;
+      bySymbol: Record<string, number>;
+    };
+  };
 };
 
 let runtime: EngineRuntime | null = null;
@@ -30,11 +36,46 @@ export function initStrategyEngine(cfg: AppConfig): void {
     slippage: Number(cfg.bot.slippage_pct) * 0.01,
     qMin: Number(cfg.bot.q_min_usdt),
     qMax: Number(cfg.bot.q_max_usdt),
+    overrides: {
+      addRawSpreadBuffer: {
+        byExchange: Object.fromEntries(
+          Object.entries(cfg.bot.overrides?.add_raw_spread_buffer_pct?.by_exchange ?? {}).map(([exchange, pct]) => [
+            exchange,
+            Number(pct) * 0.01,
+          ])
+        ) as Partial<Record<ExchangeId, number>>,
+        bySymbol: Object.fromEntries(
+          Object.entries(cfg.bot.overrides?.add_raw_spread_buffer_pct?.by_symbol ?? {}).map(([symbol, pct]) => [
+            symbol,
+            Number(pct) * 0.01,
+          ])
+        ),
+      },
+    },
   };
 }
 
 function rawSpread(buyAsk: number, sellBid: number): number {
   return (sellBid - buyAsk) / buyAsk;
+}
+
+function getAddRawSpreadBuffer(
+  {
+    sym,
+    buyEx,
+    sellEx,
+    rt,
+  }: {
+    sym: string;
+    buyEx: ExchangeId;
+    sellEx: ExchangeId;
+    rt: EngineRuntime;
+  }
+): number {
+  const overrides = rt.overrides.addRawSpreadBuffer;
+  return (overrides.bySymbol[sym] ?? 0)
+    + (overrides.byExchange[buyEx] ?? 0)
+    + (overrides.byExchange[sellEx] ?? 0);
 }
 
 // fuer 10 levels noch OK zu iterieren
@@ -218,7 +259,8 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       const buyFee = getEx(sym, buyEx)!.taker_fee;
       const sellFee = getEx(sym, sellEx)!.taker_fee;
       const raw = rawSpread(buyAsk, sellBid);
-      const net1 = raw - (buyFee + sellFee + rt.rawBuffer);
+      const addRawBuffer = getAddRawSpreadBuffer({ sym, buyEx, sellEx, rt }); // z.b. fuer langsame exchanges oder toxische paare
+      const net1 = raw - (buyFee + sellFee + rt.rawBuffer + addRawBuffer);
       if (net1 <= 0) {
         continue;
       }

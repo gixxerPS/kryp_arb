@@ -535,7 +535,7 @@ function handleOrdersChannelMsg(msgObj: BitgetOrdersChannelMsg) {
       side,
       orderId: row.orderId,
       clientOrderId: row.clientOid, // sollte intent id entsprechen
-      transactTime: Number(row.fillTime),
+      transactTime: Number(row.fillTime ?? row.uTime ?? row.cTime ?? Date.now()),
       executedQty: qty,
       cummulativeQuoteQty: cumQuoteQty,
       priceVwap: Number(row.priceAvg),
