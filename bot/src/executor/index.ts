@@ -150,6 +150,7 @@ export default async function startExecutor(
   const pendingExecutions = new Map<string, PendingExecution>();
   const PENDING_EXECUTION_TIMEOUT_MS = 30_000;
   const enabledExecutionSymbols = new Set(cfg.bot.execution_symbols ?? []);
+  const restrictExecutionSymbols = enabledExecutionSymbols.size > 0;
 
   function updateRuntimeState(params: UpdateRuntimeStateParams): void {
     if (params.buyOk && params.sellOk) {
@@ -227,7 +228,7 @@ export default async function startExecutor(
     const buyOk = buyR?.status === OrderStates.FILLED;       // order result
     const sellOk = sellR?.status === OrderStates.FILLED;      // order result
     if (buyOk && sellOk) {
-      let arbQty=0.0, deltaBalanceBase=0.0, buyFeeArb=0.0, sellFeeArb=0.0, deltaBalancePnl=0.0;
+      let arbQty=0.0, deltaBalanceBase=0.0, buyFeeArb=0.0, sellFeeArb=0.0;
       // nur qty die auf beiden legs ausgefuehrt wurde in die pnl berechnung einbeziehen
       arbQty = Math.min(sellR.executedQty, buyR.executedQty);
 
@@ -236,22 +237,11 @@ export default async function startExecutor(
         buyFeeArb = arbQty / buyR.executedQty * buyR.fee_usd;
         sellFeeArb = arbQty / sellR.executedQty * sellR.fee_usd;
       }
-
-      // sellR.value.cummulativeQuoteQty - buyR.value.cummulativeQuoteQty - buyR.value.fee_usd - sellR.value.fee_usd
-      
       // bestand der sich aendert / driftet
       // +: mehr gekauft als verkauft => bestand wird aufgebaut
       // -: mehr verkauft als gekauft => bestand wird abgebaut
       deltaBalanceBase = buyR.executedQty - sellR.executedQty;
-
-      if (deltaBalanceBase < 0.0) { 
-        // mehr verkauft, taeuscht scheingewinn vor, also abziehen
-        deltaBalancePnl = sellR.priceVwap * deltaBalanceBase;
-      } else if (deltaBalanceBase > 0.0) {
-        // mehr gekauft, taeuscht scheinverlust vor, also addieren
-        deltaBalancePnl = buyR.priceVwap * deltaBalanceBase;
-      }
-      pnl = (sellR.priceVwap  - buyR.priceVwap) * arbQty - buyFeeArb - sellFeeArb + deltaBalancePnl;
+      pnl = (sellR.priceVwap  - buyR.priceVwap) * arbQty - buyFeeArb - sellFeeArb;
       
       log.debug({
           id: pendingExecution.intent.id,
@@ -384,7 +374,7 @@ export default async function startExecutor(
       return;
     }
     busy = true;
-    if (!enabledExecutionSymbols.has(intent.symbol)) {
+    if (restrictExecutionSymbols && !enabledExecutionSymbols.has(intent.symbol)) {
       log.debug({ intentId: intent.id, symbol: intent.symbol }, 'dropping intent: symbol not enabled for execution');
       return;
     }

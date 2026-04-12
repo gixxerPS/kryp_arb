@@ -15,6 +15,15 @@ type QWithinSlippageResult = {
   targetQty: number;
 };
 
+type BestIntentSliceResult = {
+  targetQty: number;
+  qBuy: number;
+  qSell: number;
+  buyPxWorst: number;
+  sellPxWorst: number;
+  expectedPnl: number;
+};
+
 type EngineRuntime = {
   rawBuffer: number;
   slippage: number;
@@ -201,12 +210,118 @@ function getQFromQtyL2(
   return q;
 }
 
+function getBestIntentSliceByPnl({
+    asks,
+    bids,
+    buyFee,
+    sellFee,
+    qMax,
+  }: {
+    asks: L2Level[];
+    bids: L2Level[];
+    buyFee: number;
+    sellFee: number;
+    qMax: number;
+  }
+): BestIntentSliceResult | null {
+  let i = 0;
+  let j = 0;
+
+  let buyQty = 0;
+  let buyNotional = 0;
+  let sellNotional = 0;
+
+  let bestPnl = -Infinity;
+  let bestQty = 0;
+  let bestQBuy = 0;
+  let bestQSell = 0;
+  let bestBuyPxWorst = NaN;
+  let bestSellPxWorst = NaN;
+
+  let askRemainingQty = asks.length > 0 ? Number(asks[0][1]) : 0;
+  let bidRemainingQty = bids.length > 0 ? Number(bids[0][1]) : 0;
+
+  while (i < asks.length && j < bids.length) {
+    const askPx = Number(asks[i][0]);
+    const bidPx = Number(bids[j][0]);
+
+    if (!Number.isFinite(askPx) || !Number.isFinite(bidPx) || askPx <= 0 || bidPx <= 0) {
+      break;
+    }
+    if (!Number.isFinite(askRemainingQty) || !Number.isFinite(bidRemainingQty) || askRemainingQty <= 0 || bidRemainingQty <= 0) {
+      break;
+    }
+
+    const qBuyRemaining = qMax - buyNotional;
+    const qSellRemaining = qMax - sellNotional;
+    if (qBuyRemaining <= 0 || qSellRemaining <= 0) {
+      break;
+    }
+
+    const qtyCapByBuy = qBuyRemaining / askPx;
+    const qtyCapBySell = qSellRemaining / bidPx;
+    const qtyStep = Math.min(askRemainingQty, bidRemainingQty, qtyCapByBuy, qtyCapBySell);
+
+    if (!Number.isFinite(qtyStep) || qtyStep <= 0) {
+      break;
+    }
+
+    buyQty += qtyStep;
+    buyNotional += qtyStep * askPx;
+    sellNotional += qtyStep * bidPx;
+
+    const pnl = sellNotional - buyNotional - sellNotional * sellFee - buyNotional * buyFee;
+
+    if (pnl > bestPnl) {
+      bestPnl = pnl;
+      bestQty = buyQty;
+      bestQBuy = buyNotional;
+      bestQSell = sellNotional;
+      bestBuyPxWorst = askPx;
+      bestSellPxWorst = bidPx;
+    } else if (pnl < bestPnl) {
+      break;
+    }
+
+    askRemainingQty -= qtyStep;
+    bidRemainingQty -= qtyStep;
+
+    if (askRemainingQty <= 1e-12) {
+      i += 1;
+      askRemainingQty = i < asks.length ? Number(asks[i][1]) : 0;
+    }
+    if (bidRemainingQty <= 1e-12) {
+      j += 1;
+      bidRemainingQty = j < bids.length ? Number(bids[j][1]) : 0;
+    }
+  }
+
+  if (bestQty <= 0 || !Number.isFinite(bestPnl)) {
+    return null;
+  }
+
+  return {
+    targetQty: bestQty,
+    qBuy: bestQBuy,
+    qSell: bestQSell,
+    buyPxWorst: bestBuyPxWorst,
+    sellPxWorst: bestSellPxWorst,
+    expectedPnl: bestPnl,
+  };
+}
+
 function key(ex: ExchangeId, sym: string): string {
   return `${ex}|${sym}`;
 }
 
-// latest: Map("ex|sym" -> l2 object)
-// returns: array of intents
+/**
+ * Idee: zweistufig mit fest vorgegebener slippage grenze
+ * 1. stufe: roh spread auf top of book angucken
+ * 2. stufe: liquiditaet bestimmen die in den markt gebracht werden kann ohne die vorgegebene 
+ *    slippage grenze zu verletzen
+ * @param param0 
+ * @returns 
+ */
 export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }: ComputeIntentsForSymArgs): TradeIntentDraft[] {
   const rt = runtime as EngineRuntime;
   const intents: TradeIntentDraft[] = [];
@@ -295,6 +410,108 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;
       const sellPxEff = targetQty > 0 ? qSellTarget / targetQty : 0;
       const expectedPnl = qSellTarget - qBuyTarget - qSellTarget*sellFee - qBuyTarget*buyFee;
+
+      intents.push({
+        symbol: sym,
+        buyEx,
+        sellEx,
+        qBuy: qBuyTarget,
+        qSell: qSellTarget,
+        buyPxEff,
+        sellPxEff,
+        expectedPnl,
+        targetQty,
+        net: net2,
+        buyAsk,
+        sellBid,
+        buyPxWorst,
+        sellPxWorst,
+      });
+    }
+  }
+
+  return intents;
+}
+
+/**
+ * Idee: keine feste slippage grenze mehr. einfach solange levels ausnutzen bis 
+ * das maximum pnl erreicht ist.
+ * @param param0 
+ * @returns 
+ */
+export function computeIntentsForSymV2({ sym, latest, fees, nowMs, cfg, exState }: ComputeIntentsForSymArgs): TradeIntentDraft[] {
+  const rt = runtime as EngineRuntime;
+  const intents: TradeIntentDraft[] = [];
+
+  for (const buyEx of cfg.enabledExchanges) {
+    for (const sellEx of cfg.enabledExchanges) {
+      if (buyEx === sellEx) continue;
+
+      const buy = latest.get(key(buyEx, sym));
+      const sell = latest.get(key(sellEx, sym));
+      if (!buy || !sell) continue;
+
+      const buyS = exState.getExchangeState(buyEx) as any;
+      if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+        if (buyS?.anyAgeMs) {
+          log.debug({ reason: 'bad exchange quality', exchange: buyEx, buyS }, 'dropped trade');
+        }
+        continue;
+      }
+      const sellS = exState.getExchangeState(sellEx) as any;
+      if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+        if (sellS?.anyAgeMs) {
+          log.debug({ reason: 'bad exchange quality', exchange: sellEx, sellS }, 'dropped trade');
+        }
+        continue;
+      }
+
+      const buyAsk = bestAskPx(buy.asks);
+      const sellBid = bestBidPx(sell.bids);
+      if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
+
+      const buyFee = getEx(sym, buyEx)!.taker_fee;
+      const sellFee = getEx(sym, sellEx)!.taker_fee;
+      const raw = rawSpread(buyAsk, sellBid);
+      const addRawBuffer = getAddRawSpreadBuffer({ sym, buyEx, sellEx, rt });
+      const net1 = raw - (buyFee + sellFee + rt.rawBuffer + addRawBuffer);
+      if (net1 <= 0) {
+        continue;
+      }
+
+      const bestSlice = getBestIntentSliceByPnl({
+        asks: buy.asks,
+        bids: sell.bids,
+        buyFee,
+        sellFee,
+        qMax: rt.qMax,
+      });
+      if (!bestSlice) {
+        continue;
+      }
+
+      const {
+        targetQty,
+        qBuy: qBuyTarget,
+        qSell: qSellTarget,
+        buyPxWorst,
+        sellPxWorst,
+        expectedPnl,
+      } = bestSlice;
+
+      if (qBuyTarget < rt.qMin || qSellTarget < rt.qMin) {
+        continue;
+      }
+      if (!Number.isFinite(buyPxWorst) || !Number.isFinite(sellPxWorst)) continue;
+
+      const raw2 = rawSpread(buyPxWorst, sellPxWorst);
+      const net2 = raw2 - (buyFee + sellFee);
+      if (net2 <= 0) {
+        log.debug({ reason: 'stage2 pnl max is not profitable anymore', buyPxWorst, sellPxWorst, raw2 }, 'dropped trade');
+        continue;
+      }
+      const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;
+      const sellPxEff = targetQty > 0 ? qSellTarget / targetQty : 0;
 
       intents.push({
         symbol: sym,
