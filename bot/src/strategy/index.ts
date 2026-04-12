@@ -1,6 +1,6 @@
 import appBus from '../bus';
 import { computeIntentsForSym as appCompute, initStrategyEngine } from './engine';
-import { tradeRouteKey, makeClientId } from '../common/util';
+import { tradeRouteKey, makeClientId, formatLevelsInline } from '../common/util';
 import { getLogger } from '../common/logger';
 import { getExState as appGetExState } from '../common/exchange_state';
 
@@ -34,10 +34,6 @@ function makeTradeIntent(
     valid_until: new Date(nowMs + ttlMs),
     ...draft,
   };
-}
-
-function formatLevelsInline(levels: L2Snapshot['bids']): string {
-  return levels.map(([price, qty]) => `[${price}, ${qty}]`).join(' ');
 }
 
 function formatSnapshotForDebug(snapshot: L2Snapshot): Record<string, unknown> {

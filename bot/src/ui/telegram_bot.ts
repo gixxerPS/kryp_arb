@@ -8,7 +8,7 @@ import { fmtNowIsoLocal } from '../common/util';
 import { getExState } from '../common/exchange_state';
 import { getLogger } from '../common/logger';
 import { getAssetPrice } from '../common/symbolinfo_price';
-import { disableTrading, runtimestate } from '../common/runtime_state';
+// import { disableTrading, runtimestate } from '../common/runtime_state';
 
 import type { AppConfig } from '../types/config';
 import type { ExchangeId } from '../types/common';
@@ -480,7 +480,7 @@ export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext 
     }
     log.debug({ chat_id: msg.chat.id }, 'chat id');
     try {
-      const header = `trading=${runtimestate.tradingEnabled ? 'ON' : 'OFF'}  @ ${fmtNowIsoLocal()}`;
+      const header = `trading=${app.executor.getOrderExecutionState() ? 'ON' : 'OFF'}  @ ${fmtNowIsoLocal()}`;
       const accountStatus = app.executor.getAccountStatus();
       const balancesByExchange = app.executor.getBalances();
       const runtimeState = app.executor.getRuntimeState();
@@ -541,7 +541,7 @@ export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext 
     if (!isAllowed(msg)) return;
 
     try {
-      disableTrading({ by: 'telegram', reason: '/kill' });
+      app.executor.disableOrderExecution();
       await bot.sendMessage(msg.chat.id, 'E-STOP: requested.');
     } catch (err) {
       log.error({ err }, 'telegram /kill failed');

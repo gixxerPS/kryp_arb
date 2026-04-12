@@ -173,6 +173,8 @@ export function computeIntentsForSym({ sym, latest, nowMs, cfg, exState }: Compu
       const qBuyTarget = getQFromQtyL2({ levels: buy.asks, targetQty });
       const qSellTarget = getQFromQtyL2({ levels: sell.bids, targetQty });
 
+      log.debug({asks:buy.asks, bids:sell.bids}, 'levels for intent');
+
       intents.push({
         symbol: sym,
         buyEx,

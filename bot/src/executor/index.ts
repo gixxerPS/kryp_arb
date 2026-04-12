@@ -33,7 +33,7 @@ import type { TradeIntent } from '../types/strategy';
 
 type StartExecutorParams = {
   cfg: AppConfig;
-  restoredRuntimeState?: ExecutorRuntimeState | null;
+  restoredRuntimeState: ExecutorRuntimeState | null;
 };
 
 type Deps = {
@@ -71,7 +71,7 @@ export default async function startExecutor(
   const exState = deps.exState ?? getExState();
   const adaptersFromDeps = deps.adapters;
   const nowFn = deps.nowFn ?? (() => Date.now());
-  const enableIntentHandling = deps.enableIntentHandling ?? (process.env.NODE_ENV === 'production');
+  let enableIntentHandling = deps.enableIntentHandling ?? (process.env.NODE_ENV === 'production');
 
   // const enabledSymbols = getEnabledSymbols(cfg);
 
@@ -149,6 +149,7 @@ export default async function startExecutor(
   const blockedRoutes = runtimeState.blockedRoutes;
   const pendingExecutions = new Map<string, PendingExecution>();
   const PENDING_EXECUTION_TIMEOUT_MS = 30_000;
+  const enabledExecutionSymbols = new Set(cfg.bot.execution_symbols ?? []);
 
   function updateRuntimeState(params: UpdateRuntimeStateParams): void {
     if (params.buyOk && params.sellOk) {
@@ -375,6 +376,10 @@ export default async function startExecutor(
       return;
     }
     busy = true;
+    if (!enabledExecutionSymbols.has(intent.symbol)) {
+      log.debug({ intentId: intent.id, symbol: intent.symbol }, 'dropping intent: symbol not enabled for execution');
+      return;
+    }
     try {
       const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, buyPxEff, sellPxEff, id } = intent; // sym ist canonical
       let orderTargetQty = targetQty;
@@ -605,10 +610,23 @@ export default async function startExecutor(
     dayTmr.unref?.();
   } 
 
+  function enableOrderExecution() {
+    enableIntentHandling = true;
+  }
+  function disableOrderExecution() {
+    enableIntentHandling = false;
+  }
+  function getOrderExecutionState() {
+    return enableIntentHandling;
+  }
+
   log.debug({ }, 'executor started');
   return {
     getBalances,
     getAccountStatus,
     getRuntimeState,
+    enableOrderExecution,
+    disableOrderExecution,
+    getOrderExecutionState
   };
 }

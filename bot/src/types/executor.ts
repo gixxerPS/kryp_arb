@@ -129,4 +129,7 @@ export interface ExecutorHandle {
   getBalances(): ExecutorBalancesByExchange;
   getAccountStatus(): ExecutorAccountStatusByExchange;
   getRuntimeState(): ExecutorRuntimeState;
+  disableOrderExecution(): void;
+  enableOrderExecution(): void;
+  getOrderExecutionState(): boolean;
 }

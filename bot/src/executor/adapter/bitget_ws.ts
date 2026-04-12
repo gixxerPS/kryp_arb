@@ -9,7 +9,7 @@ import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
 import { makeClientId } from '../../common/util';
-import { getEx, getCanonFromOderSym } from '../../common/symbolinfo';
+import { compileStepMeta, floorByStepMeta, getEx, getCanonFromOderSym } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
 import appBus from '../../bus';
 
@@ -37,6 +37,19 @@ type BitgetPlaceOrderData = {
   orderId?: string;
   clientOid?: string;
 };
+
+function getBitgetQuoteSizeString(symbol: string, q: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.bitget);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.bitget) : null;
+  const meta = compileStepMeta(exInfo?.rules?.priceTick ?? 0, 8);
+  return floorByStepMeta(q, meta).qStr.replace(/\.?0+$/, '');
+}
+
+function getBitgetBaseSizeString(symbol: string, quantity: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.bitget);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.bitget) : null;
+  return floorByStepMeta(quantity, exInfo?.rules?.qty ?? compileStepMeta(undefined, 8)).qStr.replace(/\.?0+$/, '');
+}
 
 type BitgetCancelOrderData = {
   orderId?: string;
@@ -792,9 +805,9 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     clientOid: orderParams.orderId,
   };
   if (orderParams.type === OrderTypes.MARKET && orderParams.side === OrderSides.BUY && orderParams.q !== undefined) {
-    reqBody.size = String(orderParams.q);
+    reqBody.size = getBitgetQuoteSizeString(orderParams.symbol, orderParams.q);
   } else {
-    reqBody.size = String(orderParams.quantity);
+    reqBody.size = getBitgetBaseSizeString(orderParams.symbol, orderParams.quantity);
   }
   if (orderParams.type !== OrderTypes.MARKET) {
     reqBody.force = 'gtc';
