@@ -1,21 +1,11 @@
-\set my_symbol 'AXSUSDT'
-\-- leer lassen fuer alle Exchanges
+\set my_symbol 'MON_USDT'
+
+-- leer lassen fuer alle Exchanges
 \set my_exchange ''
+
 \echo symbol= :my_symbol
 \echo exchange= :my_exchange
 
-SELECT
-  COUNT(*) AS fill_count,
-  ROUND(SUM(pnl), 4) AS total_pnl,
-  ROUND(SUM(buy_quote), 4) AS total_buy_quote,
-  ROUND(SUM(sell_quote), 4) AS total_sell_quote
-FROM trade_fill
-WHERE symbol = :'my_symbol'
-  AND (
-    :'my_exchange' = ''
-    OR buy_ex = :'my_exchange'
-    OR sell_ex = :'my_exchange'
-  );
 
 SELECT
   intent_id,
@@ -40,3 +30,16 @@ WHERE symbol = :'my_symbol'
     OR sell_ex = :'my_exchange'
   )
 ORDER BY ts DESC;
+
+SELECT
+  COUNT(*) AS fill_count,
+  ROUND(SUM(pnl), 4) AS total_pnl,
+  ROUND(SUM(buy_quote), 4) AS total_buy_quote,
+  ROUND(SUM(sell_quote), 4) AS total_sell_quote
+FROM trade_fill
+WHERE symbol = :'my_symbol'
+  AND (
+    :'my_exchange' = ''
+    OR buy_ex = :'my_exchange'
+    OR sell_ex = :'my_exchange'
+  );
