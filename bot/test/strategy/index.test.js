@@ -43,7 +43,7 @@ suite('strategy/index', () => {
     const nowFn = () => now;
     const uuidFn = () => 'uuid-1';
 
-    const computeIntentsForSymbol = ({ sym }) => {
+    const computeIntentsForSymbolV2 = ({ sym }) => {
       return [ { symbol: sym, buyEx: 'binance', sellEx: 'bitget', q: 100, net2: 0.001, buyAsk: 100, sellBid: 101 } ]
     };
 
@@ -52,7 +52,7 @@ suite('strategy/index', () => {
       symbols: ['FOO_USDT'],
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
+    startStrategy(cfg, { bus, computeIntentsForSymbolV2, nowFn, uuidFn, getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
 
@@ -74,7 +74,7 @@ suite('strategy/index', () => {
     let uuidN = 0;
     const uuidFn = () => `uuid-${++uuidN}`;
 
-    const computeIntentsForSymbol = ({ sym }) => ([
+    const computeIntentsForSymbolV2 = ({ sym }) => ([
       { symbol: sym, buyEx: 'binance', sellEx: 'bitget', q: 100, net2: 0.001, buyAsk: 100, sellBid: 101 }
     ]);
 
@@ -83,7 +83,7 @@ suite('strategy/index', () => {
       symbols: ['FOO_USDT'],
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
+    startStrategy(cfg, { bus, computeIntentsForSymbolV2, nowFn, uuidFn, getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(emitted.length, 1);
@@ -109,7 +109,7 @@ suite('strategy/index', () => {
     const uuidFn = () => 'uuid';
 
     let computeCalls = 0;
-    const computeIntentsForSymbol = ({ sym }) => {
+    const computeIntentsForSymbolV2 = ({ sym }) => {
       computeCalls++;
       return [{ symbol: sym, buyEx: 'binance', sellEx: 'bitget', q: 100, net2: 0.001, buyAsk: 100, sellBid: 101 }];
     };
@@ -119,7 +119,7 @@ suite('strategy/index', () => {
       symbols: ['FOO_USDT'],
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn, uuidFn, getExState: initTestExchangeState });
+    startStrategy(cfg, { bus, computeIntentsForSymbolV2, nowFn, uuidFn, getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'FOO_USDT', tsMs: now, bids: [], asks: [] });
     assert.equal(computeCalls, 1);
@@ -139,14 +139,14 @@ suite('strategy/index', () => {
     const bus = new EventEmitter();
     let computeCalls = 0;
 
-    const computeIntentsForSymbol = () => { computeCalls++; return []; };
+    const computeIntentsForSymbolV2 = () => { computeCalls++; return []; };
 
     const cfg = mkCfg({
       bot: { execution_symbols: ['FOO_USDT'], cooldown_ms: 0, throttle_ms: 0 },
       symbols: ['FOO_USDT'],
     });
 
-    startStrategy(cfg, { bus, computeIntentsForSymbol, nowFn: () => 1, uuidFn: () => 'u', getExState: initTestExchangeState });
+    startStrategy(cfg, { bus, computeIntentsForSymbolV2, nowFn: () => 1, uuidFn: () => 'u', getExState: initTestExchangeState });
 
     bus.emit('md:l2', { exchange: 'binance', symbol: 'BAR_USDT', tsMs: 1, bids: [], asks: [] });
     assert.equal(computeCalls, 0);

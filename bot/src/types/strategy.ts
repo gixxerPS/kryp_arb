@@ -60,6 +60,7 @@ export type StrategyDeps = {
   bus?: EventEmitter;
   getExState?: () => ExchangeStateLike | null;
   computeIntentsForSymbol?: ComputeIntentsForSym;
+  computeIntentsForSymbolV2?: ComputeIntentsForSym;
   nowFn?: () => number;
   uuidFn?: () => string;
 };

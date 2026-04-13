@@ -1,5 +1,7 @@
 import appBus from '../bus';
-import { computeIntentsForSym as appCompute, initStrategyEngine } from './engine';
+import { computeIntentsForSym as appCompute, 
+  computeIntentsForSymV2 as appComputeV2,
+  initStrategyEngine } from './engine';
 import { tradeRouteKey, makeClientId, formatLevelsInline } from '../common/util';
 import { getLogger } from '../common/logger';
 import { getExState as appGetExState } from '../common/exchange_state';
@@ -63,6 +65,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   const bus = deps.bus ?? appBus;
   const getExStateFct = deps.getExState ?? appGetExState;
   const computeIntentsForSym = deps.computeIntentsForSymbol ?? (appCompute as ComputeIntentsForSym);
+  const computeIntentsForSymV2 = deps.computeIntentsForSymbolV2 ?? (appComputeV2 as ComputeIntentsForSym);
   const nowFn = deps.nowFn ?? (() => Date.now());
   const uuidFn = deps.uuidFn ?? makeClientId;
   const exState = getExStateFct();
@@ -108,7 +111,8 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
     }
     lastRunAt.set(sym, nowMs);
 
-    const intents = computeIntentsForSym({
+    // const intents = computeIntentsForSym({
+    const intents = computeIntentsForSymV2({
       sym,
       latest,
       fees: cfg.exchanges,

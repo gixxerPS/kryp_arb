@@ -245,7 +245,7 @@ function getBestIntentSliceByPnl({
     const askPx = Number(asks[i][0]);
     const bidPx = Number(bids[j][0]);
 
-    if (!Number.isFinite(askPx) || !Number.isFinite(bidPx) || askPx <= 0 || bidPx <= 0) {
+    if (!Number.isFinite(askPx) || !Number.isFinite(bidPx) || askPx <= 0 || bidPx <= 0 || bidPx <= askPx) {
       break;
     }
     if (!Number.isFinite(askRemainingQty) || !Number.isFinite(bidRemainingQty) || askRemainingQty <= 0 || bidRemainingQty <= 0) {
@@ -261,6 +261,17 @@ function getBestIntentSliceByPnl({
     const qtyCapByBuy = qBuyRemaining / askPx;
     const qtyCapBySell = qSellRemaining / bidPx;
     const qtyStep = Math.min(askRemainingQty, bidRemainingQty, qtyCapByBuy, qtyCapBySell);
+
+    // console.log(`calc i=${i}, j=${j}, `, {
+    //   askBidpx:[askPx, bidPx],
+    //   askBidRemainingQty:[askRemainingQty.toFixed(2), bidRemainingQty.toFixed(2)],
+    //   qRemainingBuySell:[qBuyRemaining.toFixed(2), qSellRemaining.toFixed(2)],
+    //   qtyCapBuySell:[qtyCapByBuy.toFixed(2), qtyCapBySell.toFixed(2)],
+    //   notionalBuySell:[buyNotional.toFixed(2), sellNotional.toFixed(2)],
+    //   qtyStep:qtyStep.toFixed(2),
+    //   buyQty,
+    //   bestPnl:bestPnl.toFixed(4),
+    // });
 
     if (!Number.isFinite(qtyStep) || qtyStep <= 0) {
       break;
@@ -286,11 +297,11 @@ function getBestIntentSliceByPnl({
     askRemainingQty -= qtyStep;
     bidRemainingQty -= qtyStep;
 
-    if (askRemainingQty <= 1e-12) {
+    if (askRemainingQty <= 1e-12) { // ask level aufgebraucht ?
       i += 1;
       askRemainingQty = i < asks.length ? Number(asks[i][1]) : 0;
     }
-    if (bidRemainingQty <= 1e-12) {
+    if (bidRemainingQty <= 1e-12) { // bid level aufgebraucht ?
       j += 1;
       bidRemainingQty = j < bids.length ? Number(bids[j][1]) : 0;
     }
