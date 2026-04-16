@@ -13,6 +13,7 @@ import startBinanceDepth from './collector/binance_depth';
 import startGateDepth from './collector/gate_depth';
 import startBitgetDepth from './collector/bitget_depth';
 import startMexcDepth from './collector/mexc_depth';
+import startHtxDepth from './collector/htx_depth';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 dns.setDefaultResultOrder('ipv4first');
@@ -57,6 +58,12 @@ async function main(): Promise<void> {
     startMexcDepth();
   } else {
     log.warn({ exchange: 'mexc' }, 'exchange disabled. no data collection');
+  }
+
+  if (cfg.exchanges.htx?.enabled) {
+    startHtxDepth();
+  } else {
+    log.warn({ exchange: 'htx' }, 'exchange disabled. no data collection');
   }
 
   startStrategy(cfg);

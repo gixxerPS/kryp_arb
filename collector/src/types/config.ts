@@ -6,12 +6,19 @@ export interface BotCfg {
   throttle_ms: number;
   intent_time_to_live_ms: number;
   cooldown_s: number;
+  cooldown_ms?: number;
   raw_spread_buffer_pct: number;
   slippage_pct: number;
   q_min_usdt: number;
   q_max_usdt: number;
   execution_symbols: string[];
-  execution_exchanges: Array<'binance' | 'gate' | 'bitget' | 'mexc'>;
+  execution_exchanges: Array<'binance' | 'gate' | 'bitget' | 'mexc' | 'htx'>;
+  overrides?: {
+    add_raw_spread_buffer_pct?: {
+      by_exchange?: Partial<Record<ExchangeId, number>>;
+      by_symbol?: Record<string, number>;
+    };
+  };
 }
 
 export interface AppCfg {

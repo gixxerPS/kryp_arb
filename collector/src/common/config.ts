@@ -44,7 +44,7 @@ export function loadConfig(): LoadedConfig {
   const symbols = readJson<SymbolsCfg>(absConfigPath('symbols.json')).symbols ?? [];
   const db = readJson<DbCfg>(absConfigPath('db.json'));
   const log = readJson<LogCfg>(absConfigPath('log.json'));
-  const enabledExchanges = (['binance', 'gate', 'bitget', 'mexc'] as ExchangeId[])
+  const enabledExchanges = (['binance', 'gate', 'bitget', 'mexc', 'htx'] as ExchangeId[])
     .filter((ex) => exchanges[ex]?.enabled);
 
   const symbolInfoByEx = {
@@ -52,6 +52,7 @@ export function loadConfig(): LoadedConfig {
     bitget: readOptionalSymbolInfo('bitget.spot.json'),
     gate: readOptionalSymbolInfo('gate.spot.json'),
     mexc: readOptionalSymbolInfo('mexc.spot.json'),
+    htx: readOptionalSymbolInfo('htx.spot.json'),
   };
 
   const cfg: AppConfig = {

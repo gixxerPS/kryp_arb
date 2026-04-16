@@ -41,5 +41,5 @@ export function makeClientId(): string {
 }
 
 export function isExchangeId(value: string): value is ExchangeId {
-  return value === 'binance' || value === 'gate' || value === 'bitget' || value === 'mexc';
+  return value === 'binance' || value === 'gate' || value === 'bitget' || value === 'mexc' || value === 'htx';
 }

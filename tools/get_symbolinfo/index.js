@@ -48,6 +48,7 @@ const { run: runBinance }   = require("./binance_spot");
 const { run: runGate } = require("./gate_spot");
 const { run: runBitget } = require("./bitget_spot");
 const { run: runMexc } = require("./mexc_spot");
+const { run: runHtx } = require("./htx_spot");
 
 function loadWantedSymbols(botPath) {
   const bot = JSON.parse(fs.readFileSync(botPath, "utf8"));
@@ -94,6 +95,11 @@ async function main() {
   }
   try {
     await runMexc(ctx);
+  } catch (e) {
+    console.error(e);
+  }
+  try {
+    await runHtx(ctx);
   } catch (e) {
     console.error(e);
   }

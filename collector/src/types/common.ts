@@ -3,6 +3,7 @@ export const ExchangeIds = {
   gate: 'gate',
   bitget: 'bitget',
   mexc: 'mexc',
+  htx: 'htx',
 } as const;
 
 export type ExchangeId = typeof ExchangeIds[keyof typeof ExchangeIds];

@@ -36,6 +36,10 @@ function symToGate(sym: string): string {
   return String(sym).toUpperCase();
 }
 
+function symToHtx(sym: string): string {
+  return String(sym).replace('_', '').toLowerCase();
+}
+
 function parseCanon(sym: string): CanonPair {
   const [base, quote] = String(sym).split('_');
   return { base, quote };
@@ -93,7 +97,7 @@ export function compileRules(raw: RawSymbolInfo | null | undefined): CompiledRul
 }
 
 export function makeOrderKey(ex: ExchangeId, symMapped: string): string {
-  if (ex === 'binance' || ex === 'bitget' || ex === 'mexc') {
+  if (ex === 'binance' || ex === 'bitget' || ex === 'mexc' || ex === 'htx') {
     return String(symMapped).replace('_', '').toUpperCase();
   }
   if (ex === 'gate') return String(symMapped);
@@ -106,6 +110,7 @@ export function makeMdKey(ex: ExchangeId, symMapped: string, subscription: { lev
   }
   if (ex === 'bitget' || ex === 'mexc') return symToBitget(symMapped);
   if (ex === 'gate') return symToGate(symMapped);
+  if (ex === 'htx') return symToHtx(symMapped);
   return symMapped;
 }
 

@@ -48,7 +48,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
   if (!exState) throw new Error('exchange_state not initialized');
   const readyExState = exState;
 
-  const cooldownS = Number(cfg.bot.cooldown_s);
+  const cooldownMs = Number(cfg.bot.cooldown_ms ?? (Number(cfg.bot.cooldown_s ?? 0) * 1000));
   const throttleMs = Number(cfg.bot.throttle_ms ?? 200);
   const ttlMs = Number(cfg.bot.intent_time_to_live_ms ?? 1500);
   const symbolsSet = new Set(cfg.symbols);
@@ -77,8 +77,8 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
     for (const draft of intents) {
       const routeKey = tradeRouteKey(draft);
       const last = lastIntentAt.get(routeKey);
-      if (last != null && nowMs - last < cooldownS * 1000) {
-        log.debug({ reason: 'cooldown violation', routeKey, age: nowMs - last, cooldownS }, 'dropped trade');
+      if (last != null && nowMs - last < cooldownMs) {
+        log.debug({ reason: 'cooldown violation', routeKey, age: nowMs - last, cooldownMs }, 'dropped trade');
         continue;
       }
       lastIntentAt.set(routeKey, nowMs);
@@ -105,7 +105,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
 
   log.debug({
     mode: 'event-driven',
-    cooldownS,
+    cooldownMs,
     throttleMs,
     rawSpreadBufferPct: cfg.bot.raw_spread_buffer_pct,
     slippagePct: cfg.bot.slippage_pct,
