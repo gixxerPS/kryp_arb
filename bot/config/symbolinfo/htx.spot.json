@@ -4,7 +4,8 @@
       "symbols": "https://api.huobi.pro/v2/settings/common/symbols",
       "marketSymbols": "https://api.huobi.pro/v1/settings/common/market-symbols"
     },
-    "fetchedAt": "2026-04-14T18:00:28.142Z"
+    "fetchedAt": "2026-04-14T18:00:28.142Z",
+    "commissionAssetSym": "HTX_USDT"
   },
   "symbols": {
     "ALGOUSDT": {

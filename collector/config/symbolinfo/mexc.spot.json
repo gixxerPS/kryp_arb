@@ -1,24 +1,9 @@
 {
   "meta": {
     "source": "https://api.mexc.com/api/v3/exchangeInfo",
-    "fetchedAt": "2026-03-18T08:08:10.933Z"
+    "fetchedAt": "2026-04-16T17:26:14.041Z"
   },
   "symbols": {
-    "ALGOUSDC": {
-      "symbol": "ALGOUSDC",
-      "baseAsset": "ALGO",
-      "quoteAsset": "USDC",
-      "status": "1",
-      "enabled": true,
-      "pricePrecision": 5,
-      "qtyPrecision": 2,
-      "priceTick": "0.00001",
-      "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.0001",
-      "minQty": null,
-      "maxQty": null,
-      "minNotional": null
-    },
     "ALGOUSDT": {
       "symbol": "ALGOUSDT",
       "baseAsset": "ALGO",
@@ -45,21 +30,6 @@
       "priceTick": "0.00001",
       "priceTickDerivedFromPrecision": true,
       "qtyStep": null,
-      "minQty": null,
-      "maxQty": null,
-      "minNotional": null
-    },
-    "ATOMUSDC": {
-      "symbol": "ATOMUSDC",
-      "baseAsset": "ATOM",
-      "quoteAsset": "USDC",
-      "status": "1",
-      "enabled": true,
-      "pricePrecision": 3,
-      "qtyPrecision": 2,
-      "priceTick": "0.001",
-      "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.01",
       "minQty": null,
       "maxQty": null,
       "minNotional": null
@@ -94,32 +64,17 @@
       "maxQty": null,
       "minNotional": null
     },
-    "AXSUSDC": {
-      "symbol": "AXSUSDC",
-      "baseAsset": "AXS",
-      "quoteAsset": "USDC",
+    "DASHUSDT": {
+      "symbol": "DASHUSDT",
+      "baseAsset": "DASH",
+      "quoteAsset": "USDT",
       "status": "1",
       "enabled": true,
-      "pricePrecision": 4,
-      "qtyPrecision": 2,
-      "priceTick": "0.0001",
+      "pricePrecision": 2,
+      "qtyPrecision": 6,
+      "priceTick": "0.01",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.0001",
-      "minQty": null,
-      "maxQty": null,
-      "minNotional": null
-    },
-    "FILUSDC": {
-      "symbol": "FILUSDC",
-      "baseAsset": "FIL",
-      "quoteAsset": "USDC",
-      "status": "1",
-      "enabled": true,
-      "pricePrecision": 4,
-      "qtyPrecision": 3,
-      "priceTick": "0.0001",
-      "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.0001",
+      "qtyStep": "0.001",
       "minQty": null,
       "maxQty": null,
       "minNotional": null
@@ -154,21 +109,6 @@
       "maxQty": null,
       "minNotional": null
     },
-    "INJUSDC": {
-      "symbol": "INJUSDC",
-      "baseAsset": "INJ",
-      "quoteAsset": "USDC",
-      "status": "1",
-      "enabled": true,
-      "pricePrecision": 3,
-      "qtyPrecision": 2,
-      "priceTick": "0.001",
-      "priceTickDerivedFromPrecision": true,
-      "qtyStep": null,
-      "minQty": null,
-      "maxQty": null,
-      "minNotional": null
-    },
     "INJUSDT": {
       "symbol": "INJUSDT",
       "baseAsset": "INJ",
@@ -184,9 +124,9 @@
       "maxQty": null,
       "minNotional": null
     },
-    "POLUSDT": {
-      "symbol": "POLUSDT",
-      "baseAsset": "POL",
+    "MONUSDT": {
+      "symbol": "MONUSDT",
+      "baseAsset": "MON",
       "quoteAsset": "USDT",
       "status": "1",
       "enabled": true,
@@ -199,9 +139,9 @@
       "maxQty": null,
       "minNotional": null
     },
-    "MONUSDT": {
-      "symbol": "MONUSDT",
-      "baseAsset": "MON",
+    "POLUSDT": {
+      "symbol": "POLUSDT",
+      "baseAsset": "POL",
       "quoteAsset": "USDT",
       "status": "1",
       "enabled": true,

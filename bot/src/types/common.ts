@@ -2,7 +2,8 @@ export const ExchangeIds = {
     binance: 'binance',
     gate: 'gate',
     bitget: 'bitget',
-    mexc: 'mexc'
+    mexc: 'mexc',
+    htx: 'htx'
 } as const;
 export type ExchangeId = typeof ExchangeIds[keyof typeof ExchangeIds];
 

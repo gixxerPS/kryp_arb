@@ -42,6 +42,11 @@ function symToMexc(sym: string): string {
   return String(sym).replace("_", "").toUpperCase();
 }
 
+// AXS_USDT -> axsusdt
+function symToHtx(sym: string): string {
+  return String(sym).replace("_", "").toLowerCase();
+}
+
 // axs_usdt -> AXS_USDT
 function symToGate(sym: string): string {
   return String(sym).toUpperCase();
@@ -161,7 +166,7 @@ export function makeOrderKey(ex: ExchangeId, symMapped: string): string {
   if (ex === "binance" || ex === "bitget") {
     return String(symMapped).replace("_", "").toUpperCase();
   }
-  if (ex === "mexc") {
+  if (ex === "mexc" || ex === "htx") {
     return symToMexc(symMapped);
   }
   if (ex === "gate") {
@@ -182,6 +187,7 @@ export function makeMdKey(ex: ExchangeId, symMapped: string, subscription: { lev
   if (ex === "bitget") return symToBitget(symMapped);
   if (ex === "mexc") return symToMexc(symMapped);
   if (ex === "gate") return symToGate(symMapped);
+  if (ex === "htx") return symToHtx(symMapped);
   // fallback
   return symMapped;
 }

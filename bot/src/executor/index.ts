@@ -12,6 +12,7 @@ import { adapter as binanceAdapter } from './adapter/binance_ws';
 import { adapter as gateAdapter } from './adapter/gate_ws';
 import { adapter as bitgetAdapter } from './adapter/bitget_ws';
 import { adapter as mexcAdapter } from './adapter/mexc_ws';
+import { adapter as htxAdapter } from './adapter/htx_ws';
 
 import type { AppConfig } from '../types/config';
 import type { ExchangeId } from '../types/common';
@@ -97,6 +98,9 @@ export default async function startExecutor(
     } else if (ex.exchange === ExchangeIds.mexc) {
       adapters.mexc = mexcAdapter;
       await adapters.mexc.init(cfg, {bus});
+    } else if (ex.exchange === ExchangeIds.htx) {
+      adapters.htx = htxAdapter;
+      await adapters.htx.init(cfg, {bus});
     }
   }
 

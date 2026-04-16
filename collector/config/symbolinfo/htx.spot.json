@@ -4,7 +4,7 @@
       "symbols": "https://api.huobi.pro/v2/settings/common/symbols",
       "marketSymbols": "https://api.huobi.pro/v1/settings/common/market-symbols"
     },
-    "fetchedAt": "2026-04-14T18:00:28.142Z"
+    "fetchedAt": "2026-04-16T17:26:16.114Z"
   },
   "symbols": {
     "ALGOUSDT": {
@@ -70,6 +70,22 @@
       "minQty": 0.001,
       "maxQty": 164130,
       "minNotional": 10
+    },
+    "DASHUSDT": {
+      "symbol": "DASHUSDT",
+      "baseAsset": "DASH",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 2,
+      "qtyPrecision": 4,
+      "priceTick": "0.01",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.0001",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.001,
+      "maxQty": 23640,
+      "minNotional": 1
     },
     "FILUSDT": {
       "symbol": "FILUSDT",

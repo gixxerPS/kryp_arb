@@ -18,7 +18,7 @@ export interface BotCfg {
     auto_fix_failed_orders: boolean;
   
     execution_symbols: string[];
-    execution_exchanges: Array<'binance' | 'gate' | 'bitget'>;
+    execution_exchanges: ExchangeId[];
     overrides?: {
       add_raw_spread_buffer_pct?: {
         by_exchange?: Partial<Record<ExchangeId, number>>;

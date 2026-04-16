@@ -68,7 +68,7 @@ function getTrackedPriceSymbols(exchange: ExchangeId): string[] {
 
 function getSupportedExchanges(): ExchangeId[] {
   return [ExchangeIds.binance, ExchangeIds.gate, 
-    ExchangeIds.bitget, ExchangeIds.mexc];
+    ExchangeIds.bitget, ExchangeIds.mexc, ExchangeIds.htx];
 }
 
 async function fetchBinancePrices(symbols: string[]): Promise<Record<string, number>> {
@@ -187,11 +187,56 @@ async function fetchMexcPrices(symbols: string[]): Promise<Record<string, number
   return out;
 }
 
+function toHtxMarketSymbol(symbol: string): string {
+  return String(symbol).replace('_', '').toLowerCase();
+}
+
+async function fetchHtxPrice(symbol: string): Promise<number> {
+  const host = process.env.HTX_REST_HOST ?? 'https://api-aws.huobi.pro';
+  const marketSymbol = toHtxMarketSymbol(symbol);
+  const url = `${host}/market/detail/merged?symbol=${encodeURIComponent(marketSymbol)}`;
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`htx ticker failed status=${res.status} symbol=${symbol}`);
+
+  const body = (await res.json()) as {
+    status?: string;
+    tick?: {
+      close?: number | string;
+    };
+  };
+  if (body?.status && body.status !== 'ok') {
+    throw new Error(`htx ticker failed status=${body.status} symbol=${symbol}`);
+  }
+
+  const price = Number(body?.tick?.close ?? NaN);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`invalid htx price symbol=${symbol}`);
+  }
+  return price;
+}
+
+async function fetchHtxPrices(symbols: string[]): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+
+  const results = await Promise.allSettled(
+    symbols.map(async (symbol) => [symbol, await fetchHtxPrice(symbol)] as const)
+  );
+
+  const out: Record<string, number> = {};
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue;
+    const [symbol, price] = result.value;
+    out[symbol] = price;
+  }
+  return out;
+}
+
 function getFetcher(exchange: ExchangeId): PriceFetcher | null {
   if (exchange === ExchangeIds.binance) return fetchBinancePrices;
   if (exchange === ExchangeIds.gate) return fetchGatePrices;
   if (exchange === ExchangeIds.bitget) return fetchBitgetPrices;
   if (exchange === ExchangeIds.mexc) return fetchMexcPrices;
+  if (exchange === ExchangeIds.htx) return fetchHtxPrices;
   return null;
 }
 
@@ -271,12 +316,13 @@ export function getLastPrice(exchange: ExchangeId, symbol: string): number | nul
 }
 
 export function getAssetPrice(exchange: ExchangeId, asset: string): number | null {
-  if (isUsdLikeAsset(asset)) return 1;
+  const assetNorm = String(asset).toUpperCase();
+  if (isUsdLikeAsset(assetNorm)) return 1;
 
   const commissionAssetSym = getCommissionAssetSym(exchange);
   if (commissionAssetSym) {
     const commissionAsset = deriveAssetFromSymbol(commissionAssetSym);
-    if (commissionAsset === asset) {
+    if (commissionAsset === assetNorm) {
       return getLastPrice(exchange, commissionAssetSym);
     }
   }
@@ -285,7 +331,7 @@ export function getAssetPrice(exchange: ExchangeId, asset: string): number | nul
   for (const [symbol, entry] of Object.entries(exchangeCache)) {
     const baseAsset = deriveAssetFromSymbol(symbol);
     const quoteAsset = deriveQuoteFromSymbol(symbol);
-    if (baseAsset !== asset || !quoteAsset || !isUsdLikeAsset(quoteAsset)) continue;
+    if (baseAsset !== assetNorm || !quoteAsset || !isUsdLikeAsset(quoteAsset)) continue;
     return entry.price;
   }
 
