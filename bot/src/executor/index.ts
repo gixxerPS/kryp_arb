@@ -297,12 +297,14 @@ export default async function startExecutor(
     const { symbol, exchange, side, asset } = params;
     const bySymbol = blockedRoutes[symbol] ??= {};
     const byExchange = bySymbol[exchange] ??= {};
+    const alreadyBlocked = Boolean(byExchange[side]);
 
     byExchange[side] = {
       blockedAtTsMs: nowFn(),
       exchange,
       asset,
     };
+    log.debug({ symbol, exchange, side, asset, alreadyBlocked }, 'route blocked');
   }
 
   /**
@@ -333,6 +335,14 @@ export default async function startExecutor(
           requiredBalance = cfg.bot.balance_minimum_usdt;
         }
         if (currentBalance < requiredBalance) continue;
+        log.debug({
+          symbol,
+          exchange,
+          side,
+          asset: blockInfo.asset,
+          currentBalance,
+          requiredBalance,
+        }, 'route unblocked');
         delete bySymbol[exchange as ExchangeId]?.[side as 'BUY' | 'SELL'];
       }
       if (!Object.keys(sideMap).length) { // aufraeumen wenn moeglich
@@ -367,6 +377,37 @@ export default async function startExecutor(
   //     orderId: 'my-123456789',
   //   });
   // }
+
+
+   // test intents fuer smoketest
+  // setTimeout(() => {
+  //   const now = Date.now();
+  //   const intent: TradeIntent = {
+  //     id: 'smoke-axs-101',
+  //     tsMs: now,
+  //     valid_until: new Date(now + 30_000),
+  //     symbol: 'AXS_USDT',
+      
+  //     buyEx: ExchangeIds.htx,
+  //     sellEx: ExchangeIds.mexc,
+      
+  //     targetQty: 10,
+  //     net: 0.012,
+  //     qBuy: 11.14,
+  //     qSell: 11.24,
+  //     buyPxEff: 1.114,
+  //     sellPxEff: 1.124,
+  //     expectedPnl: 0.10,
+  //     buyAsk: 1.114,
+  //     sellBid: 1.124,
+  //     buyPxWorst: 1.114,
+  //     sellPxWorst: 1.124,
+  //   };
+  //   log.debug({ intent }, 'trade:intent TEST');
+  //   handleIntent(intent).catch((err) => {
+  //     log.error({ err, intent }, 'executor TEST intent failed');
+  //   });
+  // }, 1_000);
 
   
   

@@ -43,11 +43,11 @@
     }
   },
   "htx": {
-    "maker_fee_pct": 0.02,
-    "taker_fee_pct": 0.02,
+    "maker_fee_pct": 0.2,
+    "taker_fee_pct": 0.2,
     "timeout_no_msg_trade_warn_ms": 8000,
     "timeout_no_msg_trade_stop_ms": 60000,
-    "enabled": false,
+    "enabled": true,
     "subscription":{
       "levels": 20
     }

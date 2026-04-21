@@ -1,5 +1,5 @@
 /**
- * Binance Spot Executor Adapter (WebSocket, HMAC)
+ * Binance Spot Executor Adapter (WebSocket, Ed25519)
  * ===============================================
  *
  * Rolle im System
@@ -18,8 +18,8 @@
  * 1) Alle params OHNE `signature`
  * 2) Alphabetisch nach Key sortieren
  * 3) UTF-8 Payload: key=value&key2=value2
- * 4) ED25519-SHA256 mit API_SECRET
- * 5) Ergebnis als HEX-String → `signature`
+ * 4) Ed25519 mit Private Key
+ * 5) Ergebnis als base64-String -> `signature`
  *
  * Aktuelle Features (Phase 1)
  * ---------------------------
@@ -86,6 +86,7 @@ import { WS_STATE } from '../../common/constants';
 import { getCanonFromOderSym } from '../../common/symbolinfo';
 import { getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
+import { signEd25519Base64 } from '../../common/signing';
 import appBus from '../../bus';
 import { OrderSides, ExchangeIds  } from '../../types/common';
 
@@ -212,15 +213,6 @@ function buildPayload(params: Record<string, string | number | boolean | undefin
     .join('&');
 }
 
-function signEd25519Base64(privateKeyPem: string, payload: string): string {
-  const sig = crypto.sign(
-    null,                       // Ed25519 => algorithm = null
-    Buffer.from(payload),       // payload = query string
-    privateKeyPem
-  );
-  return sig.toString('base64'); // Binance verlangt base64
-}
-
 function makeSignedParams(extra: WsParams = {}): SignedParams {
   const apiKey = process.env.BINANCE_ED25519_PUBLIC_KEY;
   if (!apiKey) throw new Error('Missing BINANCE_ED25519_PUBLIC_KEY');
@@ -344,7 +336,7 @@ function handleUserTradesStream(event: BinanceUserDataEvent): void {
     status = OrderStates.FILLED;
   } else if (event.X === 'PARTIALLY_FILLED') {
     status = OrderStates.PARTIALLY_FILLED;
-  } else if (event.X === 'PARTIALLY_FILLED') {
+  } else if (event.X === 'CANCELLED') {
     status = OrderStates.CANCELLED;
   }
   const side = event.S === 'BUY' ? OrderSides.BUY : OrderSides.SELL;

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import fs from 'fs';
 import WebSocket from 'ws';
 
 import { getLogger } from '../../common/logger';
@@ -10,6 +11,7 @@ import { WS_STATE } from '../../common/constants';
 import { makeClientId } from '../../common/util';
 import { compileStepMeta, floorByStepMeta, getCanonFromOderSym, getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
+import { signEd25519Base64 } from '../../common/signing';
 import appBus from '../../bus';
 
 import {
@@ -84,21 +86,31 @@ type HtxTradeClearingRow = {
   orderPrice?: string;
   orderSize?: string;
   orderValue?: string;
+  execAmt?: string;
+  remainAmt?: string;
   clientOrderId?: string;
   orderCreateTime?: number;
   orderStatus?: string;
 };
 
-const apiKey = process.env.HTX_API_KEY!;
-const apiSecret = process.env.HTX_API_SECRET!;
+type HtxAuthMethod = 'HmacSHA256' | 'Ed25519';
+
+const authMethod: HtxAuthMethod = process.env.HTX_AUTH_METHOD === 'HmacSHA256' ? 'HmacSHA256' : 'Ed25519';
+const apiKey = authMethod === 'Ed25519'
+  ? process.env.HTX_ED25519_ACCESS_KEY?.trim() ?? ''
+  : process.env.HTX_API_KEY?.trim() ?? '';
+const apiSecret = process.env.HTX_API_SECRET?.trim() ?? '';
+const ed25519PrivateKeyFile = process.env.HTX_ED25519_PRIVATE_KEY_FILE;
 const restHost = process.env.HTX_REST_HOST ?? 'https://api-aws.huobi.pro';
 const wsUrl = process.env.HTX_WS_PRIVATE_URL ?? 'wss://api-aws.huobi.pro/ws/v2';
 const wsHost = new URL(wsUrl).host;
+const wsSignatureHost = (process.env.HTX_WS_SIGNATURE_HOST ?? wsHost).toLowerCase();
 const wsPath = new URL(wsUrl).pathname;
 
 let accountId = process.env.HTX_ACCOUNT_ID ?? '';
 let mgr: ReturnType<typeof createReconnectWS> | null = null;
 let wsRef: WebSocket | null = null;
+let ed25519PrivateKeyPem = '';
 let busRef: any;
 let balances: Balances = {};
 let balancesLoaded = false;
@@ -120,10 +132,7 @@ const orderAccum: Map<string, {
   feeCurrency: string;
 }> = new Map();
 const BALANCE_REFRESH_MS = 15 * 60 * 1000;
-
-function hmacSha256Base64(secret: string, data: string): string {
-  return crypto.createHmac('sha256', secret).update(data).digest('base64');
-}
+const MIN_BALANCE_EPS = 1e-9;
 
 function rfc3986Encode(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -141,6 +150,17 @@ function htxTimestamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, '');
 }
 
+function hmacSha256Base64(secret: string, data: string): string {
+  return crypto.createHmac('sha256', secret).update(data, 'utf8').digest('base64');
+}
+
+function signHtxPayload(payload: string): string {
+  if (authMethod === 'Ed25519') {
+    return signEd25519Base64(ed25519PrivateKeyPem, payload);
+  }
+  return hmacSha256Base64(apiSecret, payload);
+}
+
 function makeSignedQuery(opts: {
   method: 'GET' | 'POST';
   host: string;
@@ -150,14 +170,14 @@ function makeSignedQuery(opts: {
 }): string {
   const params = {
     AccessKeyId: apiKey,
-    SignatureMethod: 'HmacSHA256',
+    SignatureMethod: authMethod,
     SignatureVersion: opts.signatureVersion ?? '2',
     Timestamp: htxTimestamp(),
     ...(opts.extra ?? {}),
   };
   const canonicalQuery = buildCanonicalQuery(params);
   const payload = `${opts.method}\n${opts.host.toLowerCase()}\n${opts.path}\n${canonicalQuery}`;
-  const signature = hmacSha256Base64(apiSecret, payload);
+  const signature = signHtxPayload(payload);
   return `${canonicalQuery}&Signature=${rfc3986Encode(signature)}`;
 }
 
@@ -223,27 +243,47 @@ async function htxPrivateRest<T>(opts: {
 
 async function resolveAccountId(): Promise<string> {
   if (accountId) return accountId;
+  return refreshAccountId();
+}
+
+async function refreshAccountId(): Promise<string> {
   const result = await htxPrivateRest<HtxRestResponse<HtxAccountRow[]>>({ method: 'GET', path: '/v1/account/accounts' });
   const spot = (result.data ?? []).find((row) => row.type === 'spot' && row.state !== 'locked')
     ?? (result.data ?? []).find((row) => row.type === 'spot');
   const id = String(spot?.id ?? '');
+  log.debug({ accounts: result.data ?? [], selectedAccountId: id }, 'htx accounts resolved');
   if (!id) throw new Error('htx spot account id not found');
   accountId = id;
   return accountId;
 }
 
 async function fetchBalances(): Promise<Balances> {
-  const id = await resolveAccountId();
-  const result = await htxPrivateRest<HtxAccountBalanceResponse>({
-    method: 'GET',
-    path: `/v1/account/accounts/${id}/balance`,
-  });
+  let id = await resolveAccountId();
+  let result: HtxAccountBalanceResponse;
+  try {
+    result = await htxPrivateRest<HtxAccountBalanceResponse>({
+      method: 'GET',
+      path: `/v1/account/accounts/${id}/balance`,
+    });
+  } catch (err) {
+    const raw = (err as Error & { context?: { rawErrorResponse?: { ['err-code']?: string } } }).context?.rawErrorResponse;
+    if (raw?.['err-code'] !== 'account-get-balance-account-inexistent-error') throw err;
+    log.warn({ accountId: id }, 'configured htx account id is invalid; refreshing spot account id');
+    accountId = '';
+    id = await refreshAccountId();
+    result = await htxPrivateRest<HtxAccountBalanceResponse>({
+      method: 'GET',
+      path: `/v1/account/accounts/${id}/balance`,
+    });
+  }
   const out: Balances = {};
   for (const row of result.data?.list ?? []) {
     if (row.type !== 'trade') continue;
     const asset = String(row.currency ?? '').toUpperCase();
     if (!asset) continue;
-    out[asset] = Number(row.balance ?? 0);
+    const balance = Number(row.balance ?? 0);
+    if (!Number.isFinite(balance) || balance <= MIN_BALANCE_EPS) continue;
+    out[asset] = balance;
   }
   return out;
 }
@@ -252,7 +292,7 @@ function sendWsReq<T>(ch: string, data: Record<string, unknown>, { timeoutMs = 1
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     return Promise.reject(new Error(`htx ws not open (ch=${ch})`));
   }
-  const cid = String(data.clientOrderId ?? makeClientId());
+  const cid = String(data.clientOrderId ?? data['client-order-id'] ?? makeClientId());
   const frame = {
     action: 'req',
     ch,
@@ -299,23 +339,25 @@ function makeAuthFrame(): Record<string, unknown> {
   const params = {
     authType: 'api',
     accessKey: apiKey,
-    signatureMethod: 'HmacSHA256',
+    signatureMethod: authMethod,
     signatureVersion: '2.1',
     timestamp: htxTimestamp(),
   };
+  // HTX /ws/v2 signs lowercase auth fields even though REST signs uppercase fields.
   const canonicalQuery = buildCanonicalQuery({
     accessKey: params.accessKey,
     signatureMethod: params.signatureMethod,
     signatureVersion: params.signatureVersion,
     timestamp: params.timestamp,
   });
-  const payload = `GET\n${wsHost.toLowerCase()}\n${wsPath}\n${canonicalQuery}`;
+  const payload = `GET\n${wsSignatureHost}\n${wsPath}\n${canonicalQuery}`;
+  const signature = signHtxPayload(payload);
   return {
     action: 'req',
     ch: 'auth',
     params: {
       ...params,
-      signature: hmacSha256Base64(apiSecret, payload),
+      signature,
     },
   };
 }
@@ -372,26 +414,22 @@ function updateBalancesFromOrderData(params: UpdateBalancesParams): void {
   }
 }
 
-function subscribeUserData(cfg: AppConfig): void {
+function subscribeUserData(_cfg: AppConfig): void {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     throw new Error('htx ws not open');
   }
-  const symbols = cfg.symbols
-    .map((sym) => getEx(sym, ExchangeIds.htx)?.mdKey)
-    .filter((sym): sym is string => Boolean(sym));
-  const subscribed = symbols.length > 0 ? symbols : ['*'];
-  for (const symbol of subscribed) {
-    wsRef.send(JSON.stringify({
-      action: 'sub',
-      ch: `trade.clearing#${symbol}#0`,
-    }));
-  }
-  log.info({ symbols: subscribed.length }, 'htx private trade clearing subscribed');
+  const symbol = '*';
+  wsRef.send(JSON.stringify({
+    action: 'sub',
+    ch: `trade.clearing#${symbol}#0`,
+  }));
+  log.info({ symbol }, 'htx private trade clearing subscribed');
 }
 
 function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   const row = msgObj.data;
   if (!row?.symbol) return;
+  log.debug({ row }, 'htx trade clearing raw event');
   const canonSym = getCanonFromOderSym(row.symbol.toUpperCase(), ExchangeIds.htx);
   if (!canonSym) {
     log.warn({ row }, 'htx trade clearing symbol mapping missing');
@@ -405,7 +443,8 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   if (!key) return;
 
   if (row.eventType === 'cancellation') {
-    busRef.emit('trade:order_result', {
+    orderAccum.delete(key);
+    const result = {
       exchange: ExchangeIds.htx,
       symbol: row.symbol.toUpperCase(),
       status: OrderStates.CANCELLED,
@@ -419,7 +458,9 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
       fee_amount: 0,
       fee_currency: '',
       fee_usd: 0,
-    });
+    };
+    log.debug({ row, result }, 'htx order cancelled');
+    busRef.emit('trade:order_result', result);
     return;
   }
   if (row.eventType !== 'trade') return;
@@ -429,6 +470,19 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   const quoteQty = tradeQty * tradePrice;
   const feeAmount = Number(row.transactFee ?? 0);
   const feeCurrency = String(row.feeCurrency ?? '').toUpperCase();
+  log.debug({
+    key,
+    orderStatus: row.orderStatus,
+    tradeQty,
+    tradePrice,
+    quoteQty,
+    feeAmount,
+    feeCurrency,
+    execAmt: row.execAmt,
+    remainAmt: row.remainAmt,
+    orderSize: row.orderSize,
+    orderValue: row.orderValue,
+  }, 'htx trade clearing parsed fill');
 
   const acc = orderAccum.get(key) ?? {
     exchangeSymbol: row.symbol.toUpperCase(),
@@ -447,11 +501,15 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   acc.feeCurrency = feeCurrency || acc.feeCurrency;
   acc.transactTime = Number(row.tradeTime ?? acc.transactTime);
   orderAccum.set(key, acc);
+  log.debug({ key, acc }, 'htx trade clearing accumulated order');
 
   let status: OrderState = OrderStates.UNKNOWN;
   if (row.orderStatus === 'filled') status = OrderStates.FILLED;
   else if (row.orderStatus === 'partial-filled') status = OrderStates.PARTIALLY_FILLED;
-  if (status !== OrderStates.FILLED) return;
+  if (status !== OrderStates.FILLED) {
+    log.debug({ key, status, acc }, 'htx trade clearing waiting for final fill');
+    return;
+  }
 
   let feeUsd = 0;
   if (acc.feeAmount > 0 && acc.feeCurrency) {
@@ -471,7 +529,7 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
     cummulativeQuoteQty: acc.cummulativeQuoteQty,
   });
 
-  busRef.emit('trade:order_result', {
+  const result = {
     exchange: ExchangeIds.htx,
     symbol: acc.exchangeSymbol,
     status,
@@ -485,7 +543,9 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
     fee_amount: acc.feeAmount,
     fee_currency: acc.feeCurrency,
     fee_usd: feeUsd,
-  });
+  };
+  log.debug({ key, row, acc, result }, 'htx order result emitted');
+  busRef.emit('trade:order_result', result);
   orderAccum.delete(key);
 }
 
@@ -535,9 +595,15 @@ async function init(cfg: AppConfig, deps?: { bus?: any }): Promise<void> {
     }
     return;
   }
-  if (!apiKey || !apiSecret) {
-    throw new Error('Missing HTX API credentials');
+  if (authMethod === 'Ed25519') {
+    if (!apiKey || !ed25519PrivateKeyFile) {
+      throw new Error('Missing HTX Ed25519 credentials: HTX_ED25519_ACCESS_KEY and HTX_ED25519_PRIVATE_KEY_FILE are required');
+    }
+    ed25519PrivateKeyPem = fs.readFileSync(ed25519PrivateKeyFile, 'utf8');
+  } else if (!apiKey || !apiSecret) {
+    throw new Error('Missing HTX HMAC credentials: HTX_API_KEY and HTX_API_SECRET are required');
   }
+  // log.debug({ authMethod, accessKeySuffix: apiKey.slice(-8) }, 'htx credentials loaded');
 
   openPromise = new Promise<void>((resolve, reject) => {
     openResolve = resolve;
@@ -617,13 +683,12 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
   if (!isLoggedIn) {
     throw new Error('htx ws-api not logged in');
   }
-  const clientOrderId = String(orderParams.orderId ?? makeClientId());
   const data: Record<string, unknown> = {
-    accountId: accountId || await resolveAccountId(),
-    symbol: orderParams.symbol.toLowerCase(),
-    type: htxOrderType(orderParams.side, orderParams.type),
+    'account-id': accountId || await resolveAccountId(),
     source: 'spot-api',
-    clientOrderId,
+    type: htxOrderType(orderParams.side, orderParams.type),
+    symbol: orderParams.symbol.toLowerCase(),
+    'client-order-id': orderParams.orderId,
   };
   if (orderParams.side === OrderSides.BUY && orderParams.type === OrderTypes.MARKET) {
     if (orderParams.q === undefined) throw new Error('htx market buy requires q (quote amount)');
@@ -635,10 +700,13 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     if (orderParams.price === undefined) throw new Error('htx limit order requires price');
     data.price = String(orderParams.price);
   }
-
   try {
-    const response = await sendWsReq<HtxPlaceOrderResult>('order.place', data, { timeoutMs: 10_000 });
-    log.debug({ data, rawOrderResponse: response }, 'htx placeOrder raw response');
+    const response = await htxPrivateRest<HtxRestResponse<string>>({
+      method: 'POST',
+      path: '/v1/order/orders/place',
+      body: data,
+    });
+    log.debug({ data, rawOrderResponse: response }, 'htx placeOrder rest response');
   } catch (err) {
     log.error({ err, data }, 'htx placeOrder failed');
     throw err;
@@ -649,18 +717,18 @@ async function cancelOrder(params: CancelOrderParams): Promise<void> {
   if (!isLoggedIn) {
     throw new Error('htx ws-api not logged in');
   }
-  const data: Record<string, unknown> = {
-    accountId: accountId || await resolveAccountId(),
-  };
-  if (params.orderId !== undefined) {
-    data.orderId = String(params.orderId);
-  } else {
+  if (params.orderId === undefined) {
     throw new Error('htx cancelOrder requires orderId');
   }
+  const path = `/v1/order/orders/${params.orderId}/submitcancel`;
   try {
-    await sendWsReq('order.cancel', data, { timeoutMs: 10_000 });
+    const response = await htxPrivateRest<HtxRestResponse<string>>({
+      method: 'POST',
+      path,
+    });
+    log.debug({ orderId: params.orderId, rawCancelResponse: response }, 'htx cancelOrder rest response');
   } catch (err) {
-    log.error({ err, data }, 'htx cancelOrder failed');
+    log.error({ err, orderId: params.orderId }, 'htx cancelOrder failed');
     throw err;
   }
 }
