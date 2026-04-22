@@ -1,5 +1,7 @@
 {
   "pretty": true,
+  "file_enabled": false,
+  "heartbeat_enabled": false,
   "file": {
     "path": "./logs/bot.log",
     "heartbeatpath": "./logs/heartbeat.log"

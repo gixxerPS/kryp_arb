@@ -1,0 +1,26 @@
+[Unit]
+Description=Kryp Arb Bot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/kryp_arb/bot
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start:ipv4
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Keep journal entries readable; app logs still go to ./logs/*.log.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kryp-arb-bot
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+
+[Install]
+WantedBy=multi-user.target

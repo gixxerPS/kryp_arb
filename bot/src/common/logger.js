@@ -4,6 +4,13 @@ const pino = require('pino');
 
 const { getLogCfg } = require('./config');
 const cfg = getLogCfg();
+const isProduction = process.env.NODE_ENV === 'production';
+const fileEnabled = cfg.file_enabled === true;
+const prettyEnabled = cfg.pretty === true && !isProduction;
+const heartbeatEnabled = cfg.heartbeat_enabled === true;
+const noopLogger = {
+  info() {},
+};
 
 function ensureDir(fp) {
   const dir = path.dirname(fp);
@@ -12,51 +19,42 @@ function ensureDir(fp) {
   }
 }
 
-// ensure log dir exists
 let transport;
-ensureDir(cfg.file.path);
-
 const targets = [];
 
-// 1) File target (immer JSON)
-targets.push({
-  target: 'pino/file',
-  level: 'debug',
-  options: {
-    destination: cfg.file.path,
-    mkdir: true,
-  },
-});
-// test : menschenlesbare datei -> spaeter loeschen
-targets.push({
-  target: 'pino-pretty',
-  level: 'debug',
-  options: {
-    destination: 'logs/pretty.log',
-    mkdir: true,
-    translateTime: 'SYS:standard',
-    minimumLevel: 'debug'
-  },
-});
-
-// 2) Optional pretty console
-if (cfg.pretty) {
+if (fileEnabled) {
+  ensureDir(cfg.file.path);
   targets.push({
-    target: 'pino-pretty',
+    target: 'pino/file',
     level: 'debug',
-    options: { 
-      colorize: true, 
-      translateTime: 'SYS:standard'
+    options: {
+      destination: cfg.file.path,
+      mkdir: true,
     },
   });
 }
 
-transport = pino.transport({ targets });
+if (prettyEnabled) {
+  targets.push({
+    target: 'pino-pretty',
+    level: 'debug',
+    options: {
+      translateTime: 'SYS:standard',
+      minimumLevel: 'debug'
+    },
+  });
+}
+
+if (targets.length > 0) {
+  transport = pino.transport({ targets });
+}
 
 let baseLogger;
 function initLogger() {
-  baseLogger = pino({ level: 'debug', base: null }, transport); // base immer auf debug damit childs level selbst steuern koennen
-  //baseLogger = pino({ level: 'debug' }); // transport zum testen deaktivieren
+  // base immer auf debug damit childs level selbst steuern koennen
+  baseLogger = transport
+    ? pino({ level: 'debug', base: null }, transport)
+    : pino({ level: 'debug', base: null });
 }
 
 function resolveLevel(name) {
@@ -93,17 +91,20 @@ function getLogger(name) {
   return baseLogger.child({ name }, { level: resolveLevel(name) });
 }
 
-const heartbeatLogger = pino({
-  level: 'info',
-  base: null,                 // kein pid, hostname
-}, pino.destination({
-    dest: cfg.file.heartbeatpath,
-  mkdir: true,
-  sync: false,                // async write!
-}));
+// Heartbeat file logging is currently disabled by config. Keep the code path
+// available for quick diagnostics by setting log.heartbeat_enabled=true.
+const heartbeatLogger = heartbeatEnabled
+  ? pino({
+      level: 'info',
+      base: null,                 // kein pid, hostname
+    }, pino.destination({
+      dest: cfg.file.heartbeatpath,
+      mkdir: true,
+      sync: false,                // async write!
+    }))
+  : noopLogger;
 function getHeartbeatLogger() {
   return heartbeatLogger;
 }
 
 module.exports = { initLogger, getLogger, getHeartbeatLogger};
-
