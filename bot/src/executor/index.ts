@@ -419,11 +419,11 @@ export default async function startExecutor(
       return;
     }
     busy = true;
-    if (restrictExecutionSymbols && !enabledExecutionSymbols.has(intent.symbol)) {
-      log.debug({ intentId: intent.id, symbol: intent.symbol }, 'dropping intent: symbol not enabled for execution');
-      return;
-    }
     try {
+      if (restrictExecutionSymbols && !enabledExecutionSymbols.has(intent.symbol)) {
+        log.debug({ intentId: intent.id, symbol: intent.symbol }, 'dropping intent: symbol not enabled for execution');
+        return;
+      }
       const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, buyPxEff, sellPxEff, id } = intent; // sym ist canonical
       let orderTargetQty = targetQty;
       let orderQBuy = qBuy;

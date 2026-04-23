@@ -4,7 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 const { Client } = require('pg');
 const log = require('./logger').getLogger('app');
 
-const PERIOD = '2 days';
+const PERIOD = '20 days';
 const TOP_ROUTES = 10;
 const RECENT_LIMIT = 10;
 
@@ -128,7 +128,7 @@ function analyzeRequiredCapital(intents) {
   }
 
   return {
-    peakReqCapArr: Object.values(resultObj)
+    peakReqCapArr: Object.values(resultObj).sort((a,b) => b.pnl - a.pnl)
   };
 }
 
