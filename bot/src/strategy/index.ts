@@ -59,6 +59,23 @@ function buildLatestMapEntry(snapshotKey: string, snapshot: L2Snapshot): Strateg
   };
 }
 
+function buildIntentL2Debug(intent: TradeIntent, latest: Map<string, L2Snapshot>, nowMs: number): Record<string, unknown> {
+  const buy = latest.get(key(intent.buyEx, intent.symbol));
+  const sell = latest.get(key(intent.sellEx, intent.symbol));
+  return {
+    buy: buy ? {
+      exchange: buy.exchange,
+      tsAgeMs: nowMs - buy.tsMs,
+      asks: formatLevelsInline(buy.asks),
+    } : null,
+    sell: sell ? {
+      exchange: sell.exchange,
+      tsAgeMs: nowMs - sell.tsMs,
+      bids: formatLevelsInline(sell.bids),
+    } : null,
+  };
+}
+
 export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): StrategyHandle {
   initStrategyEngine(cfg); // werte vorberechnen fuer schnellen hotpath
 
@@ -131,7 +148,7 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
       }
       lastIntentAt.set(rk, nowMs);
       const intent = makeTradeIntent(it, nowMs, ttlMs, uuidFn);
-      log.debug({ intent }, 'trade:intent found');
+      log.debug({ intent, l2: buildIntentL2Debug(intent, latest, nowMs) }, 'trade:intent found');
       bus.emit('trade:intent', intent);
     }
   }

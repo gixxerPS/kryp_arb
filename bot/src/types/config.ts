@@ -24,6 +24,9 @@ export interface BotCfg {
         by_exchange?: Partial<Record<ExchangeId, number>>;
         by_symbol?: Record<string, number>;
       };
+      liquidity_quote_factor?: {
+        by_exchange?: Partial<Record<ExchangeId, number>>;
+      };
     };
   }
 

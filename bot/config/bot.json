@@ -19,6 +19,11 @@
       "by_symbol":{
         "MON_USDT":0.05
       }
+    },
+    "liquidity_quote_factor":{
+      "by_exchange":{
+        "htx": 0.8
+      }
     }
   }
 }

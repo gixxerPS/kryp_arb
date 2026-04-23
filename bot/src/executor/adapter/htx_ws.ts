@@ -93,6 +93,23 @@ type HtxTradeClearingRow = {
   orderStatus?: string;
 };
 
+type HtxOrderUpdateRow = {
+  eventType?: 'creation' | 'trade' | 'cancellation' | string;
+  symbol?: string;
+  orderId?: number | string;
+  orderSide?: 'buy' | 'sell' | string;
+  orderType?: string;
+  orderStatus?: string;
+  orderSize?: string;
+  orderValue?: string;
+  execAmt?: string;
+  remainAmt?: string;
+  clientOrderId?: string;
+  orderCreateTime?: number;
+  tradeTime?: number;
+  lastActTime?: number;
+};
+
 type HtxAuthMethod = 'HmacSHA256' | 'Ed25519';
 
 const authMethod: HtxAuthMethod = process.env.HTX_AUTH_METHOD === 'HmacSHA256' ? 'HmacSHA256' : 'Ed25519';
@@ -120,7 +137,8 @@ let openResolve: (() => void) | null = null;
 let openReject: ((err: unknown) => void) | null = null;
 let balanceRefreshTmr: NodeJS.Timeout | null = null;
 const pending: Map<string, PendingEntry> = new Map();
-const orderAccum: Map<string, {
+type HtxOrderTracker = {
+  canonSym: string;
   exchangeSymbol: string;
   side: 'BUY' | 'SELL';
   clientOrderId: string;
@@ -130,9 +148,18 @@ const orderAccum: Map<string, {
   cummulativeQuoteQty: number;
   feeAmount: number;
   feeCurrency: string;
-}> = new Map();
+  finalStatus: OrderState;
+  orderFinalSeen: boolean;
+  seenTradeClearing: boolean;
+  orderExecAmt?: number;
+  orderRemainAmt?: number;
+  finalTimer?: NodeJS.Timeout;
+};
+const orderTrackers: Map<string, HtxOrderTracker> = new Map();
+const orderAliases: Map<string, string> = new Map();
 const BALANCE_REFRESH_MS = 15 * 60 * 1000;
 const MIN_BALANCE_EPS = 1e-9;
+const ORDER_FINAL_GRACE_MS = Number(process.env.HTX_ORDER_FINAL_GRACE_MS ?? process.env.HTX_FINAL_FILL_GRACE_MS ?? 250);
 
 function rfc3986Encode(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -419,11 +446,101 @@ function subscribeUserData(_cfg: AppConfig): void {
     throw new Error('htx ws not open');
   }
   const symbol = '*';
-  wsRef.send(JSON.stringify({
-    action: 'sub',
-    ch: `trade.clearing#${symbol}#0`,
-  }));
-  log.info({ symbol }, 'htx private trade clearing subscribed');
+  for (const ch of [`orders#${symbol}`, `trade.clearing#${symbol}#0`]) {
+    wsRef.send(JSON.stringify({ action: 'sub', ch }));
+  }
+  log.info({ symbol }, 'htx private order and trade clearing subscribed');
+}
+
+function aliasId(value?: string | number): string {
+  return value === undefined || value === null ? '' : String(value);
+}
+
+function trackerKeyFor(clientOrderId?: string | number, orderId?: string | number): string {
+  const clientKey = aliasId(clientOrderId);
+  const orderKey = aliasId(orderId);
+  return orderAliases.get(clientKey) ?? orderAliases.get(orderKey) ?? (clientKey || orderKey);
+}
+
+function knownTrackerKey(clientOrderId?: string | number, orderId?: string | number): string {
+  const clientKey = aliasId(clientOrderId);
+  const orderKey = aliasId(orderId);
+  return orderAliases.get(clientKey) ?? orderAliases.get(orderKey) ?? '';
+}
+
+function deleteOrderTracker(key: string, tracker: HtxOrderTracker): void {
+  clearFinalTimer(tracker);
+  orderTrackers.delete(key);
+  if (tracker.clientOrderId) orderAliases.delete(tracker.clientOrderId);
+  if (tracker.orderId !== '') orderAliases.delete(String(tracker.orderId));
+}
+
+function statusFromHtx(status?: string): OrderState {
+  if (status === 'filled') return OrderStates.FILLED;
+  if (status === 'partial-filled') return OrderStates.PARTIALLY_FILLED;
+  if (status === 'canceled' || status === 'cancelling' || status === 'partial-canceled') return OrderStates.CANCELLED;
+  return OrderStates.UNKNOWN;
+}
+
+function clearFinalTimer(tracker?: HtxOrderTracker): void {
+  if (!tracker?.finalTimer) return;
+  clearTimeout(tracker.finalTimer);
+  tracker.finalTimer = undefined;
+}
+
+function emitFinalOrderResult(key: string, tracker: HtxOrderTracker): void {
+  clearFinalTimer(tracker);
+  if (tracker.finalStatus === OrderStates.FILLED && !tracker.seenTradeClearing) {
+    log.warn({ key, tracker }, 'htx final order emitted without trade clearing fills');
+  }
+
+  let feeUsd = 0;
+  if (tracker.feeAmount > 0 && tracker.feeCurrency) {
+    const feeAssetPrice = getAssetPrice(ExchangeIds.htx, tracker.feeCurrency);
+    if (feeAssetPrice == null) {
+      log.warn({ currency: tracker.feeCurrency }, 'missing cached asset price');
+    } else {
+      feeUsd = feeAssetPrice * tracker.feeAmount;
+    }
+  }
+
+  updateBalancesFromOrderData({
+    side: tracker.side,
+    baseAsset: getEx(tracker.canonSym, ExchangeIds.htx)!.base,
+    quoteAsset: getEx(tracker.canonSym, ExchangeIds.htx)!.quote,
+    executedQty: tracker.executedQty,
+    cummulativeQuoteQty: tracker.cummulativeQuoteQty,
+  });
+
+  const result = {
+    exchange: ExchangeIds.htx,
+    symbol: tracker.exchangeSymbol,
+    status: tracker.finalStatus,
+    side: tracker.side,
+    orderId: tracker.orderId,
+    clientOrderId: tracker.clientOrderId,
+    transactTime: tracker.transactTime,
+    executedQty: tracker.executedQty,
+    cummulativeQuoteQty: tracker.cummulativeQuoteQty,
+    priceVwap: tracker.executedQty > 0 ? tracker.cummulativeQuoteQty / tracker.executedQty : 0,
+    fee_amount: tracker.feeAmount,
+    fee_currency: tracker.feeCurrency,
+    fee_usd: feeUsd,
+  };
+  log.debug({ key, tracker, result }, 'htx order result emitted');
+  busRef.emit('trade:order_result', result);
+  deleteOrderTracker(key, tracker);
+}
+
+function scheduleFinalOrderResult(key: string, tracker: HtxOrderTracker): void {
+  clearFinalTimer(tracker);
+  tracker.finalTimer = setTimeout(() => {
+    const latest = orderTrackers.get(key);
+    if (!latest || !latest.orderFinalSeen) return;
+    emitFinalOrderResult(key, latest);
+  }, ORDER_FINAL_GRACE_MS);
+  tracker.finalTimer.unref?.();
+  log.debug({ key, orderFinalGraceMs: ORDER_FINAL_GRACE_MS, tracker }, 'htx final order result scheduled');
 }
 
 function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
@@ -437,30 +554,22 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   }
 
   const side = row.orderSide === 'buy' ? OrderSides.BUY : OrderSides.SELL;
-  const orderId = row.orderId ?? '';
-  const clientOrderId = String(row.clientOrderId ?? '');
-  const key = clientOrderId || String(orderId);
-  if (!key) return;
+  const key = knownTrackerKey(row.clientOrderId, row.orderId);
+  if (!key) {
+    log.debug({ clientOrderId: row.clientOrderId, orderId: row.orderId }, 'ignore htx trade clearing for unknown order');
+    return;
+  }
+  const tracker = orderTrackers.get(key);
+  if (!tracker) return;
+  tracker.clientOrderId = tracker.clientOrderId || aliasId(row.clientOrderId);
+  tracker.orderId = tracker.orderId || aliasId(row.orderId);
+  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
+  if (tracker.orderId !== '') orderAliases.set(String(tracker.orderId), key);
 
   if (row.eventType === 'cancellation') {
-    orderAccum.delete(key);
-    const result = {
-      exchange: ExchangeIds.htx,
-      symbol: row.symbol.toUpperCase(),
-      status: OrderStates.CANCELLED,
-      side,
-      orderId,
-      clientOrderId,
-      transactTime: Number(row.tradeTime ?? row.orderCreateTime ?? Date.now()),
-      executedQty: 0,
-      cummulativeQuoteQty: 0,
-      priceVwap: 0,
-      fee_amount: 0,
-      fee_currency: '',
-      fee_usd: 0,
-    };
-    log.debug({ row, result }, 'htx order cancelled');
-    busRef.emit('trade:order_result', result);
+    tracker.finalStatus = OrderStates.CANCELLED;
+    tracker.orderFinalSeen = true;
+    scheduleFinalOrderResult(key, tracker);
     return;
   }
   if (row.eventType !== 'trade') return;
@@ -468,8 +577,18 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   const tradeQty = Number(row.tradeVolume ?? 0);
   const tradePrice = Number(row.tradePrice ?? 0);
   const quoteQty = tradeQty * tradePrice;
-  const feeAmount = Number(row.transactFee ?? 0);
-  const feeCurrency = String(row.feeCurrency ?? '').toUpperCase();
+  const feeDeductAmount = Number(row.feeDeduct ?? NaN);
+  const transactFeeAmount = Number(row.transactFee ?? 0);
+  const feeAmount = Number.isFinite(feeDeductAmount) && feeDeductAmount > 0 ? feeDeductAmount : transactFeeAmount;
+  const feeCurrency = String(
+    Number.isFinite(feeDeductAmount) && feeDeductAmount > 0 ? row.feeDeductType : row.feeCurrency ?? ''
+  ).toUpperCase();
+  tracker.seenTradeClearing = true;
+  tracker.executedQty += Number.isFinite(tradeQty) ? tradeQty : 0;
+  tracker.cummulativeQuoteQty += Number.isFinite(quoteQty) ? quoteQty : 0;
+  tracker.feeAmount += Number.isFinite(feeAmount) ? feeAmount : 0;
+  tracker.feeCurrency = feeCurrency || tracker.feeCurrency;
+  tracker.transactTime = Number(row.tradeTime ?? tracker.transactTime);
   log.debug({
     key,
     orderStatus: row.orderStatus,
@@ -482,71 +601,57 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
     remainAmt: row.remainAmt,
     orderSize: row.orderSize,
     orderValue: row.orderValue,
-  }, 'htx trade clearing parsed fill');
+    tracker,
+  }, 'htx trade clearing accumulated order');
 
-  const acc = orderAccum.get(key) ?? {
-    exchangeSymbol: row.symbol.toUpperCase(),
-    side,
-    clientOrderId,
-    orderId,
-    transactTime: Number(row.tradeTime ?? Date.now()),
-    executedQty: 0,
-    cummulativeQuoteQty: 0,
-    feeAmount: 0,
-    feeCurrency,
-  };
-  acc.executedQty += Number.isFinite(tradeQty) ? tradeQty : 0;
-  acc.cummulativeQuoteQty += Number.isFinite(quoteQty) ? quoteQty : 0;
-  acc.feeAmount += Number.isFinite(feeAmount) ? feeAmount : 0;
-  acc.feeCurrency = feeCurrency || acc.feeCurrency;
-  acc.transactTime = Number(row.tradeTime ?? acc.transactTime);
-  orderAccum.set(key, acc);
-  log.debug({ key, acc }, 'htx trade clearing accumulated order');
+  if (tracker.orderFinalSeen) scheduleFinalOrderResult(key, tracker);
+}
 
-  let status: OrderState = OrderStates.UNKNOWN;
-  if (row.orderStatus === 'filled') status = OrderStates.FILLED;
-  else if (row.orderStatus === 'partial-filled') status = OrderStates.PARTIALLY_FILLED;
-  if (status !== OrderStates.FILLED) {
-    log.debug({ key, status, acc }, 'htx trade clearing waiting for final fill');
+function handleOrderUpdate(msgObj: HtxWsResponse<HtxOrderUpdateRow>): void {
+  const row = msgObj.data;
+  if (!row?.symbol) return;
+  log.debug({ row }, 'htx order update raw event');
+  const canonSym = getCanonFromOderSym(row.symbol.toUpperCase(), ExchangeIds.htx);
+  if (!canonSym) {
+    log.warn({ row }, 'htx order update symbol mapping missing');
     return;
   }
 
-  let feeUsd = 0;
-  if (acc.feeAmount > 0 && acc.feeCurrency) {
-    const feeAssetPrice = getAssetPrice(ExchangeIds.htx, acc.feeCurrency);
-    if (feeAssetPrice == null) {
-      log.warn({ currency: acc.feeCurrency }, 'missing cached asset price');
-    } else {
-      feeUsd = feeAssetPrice * acc.feeAmount;
-    }
+  const side = row.orderSide === 'buy' ? OrderSides.BUY : OrderSides.SELL;
+  const key = knownTrackerKey(row.clientOrderId, row.orderId);
+  if (!key) {
+    log.debug({ clientOrderId: row.clientOrderId, orderId: row.orderId }, 'ignore htx order update for unknown order');
+    return;
   }
+  const tracker = orderTrackers.get(key);
+  if (!tracker) return;
+  tracker.clientOrderId = tracker.clientOrderId || aliasId(row.clientOrderId);
+  tracker.orderId = tracker.orderId || aliasId(row.orderId);
+  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
+  if (tracker.orderId !== '') orderAliases.set(String(tracker.orderId), key);
 
-  updateBalancesFromOrderData({
-    side,
-    baseAsset: getEx(canonSym, ExchangeIds.htx)!.base,
-    quoteAsset: getEx(canonSym, ExchangeIds.htx)!.quote,
-    executedQty: acc.executedQty,
-    cummulativeQuoteQty: acc.cummulativeQuoteQty,
-  });
+  const execAmt = Number(row.execAmt ?? NaN);
+  const remainAmt = Number(row.remainAmt ?? NaN);
+  if (Number.isFinite(execAmt)) tracker.orderExecAmt = execAmt;
+  if (Number.isFinite(remainAmt)) tracker.orderRemainAmt = remainAmt;
+  tracker.transactTime = Number(row.tradeTime ?? row.lastActTime ?? tracker.transactTime);
 
-  const result = {
-    exchange: ExchangeIds.htx,
-    symbol: acc.exchangeSymbol,
+  const status = statusFromHtx(row.orderStatus);
+  tracker.finalStatus = status;
+  tracker.orderFinalSeen = status === OrderStates.FILLED || status === OrderStates.CANCELLED;
+
+  log.debug({
+    key,
     status,
-    side,
-    orderId: acc.orderId,
-    clientOrderId: acc.clientOrderId,
-    transactTime: acc.transactTime,
-    executedQty: acc.executedQty,
-    cummulativeQuoteQty: acc.cummulativeQuoteQty,
-    priceVwap: acc.executedQty > 0 ? acc.cummulativeQuoteQty / acc.executedQty : 0,
-    fee_amount: acc.feeAmount,
-    fee_currency: acc.feeCurrency,
-    fee_usd: feeUsd,
-  };
-  log.debug({ key, row, acc, result }, 'htx order result emitted');
-  busRef.emit('trade:order_result', result);
-  orderAccum.delete(key);
+    execAmt: row.execAmt,
+    remainAmt: row.remainAmt,
+    orderSize: row.orderSize,
+    orderValue: row.orderValue,
+    tracker,
+  }, 'htx order update parsed');
+
+  if (!tracker.orderFinalSeen) return;
+  scheduleFinalOrderResult(key, tracker);
 }
 
 function handleWsResponse(parsed: HtxWsResponse): void {
@@ -556,6 +661,10 @@ function handleWsResponse(parsed: HtxWsResponse): void {
   }
   if (parsed.action === 'push' && parsed.ch?.startsWith('trade.clearing#')) {
     handleTradeDetails(parsed as HtxWsResponse<HtxTradeClearingRow>);
+    return;
+  }
+  if (parsed.action === 'push' && parsed.ch?.startsWith('orders#')) {
+    handleOrderUpdate(parsed as HtxWsResponse<HtxOrderUpdateRow>);
     return;
   }
   if (parsed.action === 'sub') {
@@ -700,6 +809,7 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     if (orderParams.price === undefined) throw new Error('htx limit order requires price');
     data.price = String(orderParams.price);
   }
+  log.debug({data}, 'ORDER!!!!');
   try {
     const response = await htxPrivateRest<HtxRestResponse<string>>({
       method: 'POST',
@@ -707,6 +817,35 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
       body: data,
     });
     log.debug({ data, rawOrderResponse: response }, 'htx placeOrder rest response');
+    if (response.data !== undefined) {
+      const canonSym = getCanonFromOderSym(orderParams.symbol.toUpperCase(), ExchangeIds.htx);
+      if (!canonSym) {
+        log.warn({ orderParams, orderId: response.data }, 'htx placed order symbol mapping missing');
+        return;
+      }
+      const clientOrderId = aliasId(orderParams.orderId);
+      const orderId = response.data;
+      const key = trackerKeyFor(clientOrderId, orderId);
+      const tracker: HtxOrderTracker = {
+        canonSym,
+        exchangeSymbol: orderParams.symbol.toUpperCase(),
+        side: orderParams.side,
+        clientOrderId,
+        orderId,
+        transactTime: Date.now(),
+        executedQty: 0,
+        cummulativeQuoteQty: 0,
+        feeAmount: 0,
+        feeCurrency: '',
+        finalStatus: OrderStates.UNKNOWN,
+        orderFinalSeen: false,
+        seenTradeClearing: false,
+      };
+      orderTrackers.set(key, tracker);
+      if (clientOrderId) orderAliases.set(clientOrderId, key);
+      orderAliases.set(String(orderId), key);
+      log.debug({ clientOrderId, orderId, symbol: orderParams.symbol }, 'htx placed order registered');
+    }
   } catch (err) {
     log.error({ err, data }, 'htx placeOrder failed');
     throw err;

@@ -1,5 +1,6 @@
 # persistent runtime data
 bot/data/
+tools/symbolscreener/out/
 
 package-lock.json
 .vscode/

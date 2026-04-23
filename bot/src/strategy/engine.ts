@@ -34,6 +34,9 @@ type EngineRuntime = {
       byExchange: Partial<Record<ExchangeId, number>>;
       bySymbol: Record<string, number>;
     };
+    liquidityQuoteFactor: {
+      byExchange: Partial<Record<ExchangeId, number>>;
+    };
   };
 };
 
@@ -60,6 +63,14 @@ export function initStrategyEngine(cfg: AppConfig): void {
           ])
         ),
       },
+      liquidityQuoteFactor: {
+        byExchange: Object.fromEntries(
+          Object.entries(cfg.bot.overrides?.liquidity_quote_factor?.by_exchange ?? {}).map(([exchange, factor]) => [
+            exchange,
+            Number(factor),
+          ])
+        ) as Partial<Record<ExchangeId, number>>,
+      },
     },
   };
 }
@@ -85,6 +96,11 @@ function getAddRawSpreadBuffer(
   return (overrides.bySymbol[sym] ?? 0)
     + (overrides.byExchange[buyEx] ?? 0)
     + (overrides.byExchange[sellEx] ?? 0);
+}
+
+function getLiquidityQuoteFactor(rt: EngineRuntime, ex: ExchangeId): number {
+  const factor = rt.overrides.liquidityQuoteFactor.byExchange[ex] ?? 1;
+  return Number.isFinite(factor) && factor > 0 ? Math.min(factor, 1) : 1;
 }
 
 // fuer 10 levels noch OK zu iterieren
@@ -215,13 +231,15 @@ function getBestIntentSliceByPnl({
     bids,
     buyFee,
     sellFee,
-    qMax,
+    qMaxBuy,
+    qMaxSell,
   }: {
     asks: L2Level[];
     bids: L2Level[];
     buyFee: number;
     sellFee: number;
-    qMax: number;
+    qMaxBuy: number;
+    qMaxSell: number;
   }
 ): BestIntentSliceResult | null {
   let i = 0;
@@ -252,8 +270,8 @@ function getBestIntentSliceByPnl({
       break;
     }
 
-    const qBuyRemaining = qMax - buyNotional;
-    const qSellRemaining = qMax - sellNotional;
+    const qBuyRemaining = qMaxBuy - buyNotional;
+    const qSellRemaining = qMaxSell - sellNotional;
     if (qBuyRemaining <= 0 || qSellRemaining <= 0) {
       break;
     }
@@ -392,8 +410,10 @@ export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }:
       }
 
       // STAGE 2: max moegliche ordergroesse anhand von L2 daten ermitteln
-      const qBuy = getQWithinSlippage({ levels: buy.asks, slippage: rt.slippage, qMax: rt.qMax });
-      const qSell = getQWithinSlippage({ levels: sell.bids, slippage: rt.slippage, qMax: rt.qMax });
+      const qMaxBuy = rt.qMax * getLiquidityQuoteFactor(rt, buyEx);
+      const qMaxSell = rt.qMax * getLiquidityQuoteFactor(rt, sellEx);
+      const qBuy = getQWithinSlippage({ levels: buy.asks, slippage: rt.slippage, qMax: qMaxBuy });
+      const qSell = getQWithinSlippage({ levels: sell.bids, slippage: rt.slippage, qMax: qMaxSell });
 
       if (qBuy.q < rt.qMin || qSell.q < rt.qMin) {
         continue;
@@ -495,7 +515,8 @@ export function computeIntentsForSymV2({ sym, latest, fees, nowMs, cfg, exState 
         bids: sell.bids,
         buyFee,
         sellFee,
-        qMax: rt.qMax,
+        qMaxBuy: rt.qMax * getLiquidityQuoteFactor(rt, buyEx),
+        qMaxSell: rt.qMax * getLiquidityQuoteFactor(rt, sellEx),
       });
       if (!bestSlice) {
         continue;
