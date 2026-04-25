@@ -261,4 +261,92 @@ suite('executor/index', () => {
     assert.equal(placed.length, 2);
     assert.deepEqual(executor.getRuntimeState().blockedRoutes, {});
   });
+
+  test('reserves pending sell balance so consecutive intents do not oversubscribe inventory', async () => {
+    const bus = new EventEmitter();
+    const placed = [];
+
+    function mkAdapter(exchange, balances) {
+      return {
+        isReady: () => true,
+        getBalances: () => balances,
+        placeOrder: async (params) => {
+          placed.push({ exchange, params });
+        },
+        cancelOrder: async () => {
+          throw new Error('not used');
+        },
+      };
+    }
+
+    await startExecutor({
+      cfg: {
+        bot: {
+          balance_minimum_usdt: 100,
+        },
+      },
+    }, {
+      bus,
+      exState: {
+        getAllExchangeStates: () => [],
+        getExchangeState: () => ({ enabled: true }),
+      },
+      adapters: {
+        binance: mkAdapter('binance', { USDC: 1000, AXS: 0 }),
+        gate: mkAdapter('gate', { USDT: 1000, AXS: 16 }),
+      },
+      nowFn: () => 1_700_000_000_000,
+      enableIntentHandling: true,
+    });
+
+    bus.emit('trade:intent', mkIntent({ id: 'intent-1' }));
+    bus.emit('trade:intent', mkIntent({ id: 'intent-2' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(placed.length, 4);
+    assert.deepEqual(placed[0], {
+      exchange: 'binance',
+      params: {
+        type: 'MARKET',
+        side: 'BUY',
+        symbol: 'AXSUSDC',
+        quantity: 10,
+        q: 20,
+        orderId: 'intent-1',
+      },
+    });
+    assert.deepEqual(placed[1], {
+      exchange: 'gate',
+      params: {
+        type: 'MARKET',
+        side: 'SELL',
+        symbol: 'AXS_USDT',
+        quantity: 10,
+        q: 22,
+        orderId: 'intent-1',
+      },
+    });
+    assert.deepEqual(placed[2], {
+      exchange: 'binance',
+      params: {
+        type: 'MARKET',
+        side: 'BUY',
+        symbol: 'AXSUSDC',
+        quantity: 6,
+        q: 12,
+        orderId: 'intent-2',
+      },
+    });
+    assert.deepEqual(placed[3], {
+      exchange: 'gate',
+      params: {
+        type: 'MARKET',
+        side: 'SELL',
+        symbol: 'AXS_USDT',
+        quantity: 6,
+        q: 13.200000000000001,
+        orderId: 'intent-2',
+      },
+    });
+  });
 });

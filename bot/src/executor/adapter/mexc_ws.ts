@@ -47,6 +47,7 @@ type MexcNewOrderResponse = {
   side?: string;
   stpMode?: string;
   transactTime: number;
+  clientOrderId?: string;
 };
 
 type MexcCancelOrderResponse = {
@@ -187,6 +188,26 @@ let balanceRefreshTmr: NodeJS.Timeout | null = null;
 let listenKeyKeepAliveTmr: NodeJS.Timeout | null = null;
 const BALANCE_REFRESH_MS = 15 * 60 * 1000; // [ms] => alle 15 min
 const LISTEN_KEY_KEEPALIVE_MS = 30 * 60 * 1000; // [ms] => alle 30 min
+const ORDER_FINAL_GRACE_MS = Number(process.env.MEXC_ORDER_FINAL_GRACE_MS ?? 250);
+const MIN_ORDER_QTY_EPS = 1e-9;
+
+type MexcOrderTracker = {
+  canonSym: string;
+  exchangeSymbol: string;
+  side: 'BUY' | 'SELL';
+  clientOrderId: string;
+  orderId: string;
+  transactTime: number;
+  executedQty: number;
+  cummulativeQuoteQty: number;
+  feeAmount: number;
+  feeCurrency: string;
+  expectedQty?: number;
+  finalTimer?: NodeJS.Timeout;
+};
+
+const orderTrackers: Map<string, MexcOrderTracker> = new Map();
+const orderAliases: Map<string, string> = new Map();
 
 async function fetchBalances(): Promise<Balances> {
   const result = await mexcPrivateRest<MexcAccountInfo>({
@@ -257,6 +278,79 @@ function startListenKeyKeepAliveLoop(): void {
   listenKeyKeepAliveTmr.unref?.();
 }
 
+function aliasId(value?: string | number): string {
+  return value === undefined || value === null ? '' : String(value);
+}
+
+function trackerKeyFor(clientOrderId?: string | number, orderId?: string | number): string {
+  const clientKey = aliasId(clientOrderId);
+  const orderKey = aliasId(orderId);
+  return orderAliases.get(clientKey) ?? orderAliases.get(orderKey) ?? (clientKey || orderKey);
+}
+
+function deleteOrderTracker(key: string, tracker: MexcOrderTracker): void {
+  if (tracker.finalTimer) {
+    clearTimeout(tracker.finalTimer);
+    tracker.finalTimer = undefined;
+  }
+  orderTrackers.delete(key);
+  if (tracker.clientOrderId) orderAliases.delete(tracker.clientOrderId);
+  if (tracker.orderId) orderAliases.delete(tracker.orderId);
+}
+
+function emitFinalOrderResult(key: string, tracker: MexcOrderTracker): void {
+  if (tracker.finalTimer) {
+    clearTimeout(tracker.finalTimer);
+    tracker.finalTimer = undefined;
+  }
+  let feeUsd = 0;
+  if (tracker.feeAmount > 0 && tracker.feeCurrency) {
+    const feeAssetPrice = getAssetPrice(ExchangeIds.mexc, tracker.feeCurrency);
+    if (feeAssetPrice == null) {
+      log.warn({ currency: tracker.feeCurrency }, 'missing cached asset price');
+    } else {
+      feeUsd = feeAssetPrice * tracker.feeAmount;
+    }
+  }
+  updateBalancesFromOrderData({
+    side: tracker.side,
+    baseAsset: getEx(tracker.canonSym, ExchangeIds.mexc)!.base,
+    quoteAsset: getEx(tracker.canonSym, ExchangeIds.mexc)!.quote,
+    executedQty: tracker.executedQty,
+    cummulativeQuoteQty: tracker.cummulativeQuoteQty,
+  });
+  const result: CommonOrderResult = {
+    exchange: ExchangeIds.mexc,
+    symbol: tracker.exchangeSymbol,
+    status: OrderStates.FILLED,
+    side: tracker.side,
+    orderId: tracker.orderId,
+    clientOrderId: tracker.clientOrderId,
+    transactTime: tracker.transactTime,
+    executedQty: tracker.executedQty,
+    cummulativeQuoteQty: tracker.cummulativeQuoteQty,
+    priceVwap: tracker.executedQty > 0 ? tracker.cummulativeQuoteQty / tracker.executedQty : 0,
+    fee_amount: tracker.feeAmount,
+    fee_currency: tracker.feeCurrency,
+    fee_usd: feeUsd,
+  };
+  log.debug({ key, tracker, result }, 'mexc order result emitted');
+  busRef.emit('trade:order_result', result);
+  deleteOrderTracker(key, tracker);
+}
+
+function scheduleFinalOrderResult(key: string, tracker: MexcOrderTracker): void {
+  if (tracker.finalTimer) {
+    clearTimeout(tracker.finalTimer);
+  }
+  tracker.finalTimer = setTimeout(() => {
+    const latest = orderTrackers.get(key);
+    if (!latest) return;
+    emitFinalOrderResult(key, latest);
+  }, ORDER_FINAL_GRACE_MS);
+  tracker.finalTimer.unref?.();
+}
+
 function handleUserDataStream(msgObj: MexcUserDataMsg): void {
   if (!msgObj.privateDeals || !msgObj.symbol) {
     return;
@@ -267,44 +361,47 @@ function handleUserDataStream(msgObj: MexcUserDataMsg): void {
     return;
   }
   const r = msgObj.privateDeals;
-  const status = OrderStates.FILLED; // annahme nur gefuellte orders werden geschickt
-  // clearOrderChannelTimeout(ref);
   const side = r.tradeType === 1 ? OrderSides.BUY : OrderSides.SELL;
-  const executedQty = Number(r.quantity);
-  const cumQuoteQty = Number(r.amount);
-
-  // fees ermitteln
-  const feeAmount = Number(r.feeAmount);
-  const feeCurrency = r.feeCurrency;
-  const feeAssetPrice = getAssetPrice(ExchangeIds.mexc, 'MX'); // 15 min genauen preis holen
-  let feeUsd = 0;
-  if (feeAssetPrice == null) {
-    log.warn({ currency: 'MX' }, 'missing cached asset price');
-  } else {
-    feeUsd = feeAssetPrice * feeAmount;
+  const executedQty = Number(r.quantity ?? 0);
+  const cumQuoteQty = Number(r.amount ?? 0);
+  const feeAmount = Number(r.feeAmount ?? 0);
+  const feeCurrency = String(r.feeCurrency ?? '').toUpperCase();
+  const key = trackerKeyFor(r.clientOrderId, r.orderId);
+  if (!key) {
+    log.warn({ msgObj }, 'mexc private deal missing tracker key');
+    return;
   }
-  updateBalancesFromOrderData({
-    side: r.tradeType === 1 ? OrderSides.BUY : OrderSides.SELL,
-    baseAsset: getEx(canonSym, ExchangeIds.mexc)!.base,
-    quoteAsset: getEx(canonSym, ExchangeIds.mexc)!.quote,
-    executedQty,
-    cummulativeQuoteQty: cumQuoteQty,
-  });
-  busRef.emit('trade:order_result', {
-    exchange: ExchangeIds.mexc,
-    symbol: msgObj.symbol, // order key, nicht canon !!!
-    status,
+  const tracker = orderTrackers.get(key) ?? {
+    canonSym,
+    exchangeSymbol: msgObj.symbol,
     side,
-    orderId: String(r.orderId),
-    clientOrderId: r.clientOrderId,
-    transactTime: Number(r.time),
-    executedQty,
-    cummulativeQuoteQty: cumQuoteQty,
-    priceVwap: Number(r.price),
-    fee_amount: feeAmount,
-    fee_currency: feeCurrency,
-    fee_usd: feeUsd,
-  });
+    clientOrderId: aliasId(r.clientOrderId),
+    orderId: aliasId(r.orderId),
+    transactTime: Number(r.time ?? msgObj.sendTime ?? Date.now()),
+    executedQty: 0,
+    cummulativeQuoteQty: 0,
+    feeAmount: 0,
+    feeCurrency,
+  };
+  tracker.canonSym = canonSym;
+  tracker.exchangeSymbol = msgObj.symbol;
+  tracker.side = side;
+  tracker.clientOrderId = tracker.clientOrderId || aliasId(r.clientOrderId);
+  tracker.orderId = tracker.orderId || aliasId(r.orderId);
+  tracker.transactTime = Number(r.time ?? msgObj.sendTime ?? tracker.transactTime);
+  tracker.executedQty += Number.isFinite(executedQty) ? executedQty : 0;
+  tracker.cummulativeQuoteQty += Number.isFinite(cumQuoteQty) ? cumQuoteQty : 0;
+  tracker.feeAmount += Number.isFinite(feeAmount) ? feeAmount : 0;
+  tracker.feeCurrency = feeCurrency || tracker.feeCurrency;
+  orderTrackers.set(key, tracker);
+  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
+  if (tracker.orderId) orderAliases.set(tracker.orderId, key);
+  log.debug({ key, tracker, deal: r }, 'mexc private deal accumulated order');
+  if (tracker.expectedQty != null && tracker.executedQty + MIN_ORDER_QTY_EPS >= tracker.expectedQty) {
+    emitFinalOrderResult(key, tracker);
+    return;
+  }
+  scheduleFinalOrderResult(key, tracker);
 }
 
 /**
@@ -498,6 +595,32 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     throw err;
   }
   log.debug({ params, rawOrderResponse: r }, 'placeOrder raw response');
+  const key = trackerKeyFor(params.newClientOrderId, (r as MexcNewOrderResponse).orderId);
+  if (!key) return;
+  const tracker = orderTrackers.get(key) ?? {
+    canonSym: getCanonFromOderSym(orderParams.symbol, ExchangeIds.mexc) ?? '',
+    exchangeSymbol: orderParams.symbol,
+    side: orderParams.side,
+    clientOrderId: aliasId(params.newClientOrderId),
+    orderId: aliasId((r as MexcNewOrderResponse).orderId),
+    transactTime: Number((r as MexcNewOrderResponse).transactTime ?? Date.now()),
+    executedQty: 0,
+    cummulativeQuoteQty: 0,
+    feeAmount: 0,
+    feeCurrency: '',
+  };
+  tracker.canonSym = tracker.canonSym || getCanonFromOderSym(orderParams.symbol, ExchangeIds.mexc) || '';
+  tracker.exchangeSymbol = orderParams.symbol;
+  tracker.side = orderParams.side;
+  tracker.clientOrderId = tracker.clientOrderId || aliasId(params.newClientOrderId);
+  tracker.orderId = tracker.orderId || aliasId((r as MexcNewOrderResponse).orderId);
+  tracker.transactTime = Number((r as MexcNewOrderResponse).transactTime ?? tracker.transactTime);
+  if (orderParams.side === OrderSides.SELL || orderParams.type !== OrderTypes.MARKET) {
+    tracker.expectedQty = Number.isFinite(orderParams.quantity) ? orderParams.quantity : tracker.expectedQty;
+  }
+  orderTrackers.set(key, tracker);
+  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
+  if (tracker.orderId) orderAliases.set(tracker.orderId, key);
 }
 
 async function cancelOrder(p: CancelOrderParams): Promise<void> {

@@ -51,6 +51,13 @@ type PendingExecution = {
   tmr?: NodeJS.Timeout;
   buy?: CommonOrderResult;
   sell?: CommonOrderResult;
+  reservations: PendingReservation[];
+};
+
+type PendingReservation = {
+  exchange: ExchangeId;
+  asset: string;
+  amount: number;
 };
 
 // function getEnabledSymbols(cfg: AppConfig) {
@@ -152,6 +159,7 @@ export default async function startExecutor(
   runtimeState.blockedRoutes = runtimeState.blockedRoutes ?? {};
   const blockedRoutes = runtimeState.blockedRoutes;
   const pendingExecutions = new Map<string, PendingExecution>();
+  const reservedBalances: Partial<Record<ExchangeId, Record<string, number>>> = {};
   const PENDING_EXECUTION_TIMEOUT_MS = 30_000;
   const enabledExecutionSymbols = new Set(cfg.bot.execution_symbols ?? []);
   const restrictExecutionSymbols = enabledExecutionSymbols.size > 0;
@@ -191,6 +199,46 @@ export default async function startExecutor(
     if (!pendingExecution?.tmr) return;
     clearTimeout(pendingExecution.tmr);
     pendingExecution.tmr = undefined;
+  }
+
+  function reserveBalance(exchange: ExchangeId, asset: string, amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const byExchange = reservedBalances[exchange] ??= {};
+    byExchange[asset] = (byExchange[asset] ?? 0) + amount;
+  }
+
+  function releaseBalance(exchange: ExchangeId, asset: string, amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const byExchange = reservedBalances[exchange];
+    if (!byExchange) return;
+    const next = (byExchange[asset] ?? 0) - amount;
+    if (next > 1e-9) {
+      byExchange[asset] = next;
+      return;
+    }
+    delete byExchange[asset];
+    if (Object.keys(byExchange).length === 0) {
+      delete reservedBalances[exchange];
+    }
+  }
+
+  function releasePendingReservations(pendingExecution?: PendingExecution): void {
+    for (const reservation of pendingExecution?.reservations ?? []) {
+      releaseBalance(reservation.exchange, reservation.asset, reservation.amount);
+    }
+    if (pendingExecution) pendingExecution.reservations = [];
+  }
+
+  function getAvailableBalances(exchange: ExchangeId, balances: Record<string, number>): Record<string, number> {
+    const reserved = reservedBalances[exchange];
+    if (!reserved || Object.keys(reserved).length === 0) {
+      return { ...balances };
+    }
+    const out = { ...balances };
+    for (const [asset, amount] of Object.entries(reserved)) {
+      out[asset] = Math.max(0, (out[asset] ?? 0) - amount);
+    }
+    return out;
   }
 
   function handleOrderResult(orderResult: CommonOrderResult): void {
@@ -263,6 +311,7 @@ export default async function startExecutor(
         },
         'orders executed'
       );
+      releasePendingReservations(pendingExecution);
       clearPendingExecutionTimeout(pendingExecution);
       pendingExecutions.delete(intentId); // aus der map entfernen
     
@@ -446,8 +495,8 @@ export default async function startExecutor(
       }
       const buyExchangeState = exState.getExchangeState(buyEx);
       const sellExchangeState = exState.getExchangeState(sellEx);
-      const buyBalances = buyAd.getBalances();
-      const sellBalances = sellAd.getBalances();
+      const buyBalances = getAvailableBalances(buyEx, buyAd.getBalances());
+      const sellBalances = getAvailableBalances(sellEx, sellAd.getBalances());
       unblockRoutes(symbol, buyBalances, sellBalances); // pruefen ob wir ggf neue balances haben und sell|buy auf einer exchange wieder freigeben koennen
       const buyBlocked = blockedRoutes[symbol]?.[buyEx]?.[OrderSides.BUY];
       const sellBlocked = blockedRoutes[symbol]?.[sellEx]?.[OrderSides.SELL];
@@ -585,7 +634,24 @@ export default async function startExecutor(
       const pendingExecution: PendingExecution = {
         intent,
         createdAtTsMs: Date.now(),
+        reservations: [],
       };
+      const buyReservationAsset = buyExSymInfo.quote;
+      const buyReservationAmount = orderQBuy;
+      reserveBalance(buyEx, buyReservationAsset, buyReservationAmount);
+      pendingExecution.reservations.push({
+        exchange: buyEx,
+        asset: buyReservationAsset,
+        amount: buyReservationAmount,
+      });
+      const sellReservationAsset = sellExSymInfo.base;
+      const sellReservationAmount = orderTargetQty;
+      reserveBalance(sellEx, sellReservationAsset, sellReservationAmount);
+      pendingExecution.reservations.push({
+        exchange: sellEx,
+        asset: sellReservationAsset,
+        amount: sellReservationAmount,
+      });
       pendingExecution.tmr = setTimeout(() => { // wir erwarten eine antwort auf beide orders innerhalb von 30s !!!
         const buyOk = Boolean(pendingExecution.buy);
         const sellOk = Boolean(pendingExecution.sell);
@@ -594,6 +660,7 @@ export default async function startExecutor(
           buyReceived: buyOk,
           sellReceived: sellOk,
           }, 'pending execution expired');
+        releasePendingReservations(pendingExecution);
         updateRuntimeState({ buyOk, sellOk, pnl });
         pendingExecutions.delete(id);
       }, PENDING_EXECUTION_TIMEOUT_MS);
