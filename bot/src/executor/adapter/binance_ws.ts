@@ -83,8 +83,7 @@ const log = getLogger('executor').child({ exchange: 'binance' });
 import { createReconnectWS } from '../../common/ws_reconnect';
 import { getExState } from '../../common/exchange_state';
 import { WS_STATE } from '../../common/constants';
-import { getCanonFromOderSym } from '../../common/symbolinfo';
-import { getEx } from '../../common/symbolinfo';
+import { compileStepMeta, floorByStepMeta, getCanonFromOderSym, getEx } from '../../common/symbolinfo';
 import { getAssetPrice } from '../../common/symbolinfo_price';
 import { signEd25519Base64 } from '../../common/signing';
 import appBus from '../../bus';
@@ -236,6 +235,12 @@ function makeSessionParams(extra: WsParams = {}): WsParams & { timestamp: number
     timestamp: Date.now(),
     recvWindow: 15000,
   };
+}
+
+function getBinanceQuantityString(symbol: string, quantity: number): string {
+  const canonSym = getCanonFromOderSym(symbol, ExchangeIds.binance);
+  const exInfo = canonSym ? getEx(canonSym, ExchangeIds.binance) : null;
+  return floorByStepMeta(quantity, exInfo?.rules?.qty ?? compileStepMeta(undefined, 8)).qStr.replace(/\.?0+$/, '');
 }
 
 // --- Adapter factory (singleton-ish) ---
@@ -741,7 +746,7 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     symbol: orderParams.symbol,
     side: orderParams.side,
     type: orderParams.type,
-    quantity: String(orderParams.quantity),
+    quantity: getBinanceQuantityString(orderParams.symbol, orderParams.quantity),
     price: orderParams.price !== undefined ? String(orderParams.price) : undefined,
     newClientOrderId: orderParams.orderId ? String(orderParams.orderId) : undefined,
     // computeCommissionRates: true
