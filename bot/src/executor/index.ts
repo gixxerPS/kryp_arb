@@ -368,6 +368,7 @@ export default async function startExecutor(
     buyBalances: Record<string, number>,
     sellBalances: Record<string, number>,
   ): void {
+    const buyUnblockHysteresisFactor = 1.1;
     const bySymbol = blockedRoutes[symbol];
     if (!bySymbol) return;
 
@@ -381,7 +382,7 @@ export default async function startExecutor(
         const currentBalance = balances[blockInfo.asset] ?? 0;
         let requiredBalance = 0;
         if (side === OrderSides.BUY) {
-          requiredBalance = cfg.bot.balance_minimum_usdt;
+          requiredBalance = cfg.bot.balance_minimum_usdt * buyUnblockHysteresisFactor;
         }
         if (currentBalance < requiredBalance) continue;
         log.debug({

@@ -253,10 +253,27 @@ suite('executor/index', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(placed.length, 0);
 
+    buyBalances.USDC = 105;
+
+    bus.emit('trade:intent', mkIntent({ id: 'intent-3' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(placed.length, 0);
+    assert.deepEqual(executor.getRuntimeState().blockedRoutes, {
+      AXS_USDT: {
+        binance: {
+          BUY: {
+            blockedAtTsMs: 1_700_000_000_000,
+            exchange: 'binance',
+            asset: 'USDC',
+          },
+        },
+      },
+    });
+
     buyBalances.USDC = 130;
 
     const ordersOkPromise = once(bus, 'trade:orders_ok');
-    bus.emit('trade:intent', mkIntent({ id: 'intent-3' }));
+    bus.emit('trade:intent', mkIntent({ id: 'intent-4' }));
     await ordersOkPromise;
     assert.equal(placed.length, 2);
     assert.deepEqual(executor.getRuntimeState().blockedRoutes, {});
