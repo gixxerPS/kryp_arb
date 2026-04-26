@@ -10,7 +10,7 @@
   "balance_minimum_usdt": 10,
   "auto_fix_failed_orders": false,
   "execution_symbols": ["AXS_USDT", "MON_USDT"],
-  "execution_exchanges": ["binance", "gate", "bitget", "mexc"],
+  "execution_exchanges": ["binance", "gate", "bitget", "htx"],
   "overrides":{
     "add_raw_spread_buffer_pct":{
       "by_exchange":{

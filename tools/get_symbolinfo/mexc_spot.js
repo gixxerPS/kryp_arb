@@ -47,6 +47,7 @@ async function run({ SYMBOLINFO_DIR, wantedInternal }) {
       if (!isEnabled) continue;
 
       const pricePrecision = asInt(s.quotePrecision ?? s.quoteAssetPrecision);
+      const qtyPrecision = asInt(s.baseAssetPrecision);
 
       out.symbols[s.symbol] = {
         symbol: s.symbol,
@@ -55,10 +56,11 @@ async function run({ SYMBOLINFO_DIR, wantedInternal }) {
         status: s.status,
         enabled: true,
         pricePrecision,
-        qtyPrecision: asInt(s.baseAssetPrecision),
+        qtyPrecision,
         priceTick: precisionToStep(pricePrecision),
         priceTickDerivedFromPrecision: true,
-        qtyStep: s.baseSizePrecision && s.baseSizePrecision !== "0" ? s.baseSizePrecision : null,
+        qtyStep: qtyPrecision == null ? null : precisionToStep(qtyPrecision),
+        qtyStepDerivedFromPrecision: true,
         minQty: null,
         maxQty: null,
         minNotional: null,

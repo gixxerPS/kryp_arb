@@ -90,25 +90,27 @@
       "qtyPrecision": 2,
       "priceTick": "0.0001",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.0001",
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": null,
       "maxQty": null,
-      "minNotional": 10
+      "minNotional": null
     },
-    "AXSUSDC": {
-      "symbol": "AXSUSDC",
-      "baseAsset": "AXS",
-      "quoteAsset": "USDC",
+    "DASHUSDT": {
+      "symbol": "DASHUSDT",
+      "baseAsset": "DASH",
+      "quoteAsset": "USDT",
       "status": "1",
       "enabled": true,
-      "pricePrecision": 4,
-      "qtyPrecision": 2,
-      "priceTick": "0.0001",
+      "pricePrecision": 2,
+      "qtyPrecision": 6,
+      "priceTick": "0.01",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.0001",
+      "qtyStep": "0.000001",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": null,
       "maxQty": null,
-      "minNotional": 10
+      "minNotional": null
     },
     "FILUSDC": {
       "symbol": "FILUSDC",
@@ -135,7 +137,8 @@
       "qtyPrecision": 3,
       "priceTick": "0.0001",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.0001",
+      "qtyStep": "0.001",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": null,
       "maxQty": null,
       "minNotional": null
@@ -150,7 +153,8 @@
       "qtyPrecision": 2,
       "priceTick": "0.000001",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": "0.001",
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": null,
       "maxQty": null,
       "minNotional": null
@@ -180,7 +184,8 @@
       "qtyPrecision": 2,
       "priceTick": "0.001",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": null,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": null,
       "maxQty": null,
       "minNotional": null
@@ -226,6 +231,23 @@
       "priceTick": "0.01",
       "priceTickDerivedFromPrecision": true,
       "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": null,
+      "maxQty": null,
+      "minNotional": null
+    },
+    "RUNEUSDT": {
+      "symbol": "RUNEUSDT",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDT",
+      "status": "1",
+      "enabled": true,
+      "pricePrecision": 4,
+      "qtyPrecision": 2,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
       "minQty": null,
       "maxQty": null,
       "minNotional": null
