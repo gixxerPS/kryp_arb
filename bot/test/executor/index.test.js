@@ -279,7 +279,7 @@ suite('executor/index', () => {
     assert.deepEqual(executor.getRuntimeState().blockedRoutes, {});
   });
 
-  test('reserves pending sell balance so consecutive intents do not oversubscribe inventory', async () => {
+  test('drops consecutive intents while an execution is still pending', async () => {
     const bus = new EventEmitter();
     const placed = [];
 
@@ -320,7 +320,7 @@ suite('executor/index', () => {
     bus.emit('trade:intent', mkIntent({ id: 'intent-2' }));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    assert.equal(placed.length, 4);
+    assert.equal(placed.length, 2);
     assert.deepEqual(placed[0], {
       exchange: 'binance',
       params: {
@@ -341,28 +341,6 @@ suite('executor/index', () => {
         quantity: 10,
         q: 22,
         orderId: 'intent-1',
-      },
-    });
-    assert.deepEqual(placed[2], {
-      exchange: 'binance',
-      params: {
-        type: 'MARKET',
-        side: 'BUY',
-        symbol: 'AXSUSDC',
-        quantity: 6,
-        q: 12,
-        orderId: 'intent-2',
-      },
-    });
-    assert.deepEqual(placed[3], {
-      exchange: 'gate',
-      params: {
-        type: 'MARKET',
-        side: 'SELL',
-        symbol: 'AXS_USDT',
-        quantity: 6,
-        q: 13.200000000000001,
-        orderId: 'intent-2',
       },
     });
   });

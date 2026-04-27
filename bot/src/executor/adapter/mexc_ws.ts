@@ -396,7 +396,7 @@ function handleUserDataStream(msgObj: MexcUserDataMsg): void {
   orderTrackers.set(key, tracker);
   if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
   if (tracker.orderId) orderAliases.set(tracker.orderId, key);
-  log.debug({ key, tracker, deal: r }, 'mexc private deal accumulated order');
+  // log.debug({ key, tracker, deal: r }, 'mexc private deal accumulated order');
   if (tracker.expectedQty != null && tracker.executedQty + MIN_ORDER_QTY_EPS >= tracker.expectedQty) {
     emitFinalOrderResult(key, tracker);
     return;

@@ -2,6 +2,7 @@ import { getLogger } from '../common/logger';
 const log = getLogger('executor');
 import { getExState } from '../common/exchange_state';
 import { getEx } from '../common/symbolinfo';
+import { getAssetPrice } from '../common/symbolinfo_price';
 import { getExchange, getBotCfg } from '../common/config';
 import { safeCall, isFulfilled } from '../common/async';
 import { DAY_MS } from '../common/util';
@@ -370,7 +371,7 @@ export default async function startExecutor(
     buyBalances: Record<string, number>,
     sellBalances: Record<string, number>,
   ): void {
-    const buyUnblockHysteresisFactor = 1.1;
+    const unblockHysteresisFactor = 1.1;
     const bySymbol = blockedRoutes[symbol];
     if (!bySymbol) return;
 
@@ -384,7 +385,22 @@ export default async function startExecutor(
         const currentBalance = balances[blockInfo.asset] ?? 0;
         let requiredBalance = 0;
         if (side === OrderSides.BUY) {
-          requiredBalance = cfg.bot.balance_minimum_usdt * buyUnblockHysteresisFactor;
+          requiredBalance = cfg.bot.balance_minimum_usdt * unblockHysteresisFactor;
+        } else if (side === OrderSides.SELL) {
+          const assetPrice = getAssetPrice(exchange as ExchangeId, blockInfo.asset);
+          if (!Number.isFinite(assetPrice) || assetPrice == null || assetPrice <= 0) {
+            // Ohne Preis koennen wir die q_min_usdt-Schwelle nicht in Base umrechnen.
+            log.debug({
+              symbol,
+              exchange,
+              side,
+              asset: blockInfo.asset,
+              assetPrice,
+            }, 'route remains blocked: missing asset price for SELL unblock');
+            continue;
+          }
+          // SELL erst wieder freigeben, wenn genug Base fuer mindestens q_min_usdt vorhanden ist.
+          requiredBalance = (cfg.bot.q_min_usdt / assetPrice) * unblockHysteresisFactor;
         }
         if (currentBalance < requiredBalance) continue;
         log.debug({

@@ -13,10 +13,12 @@ type PriceEntry = {
 };
 
 type PriceCache = Partial<Record<ExchangeId, Record<string, PriceEntry>>>;
+type AssetPriceCache = Partial<Record<ExchangeId, Record<string, number>>>;
 
 type PriceFetcher = (symbols: string[]) => Promise<Record<string, number>>;
 
 let cache: PriceCache = {};
+let assetCache: AssetPriceCache = {};
 let initPromise: Promise<void> | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let refreshTmr: NodeJS.Timeout | null = null;
@@ -57,6 +59,16 @@ function deriveQuoteFromSymbol(symbol: string): string | null {
 
 function isUsdLikeAsset(asset: string): boolean {
   return ['USD', 'USDT', 'USDC', 'FDUSD', 'BUSD', 'TUSD'].includes(asset);
+}
+
+function getQuotePreference(asset: string): number {
+  if (asset === 'USDT') return 1;
+  if (asset === 'USDC') return 2;
+  if (asset === 'USD') return 3;
+  if (asset === 'FDUSD') return 4;
+  if (asset === 'BUSD') return 5;
+  if (asset === 'TUSD') return 6;
+  return Number.POSITIVE_INFINITY;
 }
 
 function getTrackedPriceSymbols(exchange: ExchangeId): string[] {
@@ -244,6 +256,7 @@ async function refreshExchange(exchange: ExchangeId): Promise<void> {
   const symbols = getTrackedPriceSymbols(exchange);
   if (symbols.length === 0) {
     cache[exchange] = {};
+    assetCache[exchange] = {};
     return;
   }
 
@@ -257,10 +270,22 @@ async function refreshExchange(exchange: ExchangeId): Promise<void> {
   log.debug({ exchange, symbolCount: symbols.length }, 'refreshed symbol prices');
   const tsMs = Date.now();
   const next: Record<string, PriceEntry> = {};
+  const nextAssetCache: Record<string, number> = {};
+  const nextAssetRank: Record<string, number> = {};
   for (const [symbol, price] of Object.entries(prices)) {
     next[symbol] = { price, tsMs };
+
+    const baseAsset = deriveAssetFromSymbol(symbol);
+    const quoteAsset = deriveQuoteFromSymbol(symbol);
+    if (!baseAsset || !quoteAsset || !isUsdLikeAsset(quoteAsset)) continue;
+
+    const rank = getQuotePreference(quoteAsset);
+    if ((nextAssetRank[baseAsset] ?? Number.POSITIVE_INFINITY) <= rank) continue;
+    nextAssetRank[baseAsset] = rank;
+    nextAssetCache[baseAsset] = price;
   }
   cache[exchange] = next;
+  assetCache[exchange] = nextAssetCache;
 }
 
 async function refreshAll(): Promise<void> {
@@ -327,13 +352,5 @@ export function getAssetPrice(exchange: ExchangeId, asset: string): number | nul
     }
   }
 
-  const exchangeCache = cache[exchange] ?? {};
-  for (const [symbol, entry] of Object.entries(exchangeCache)) {
-    const baseAsset = deriveAssetFromSymbol(symbol);
-    const quoteAsset = deriveQuoteFromSymbol(symbol);
-    if (baseAsset !== assetNorm || !quoteAsset || !isUsdLikeAsset(quoteAsset)) continue;
-    return entry.price;
-  }
-
-  return null;
+  return assetCache[exchange]?.[assetNorm] ?? null;
 }
