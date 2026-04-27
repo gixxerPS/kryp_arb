@@ -55,8 +55,7 @@ function parseGateDepthMessage(parsed) {
   const asks = Array.isArray(r.asks) ? toNumLevels(r.asks) : [];
   if (bids.length === 0 || asks.length === 0) return null;
 
-  // Gate provides seconds timestamps in r.t (not always present)
-  const tsMs = Number.isFinite(Number(r.t)) ? Number(r.t) * 1000 : null;
+  const tsMs = normalizeGateTimestampMs(r.t);
 
   return {
     tsMs,
@@ -64,6 +63,17 @@ function parseGateDepthMessage(parsed) {
     bids,
     asks
   };
+}
+
+function normalizeGateTimestampMs(rawTs) {
+  const ts = Number(rawTs);
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+
+  // Gate can send seconds, milliseconds, or microseconds depending on endpoint/payload.
+  if (ts >= 1e15) return Math.floor(ts / 1000);
+  if (ts >= 1e12) return Math.floor(ts);
+  if (ts >= 1e9) return Math.floor(ts * 1000);
+  return null;
 }
 
 function makeGateDepthHandler({ exchange = 'gate', emit, nowMs }) {
@@ -92,4 +102,3 @@ module.exports = {
   parseGateDepthMessage,
   makeGateDepthHandler,
 };
-

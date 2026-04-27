@@ -329,7 +329,9 @@ export default async function startExecutor(
     }
     if (buyR && sellR) { // wenn trade komplett dann auswerten kann ok / failed sein
       updateRuntimeState({ buyOk, sellOk, pnl });
+      busy = false;
     }
+    
     // log.debug({size:pendingExecutions.size}, 'pending execution size @update end');
   }
 
@@ -472,6 +474,7 @@ export default async function startExecutor(
     try {
       if (restrictExecutionSymbols && !enabledExecutionSymbols.has(intent.symbol)) {
         log.debug({ intentId: intent.id, symbol: intent.symbol }, 'dropping intent: symbol not enabled for execution');
+        busy = false;
         return;
       }
       const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, buyPxEff, sellPxEff, id } = intent; // sym ist canonical
@@ -482,16 +485,19 @@ export default async function startExecutor(
       const sellAd = adapters[sellEx];
       if (!buyAd || !sellAd) {
         log.error({ reason:'adapter missing', intent, buyEx, sellEx }, 'dropping intent');
+        busy = false;
         return;
       }
       if (!buyAd.isReady() || !sellAd.isReady()) {
         log.error({ reason:'adapter not ready (ws not open / not logged in)', intent, buyEx, sellEx, buyAdReady:buyAd.isReady(), sellAdReady: sellAd.isReady() }, 'dropping intent');
+        busy = false;
         return;
       }
       const buyExSymInfo = getEx(symbol, buyEx);
       const sellExSymInfo = getEx(symbol, sellEx);
       if (!buyExSymInfo || !sellExSymInfo) {
         log.error({ reason:'symbolinfo missing', symbol, buyEx, sellEx }, 'dropping intent');
+        busy = false;
         return;
       }
       const buyExchangeState = exState.getExchangeState(buyEx);
@@ -503,6 +509,7 @@ export default async function startExecutor(
       const sellBlocked = blockedRoutes[symbol]?.[sellEx]?.[OrderSides.SELL];
       if (buyBlocked || sellBlocked) {
         log.debug({ symbol, buyEx, sellEx, buyBlocked, sellBlocked }, 'dropping intent: route blocked due to insufficient balance');
+        busy = false;
         return;
       }
       //=======================================================================
@@ -549,6 +556,7 @@ export default async function startExecutor(
               intentId: id,
             };
             bus.emit('trade:warn_precheck', warnPrecheckEvent);
+            busy = false;
             return;
           }
         } else {
@@ -564,6 +572,7 @@ export default async function startExecutor(
           intentId: id,
         };
         bus.emit('trade:warn_precheck', warnPrecheckEvent);
+        busy = false;
         return;
         }
       }
@@ -611,6 +620,7 @@ export default async function startExecutor(
               intentId: id,
             };
             bus.emit('trade:warn_precheck', warnPrecheckEvent);
+            busy = false;
             return;
           }
         } else {
@@ -626,6 +636,7 @@ export default async function startExecutor(
           intentId: id,
         };
         bus.emit('trade:warn_precheck', warnPrecheckEvent);
+        busy = false;
         return;
         }
       }
@@ -664,6 +675,7 @@ export default async function startExecutor(
         releasePendingReservations(pendingExecution);
         updateRuntimeState({ buyOk, sellOk, pnl });
         pendingExecutions.delete(id);
+        busy = false;
       }, PENDING_EXECUTION_TIMEOUT_MS);
       pendingExecution.tmr.unref?.();
       pendingExecutions.set(id, pendingExecution); // erst in die map eintragen was wir vorhaben
@@ -691,7 +703,6 @@ export default async function startExecutor(
       });
     } catch (err) {
       log.error({ err, intent }, 'handle intent failed');
-    } finally {
       busy = false;
     }
   }

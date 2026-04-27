@@ -138,18 +138,26 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
       exState: exchangeState,
     });
 
-    for (const it of intents) {
-      const rk = tradeRouteKey(it);
+    // absteigend sortieren nach pnl 
+    const sortedIntents = [...intents].sort((a, b) => b.expectedPnl - a.expectedPnl);
 
+    for (const it of sortedIntents) {
+      const rk = tradeRouteKey(it);
       const last = lastIntentAt.get(rk);
       if (last != null && nowMs - last < cooldownMs) {
-        // log.debug({ reason: 'cooldown violation', rk, age: nowMs - last, cooldownMs }, 'dropped trade');
         continue;
       }
+
       lastIntentAt.set(rk, nowMs);
       const intent = makeTradeIntent(it, nowMs, ttlMs, uuidFn);
       log.debug({ intent, l2: buildIntentL2Debug(intent, latest, nowMs) }, 'trade:intent found');
       bus.emit('trade:intent', intent);
+
+      /* nach profitabelstem intent aufhoeren. executor fuehrt eh 
+       * nur 1 trade zeitgleich aus und ist ca 100 - 200 ms spaeter
+       * bereit fuer den naechsten.
+       */
+      break; 
     }
   }
 
