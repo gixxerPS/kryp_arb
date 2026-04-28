@@ -9,6 +9,7 @@ export interface BotCfg {
     cooldown_ms: number;
   
     raw_spread_buffer_pct: number;
+    net_min_after_slippage_pct: number;
     slippage_pct: number;
   
     q_min_usdt: number;

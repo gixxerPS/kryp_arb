@@ -26,6 +26,7 @@ type BestIntentSliceResult = {
 
 type EngineRuntime = {
   rawBuffer: number;
+  netMinAfterSlippage: number;
   slippage: number;
   qMin: number;
   qMax: number;
@@ -45,6 +46,7 @@ let runtime: EngineRuntime | null = null;
 export function initStrategyEngine(cfg: AppConfig): void {
   runtime = {
     rawBuffer: Number(cfg.bot.raw_spread_buffer_pct) * 0.01,
+    netMinAfterSlippage: Number(cfg.bot.net_min_after_slippage_pct ?? 0) * 0.01,
     slippage: Number(cfg.bot.slippage_pct) * 0.01,
     qMin: Number(cfg.bot.q_min_usdt),
     qMax: Number(cfg.bot.q_max_usdt),
@@ -351,118 +353,122 @@ function key(ex: ExchangeId, sym: string): string {
  * @param param0 
  * @returns 
  */
-export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }: ComputeIntentsForSymArgs): TradeIntentDraft[] {
-  const rt = runtime as EngineRuntime;
-  const intents: TradeIntentDraft[] = [];
+// export function computeIntentsForSym({ sym, latest, fees, nowMs, cfg, exState }: ComputeIntentsForSymArgs): TradeIntentDraft[] {
+//   const rt = runtime as EngineRuntime;
+//   const intents: TradeIntentDraft[] = [];
 
-  for (const buyEx of cfg.enabledExchanges) {
-    for (const sellEx of cfg.enabledExchanges) {
-      if (buyEx === sellEx) continue;
+//   for (const buyEx of cfg.enabledExchanges) {
+//     for (const sellEx of cfg.enabledExchanges) {
+//       if (buyEx === sellEx) continue;
 
-      const buy = latest.get(key(buyEx, sym));
-      const sell = latest.get(key(sellEx, sym));
-      if (!buy || !sell) continue;
+//       const buy = latest.get(key(buyEx, sym));
+//       const sell = latest.get(key(sellEx, sym));
+//       if (!buy || !sell) continue;
 
-      // NEU: nur weil ein datenpunkt alt ist heisst das nicht
-      // dass er nicht up-to-date sein kann!
-      // naemlich wenn kaum aktivitaet auf den boersen ist, wird preis ggf
-      // laenger nicht aktualisisert!
-      // deshalb ist der ansatz mit max_book_age_ms nicht praxistauglich
-      //
-      // stattdessen: unabhaengig kommunikationszustand zu exchanges auswerten (common/exchange_state.js)
-      // und hier lediglich pruefen
-      const buyS = exState.getExchangeState(buyEx) as any;
-      if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-        if (buyS?.anyAgeMs) {
-          // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
-          log.debug({ reason: 'bad exchange quality', exchange: buyEx, buyS }, 'dropped trade');
-        }
-        continue;
-      }
-      const sellS = exState.getExchangeState(sellEx) as any;
-      if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
-        if (sellS?.anyAgeMs) {
-          // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
-          log.debug({ reason: 'bad exchange quality', exchange: sellEx, sellS }, 'dropped trade');
-        }
-        continue;
-      }
-      //
-      // ALT: ist einer der stream datenpunkte aelter als 1500 ms?
-      // koennte auf stream problem hindeuten.
-      // der preis ist moeglicherweise laengst weggelaufen -> kein trade!!!
-      // const maxAgeMs = Number(cfg.bot.max_book_age_ms ?? 1500);
-      // if (nowMs - buy.tsMs > maxAgeMs) continue;
-      // if (nowMs - sell.tsMs > maxAgeMs) continue;
+//       // NEU: nur weil ein datenpunkt alt ist heisst das nicht
+//       // dass er nicht up-to-date sein kann!
+//       // naemlich wenn kaum aktivitaet auf den boersen ist, wird preis ggf
+//       // laenger nicht aktualisisert!
+//       // deshalb ist der ansatz mit max_book_age_ms nicht praxistauglich
+//       //
+//       // stattdessen: unabhaengig kommunikationszustand zu exchanges auswerten (common/exchange_state.js)
+//       // und hier lediglich pruefen
+//       const buyS = exState.getExchangeState(buyEx) as any;
+//       if (!buyS || buyS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+//         if (buyS?.anyAgeMs) {
+//           // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+//           log.debug({ reason: 'bad exchange quality', exchange: buyEx, buyS }, 'dropped trade');
+//         }
+//         continue;
+//       }
+//       const sellS = exState.getExchangeState(sellEx) as any;
+//       if (!sellS || sellS.exchangeQuality === EXCHANGE_QUALITY.STOP) {
+//         if (sellS?.anyAgeMs) {
+//           // log nur wenn schon was empfangen wurde sonst kommen nach startup bis zum ersten heartbeat update schon meldungen
+//           log.debug({ reason: 'bad exchange quality', exchange: sellEx, sellS }, 'dropped trade');
+//         }
+//         continue;
+//       }
+//       //
+//       // ALT: ist einer der stream datenpunkte aelter als 1500 ms?
+//       // koennte auf stream problem hindeuten.
+//       // der preis ist moeglicherweise laengst weggelaufen -> kein trade!!!
+//       // const maxAgeMs = Number(cfg.bot.max_book_age_ms ?? 1500);
+//       // if (nowMs - buy.tsMs > maxAgeMs) continue;
+//       // if (nowMs - sell.tsMs > maxAgeMs) continue;
 
-      const buyAsk = bestAskPx(buy.asks);
-      const sellBid = bestBidPx(sell.bids);
-      if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
+//       const buyAsk = bestAskPx(buy.asks);
+//       const sellBid = bestBidPx(sell.bids);
+//       if (!Number.isFinite(buyAsk) || !Number.isFinite(sellBid)) continue;
 
-      // STAGE 1: trade-chance auf basis vom net spread erkennen
-      const buyFee = getEx(sym, buyEx)!.taker_fee;
-      const sellFee = getEx(sym, sellEx)!.taker_fee;
-      const raw = rawSpread(buyAsk, sellBid);
-      const addRawBuffer = getAddRawSpreadBuffer({ sym, buyEx, sellEx, rt }); // z.b. fuer langsame exchanges oder toxische paare
-      const net1 = raw - (buyFee + sellFee + rt.rawBuffer + addRawBuffer);
-      if (net1 <= 0) {
-        continue;
-      }
+//       // STAGE 1: trade-chance auf basis vom net spread erkennen
+//       const buyFee = getEx(sym, buyEx)!.taker_fee;
+//       const sellFee = getEx(sym, sellEx)!.taker_fee;
+//       const raw = rawSpread(buyAsk, sellBid);
+//       const addRawBuffer = getAddRawSpreadBuffer({ sym, buyEx, sellEx, rt }); // z.b. fuer langsame exchanges oder toxische paare
+//       const net1 = raw - (buyFee + sellFee + rt.rawBuffer + addRawBuffer);
+//       if (net1 <= 0) {
+//         continue;
+//       }
 
-      // STAGE 2: max moegliche ordergroesse anhand von L2 daten ermitteln
-      const qMaxBuy = rt.qMax * getLiquidityQuoteFactor(rt, buyEx);
-      const qMaxSell = rt.qMax * getLiquidityQuoteFactor(rt, sellEx);
-      const qBuy = getQWithinSlippage({ levels: buy.asks, slippage: rt.slippage, qMax: qMaxBuy });
-      const qSell = getQWithinSlippage({ levels: sell.bids, slippage: rt.slippage, qMax: qMaxSell });
+//       // STAGE 2: max moegliche ordergroesse anhand von L2 daten ermitteln
+//       const qMaxBuy = rt.qMax * getLiquidityQuoteFactor(rt, buyEx);
+//       const qMaxSell = rt.qMax * getLiquidityQuoteFactor(rt, sellEx);
+//       const qBuy = getQWithinSlippage({ levels: buy.asks, slippage: rt.slippage, qMax: qMaxBuy });
+//       const qSell = getQWithinSlippage({ levels: sell.bids, slippage: rt.slippage, qMax: qMaxSell });
 
-      if (qBuy.q < rt.qMin || qSell.q < rt.qMin) {
-        continue;
-      }
+//       if (qBuy.q < rt.qMin || qSell.q < rt.qMin) {
+//         continue;
+//       }
 
-      // Worst-case Slippage bis zur Band-Grenze (nicht abhängig von qEff!)
-      // Es wird ja eine Seite begrenzt verursacht also potentiell weniger slippage.
-      // Wenn aber auch fuer diese Seite mit dem slippage grenzlevelIdx gerechnet wird
-      // ist (sollte sein) der reale gewinn hoeher als der hier berechnete.
-      // Im Umkehrschluss bedeutet das hier werden u.U. Trades ausgelassen.
-      const buyPxWorst = Number(buy.asks[qBuy.limLvlIdx][0]);
-      const sellPxWorst = Number(sell.bids[qSell.limLvlIdx][0]);
-      if (!Number.isFinite(buyPxWorst) || !Number.isFinite(sellPxWorst)) continue;
+//       // Worst-case Slippage bis zur Band-Grenze (nicht abhängig von qEff!)
+//       // Es wird ja eine Seite begrenzt verursacht also potentiell weniger slippage.
+//       // Wenn aber auch fuer diese Seite mit dem slippage grenzlevelIdx gerechnet wird
+//       // ist (sollte sein) der reale gewinn hoeher als der hier berechnete.
+//       // Im Umkehrschluss bedeutet das hier werden u.U. Trades ausgelassen.
+//       const buyPxWorst = Number(buy.asks[qBuy.limLvlIdx][0]);
+//       const sellPxWorst = Number(sell.bids[qSell.limLvlIdx][0]);
+//       if (!Number.isFinite(buyPxWorst) || !Number.isFinite(sellPxWorst)) continue;
 
-      const raw2 = rawSpread(buyPxWorst, sellPxWorst);
-      const net2 = raw2 - (buyFee + sellFee);
-      if (net2 <= 0) {
-        log.debug({ reason: 'slippage makes it unprofitable', buyPxWorst, sellPxWorst, raw2 }, 'dropped trade');
-        continue;
-      }
+//       const raw2 = rawSpread(buyPxWorst, sellPxWorst);
+//       const net2 = raw2 - (buyFee + sellFee);
+//       if (net2 <= 0) {
+//         log.debug({ reason: 'slippage makes it unprofitable', buyPxWorst, sellPxWorst, raw2 }, 'dropped trade');
+//         continue;
+//       }
+//       if (net2 < rt.netMinAfterSlippage) {
+//         log.debug({ reason: 'net after slippage below minimum', net2, netMinAfterSlippage: rt.netMinAfterSlippage }, 'dropped trade');
+//         continue;
+//       }
 
-      const targetQty = Math.min(qBuy.targetQty, qSell.targetQty);
-      const qBuyTarget = getQFromQtyL2({ levels: buy.asks, targetQty });
-      const qSellTarget = getQFromQtyL2({ levels: sell.bids, targetQty });
-      const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;
-      const sellPxEff = targetQty > 0 ? qSellTarget / targetQty : 0;
-      const expectedPnl = qSellTarget - qBuyTarget - qSellTarget*sellFee - qBuyTarget*buyFee;
+//       const targetQty = Math.min(qBuy.targetQty, qSell.targetQty);
+//       const qBuyTarget = getQFromQtyL2({ levels: buy.asks, targetQty });
+//       const qSellTarget = getQFromQtyL2({ levels: sell.bids, targetQty });
+//       const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;
+//       const sellPxEff = targetQty > 0 ? qSellTarget / targetQty : 0;
+//       const expectedPnl = qSellTarget - qBuyTarget - qSellTarget*sellFee - qBuyTarget*buyFee;
 
-      intents.push({
-        symbol: sym,
-        buyEx,
-        sellEx,
-        qBuy: qBuyTarget,
-        qSell: qSellTarget,
-        buyPxEff,
-        sellPxEff,
-        expectedPnl,
-        targetQty,
-        net: net2,
-        buyAsk,
-        sellBid,
-        buyPxWorst,
-        sellPxWorst,
-      });
-    }
-  }
+//       intents.push({
+//         symbol: sym,
+//         buyEx,
+//         sellEx,
+//         qBuy: qBuyTarget,
+//         qSell: qSellTarget,
+//         buyPxEff,
+//         sellPxEff,
+//         expectedPnl,
+//         targetQty,
+//         net: net2,
+//         buyAsk,
+//         sellBid,
+//         buyPxWorst,
+//         sellPxWorst,
+//       });
+//     }
+//   }
 
-  return intents;
-}
+//   return intents;
+// }
 
 /**
  * Idee: keine feste slippage grenze mehr. einfach solange levels ausnutzen bis 
@@ -540,6 +546,10 @@ export function computeIntentsForSymV2({ sym, latest, fees, nowMs, cfg, exState 
       const net2 = raw2 - (buyFee + sellFee);
       if (net2 <= 0) {
         log.debug({ reason: 'stage2 pnl max is not profitable anymore', buyPxWorst, sellPxWorst, raw2 }, 'dropped trade');
+        continue;
+      }
+      if (net2 < rt.netMinAfterSlippage) {
+        log.debug({ reason: 'net after slippage below minimum', net2, netMinAfterSlippage: rt.netMinAfterSlippage }, 'dropped trade');
         continue;
       }
       const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;

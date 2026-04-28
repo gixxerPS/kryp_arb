@@ -1,5 +1,5 @@
 import appBus from '../bus';
-import { computeIntentsForSym as appCompute, 
+import { 
   computeIntentsForSymV2 as appComputeV2,
   initStrategyEngine } from './engine';
 import { tradeRouteKey, makeClientId, formatLevelsInline } from '../common/util';
@@ -81,7 +81,6 @@ export default function startStrategy(cfg: AppConfig, deps: StrategyDeps = {}): 
 
   const bus = deps.bus ?? appBus;
   const getExStateFct = deps.getExState ?? appGetExState;
-  const computeIntentsForSym = deps.computeIntentsForSymbol ?? (appCompute as ComputeIntentsForSym);
   const computeIntentsForSymV2 = deps.computeIntentsForSymbolV2 ?? (appComputeV2 as ComputeIntentsForSym);
   const nowFn = deps.nowFn ?? (() => Date.now());
   const uuidFn = deps.uuidFn ?? makeClientId;

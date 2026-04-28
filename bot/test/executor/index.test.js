@@ -344,4 +344,48 @@ suite('executor/index', () => {
       },
     });
   });
+
+  test('drops intents when buy or sell exchange is not enabled for execution', async () => {
+    const bus = new EventEmitter();
+    const placed = [];
+
+    function mkAdapter(exchange, balances) {
+      return {
+        isReady: () => true,
+        getBalances: () => balances,
+        placeOrder: async (params) => {
+          placed.push({ exchange, params });
+        },
+        cancelOrder: async () => {
+          throw new Error('not used');
+        },
+      };
+    }
+
+    await startExecutor({
+      cfg: {
+        bot: {
+          balance_minimum_usdt: 100,
+          execution_exchanges: ['binance'],
+        },
+      },
+    }, {
+      bus,
+      exState: {
+        getAllExchangeStates: () => [],
+        getExchangeState: () => ({ enabled: true }),
+      },
+      adapters: {
+        binance: mkAdapter('binance', { USDC: 1000, AXS: 0 }),
+        gate: mkAdapter('gate', { USDT: 1000, AXS: 16 }),
+      },
+      nowFn: () => 1_700_000_000_000,
+      enableIntentHandling: true,
+    });
+
+    bus.emit('trade:intent', mkIntent({ id: 'intent-disabled-exchange' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(placed.length, 0);
+  });
 });

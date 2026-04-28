@@ -137,4 +137,53 @@ suite('strategy/engineV2', () => {
     assertApproxEqual(intents[0].expectedPnl, 1.6893740000000435);
     assertApproxEqual(intents[0].net, 0.0011911852293031082);
   });
+
+  test('drops intents when net after slippage is below configured minimum', () => {
+    const nowMs = 1_000_000;
+    const sym = 'TST_USDT';
+    const latest = new Map();
+
+    latest.set(`binance|${sym}`, {
+      tsMs: nowMs,
+      asks: [
+        [100.00, 10],
+        [100.01, 10],
+      ],
+      bids: [
+        [99.99, 10],
+        [99.98, 10],
+      ],
+    });
+    latest.set(`gate|${sym}`, {
+      tsMs: nowMs,
+      bids: [
+        [100.12, 10],
+        [100.11, 10],
+      ],
+      asks: [
+        [100.13, 10],
+        [100.14, 10],
+      ],
+    });
+
+    const cfg = {
+      bot: {
+        raw_spread_buffer_pct: 0,
+        net_min_after_slippage_pct: 0.15,
+        slippage_pct: 0.05,
+        q_min_usdt: 1,
+        q_max_usdt: 5000,
+      },
+      enabledExchanges: ['binance', 'gate'],
+    };
+
+    const fees = {
+      binance: { taker_fee_pct: 0 },
+      gate: { taker_fee_pct: 0 },
+    };
+
+    const intents = computeIntentsForSymV2WithInit({ sym, latest, fees, nowMs, cfg, exState });
+
+    assert.equal(intents.length, 0);
+  });
 });

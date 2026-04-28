@@ -87,11 +87,16 @@ export default async function startExecutor(
   const exStateArr = exState.getAllExchangeStates();
 
   const CFG_AUTO_FIX_FAILED_ORDERS = getBotCfg().auto_fix_failed_orders;
+  const enabledExecutionExchanges = new Set(cfg.bot.execution_exchanges ?? []);
+  const restrictExecutionExchanges = enabledExecutionExchanges.size > 0;
 
   // adapters ermitteln fuer exchanges die bei start enabled sind
   const adapters: Partial<Record<ExchangeId, ExecutorAdapter>> = deps.adapters ?? {};
   for (const ex of exStateArr) {
     if (!ex.enabled) {
+      continue;
+    }
+    if (restrictExecutionExchanges && !enabledExecutionExchanges.has(ex.exchange as ExchangeId)) {
       continue;
     }
     if (ex.exchange === ExchangeIds.binance) {
@@ -494,6 +499,20 @@ export default async function startExecutor(
         return;
       }
       const { symbol, buyEx, sellEx, targetQty, qBuy, qSell, buyPxEff, sellPxEff, id } = intent; // sym ist canonical
+      if (
+        restrictExecutionExchanges
+        && (!enabledExecutionExchanges.has(buyEx) || !enabledExecutionExchanges.has(sellEx))
+      ) {
+        log.debug({
+          intentId: intent.id,
+          symbol,
+          buyEx,
+          sellEx,
+          enabledExecutionExchanges: Array.from(enabledExecutionExchanges),
+        }, 'dropping intent: exchange not enabled for execution');
+        busy = false;
+        return;
+      }
       let orderTargetQty = targetQty;
       let orderQBuy = qBuy;
       let orderQSell = qSell;
