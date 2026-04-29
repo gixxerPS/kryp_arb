@@ -540,13 +540,13 @@ function scheduleFinalOrderResult(key: string, tracker: HtxOrderTracker): void {
     emitFinalOrderResult(key, latest);
   }, ORDER_FINAL_GRACE_MS);
   tracker.finalTimer.unref?.();
-  log.debug({ key, orderFinalGraceMs: ORDER_FINAL_GRACE_MS, tracker }, 'htx final order result scheduled');
+  // log.debug({ key, orderFinalGraceMs: ORDER_FINAL_GRACE_MS, tracker }, 'htx final order result scheduled');
 }
 
 function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   const row = msgObj.data;
   if (!row?.symbol) return;
-  log.debug({ row }, 'htx trade clearing raw event');
+  // log.debug({ row }, 'htx trade clearing raw event');
   const canonSym = getCanonFromOderSym(row.symbol.toUpperCase(), ExchangeIds.htx);
   if (!canonSym) {
     log.warn({ row }, 'htx trade clearing symbol mapping missing');
