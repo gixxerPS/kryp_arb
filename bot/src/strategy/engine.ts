@@ -549,7 +549,13 @@ export function computeIntentsForSymV2({ sym, latest, fees, nowMs, cfg, exState 
         continue;
       }
       if (net2 < rt.netMinAfterSlippage) {
-        log.debug({ reason: 'net after slippage below minimum', net2, netMinAfterSlippage: rt.netMinAfterSlippage }, 'dropped trade');
+        log.debug({ reason: 'net after slippage below minimum', net2, netMinAfterSlippage: rt.netMinAfterSlippage,
+          sym,
+          buyEx,
+          sellEx,
+          qBuy: qBuyTarget,
+          qSell: qSellTarget,
+         }, 'dropped trade');
         continue;
       }
       const buyPxEff = targetQty > 0 ? qBuyTarget / targetQty : 0;
