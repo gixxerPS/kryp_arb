@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.bitget.com/api/v2/spot/public/symbols",
-    "fetchedAt": "2026-04-16T17:26:11.838Z"
+    "fetchedAt": "2026-05-05T08:16:03.898Z"
   },
   "symbols": {
     "ALGOUSDT": {
@@ -68,6 +68,22 @@
       "maxQty": 900000000000000000000,
       "minNotional": 1
     },
+    "ENJUSDT": {
+      "symbol": "ENJUSDT",
+      "baseAsset": "ENJ",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 1,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.1",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0,
+      "maxQty": 900000000000000000000,
+      "minNotional": 1
+    },
     "FILUSDT": {
       "symbol": "FILUSDT",
       "baseAsset": "FIL",
@@ -111,6 +127,22 @@
       "priceTick": "0.001",
       "priceTickDerivedFromPrecision": true,
       "qtyStep": "0.1",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0,
+      "maxQty": 900000000000000000000,
+      "minNotional": 1
+    },
+    "MINAUSDT": {
+      "symbol": "MINAUSDT",
+      "baseAsset": "MINA",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 4,
+      "qtyPrecision": 2,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
       "qtyStepDerivedFromPrecision": true,
       "minQty": 0,
       "maxQty": 900000000000000000000,
@@ -164,6 +196,22 @@
       "maxQty": 900000000000000000000,
       "minNotional": 1
     },
+    "RUNEUSDT": {
+      "symbol": "RUNEUSDT",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 3,
+      "qtyPrecision": 3,
+      "priceTick": "0.001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.001",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0,
+      "maxQty": 900000000000000000000,
+      "minNotional": 1
+    },
     "VETUSDT": {
       "symbol": "VETUSDT",
       "baseAsset": "VET",
@@ -175,6 +223,22 @@
       "priceTick": "0.00001",
       "priceTickDerivedFromPrecision": true,
       "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0,
+      "maxQty": 900000000000000000000,
+      "minNotional": 1
+    },
+    "ZILUSDT": {
+      "symbol": "ZILUSDT",
+      "baseAsset": "ZIL",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 3,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.001",
       "qtyStepDerivedFromPrecision": true,
       "minQty": 0,
       "maxQty": 900000000000000000000,

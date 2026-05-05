@@ -4,11 +4,27 @@
   "intent_time_to_live_ms": 1500,
   "cooldown_ms": 2000,
   "raw_spread_buffer_pct": 0.0,
+  "net_min_after_slippage_pct": 0.08,
   "slippage_pct": 0.01,
   "q_min_usdt": 80,
   "q_max_usdt": 500,
   "balance_minimum_usdt": 10,
   "auto_fix_failed_orders": false,
   "execution_symbols": [],
-  "execution_exchanges": []
+  "execution_exchanges": [],
+  "overrides": {
+    "add_raw_spread_buffer_pct": {
+      "by_exchange": {
+        "mexc": 0.15
+      },
+      "by_symbol": {
+        "MON_USDT": 0.05
+      }
+    },
+    "liquidity_quote_factor": {
+      "by_exchange": {
+        "htx": 0.5
+      }
+    }
+  }
 }

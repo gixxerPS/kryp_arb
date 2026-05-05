@@ -8,6 +8,7 @@ export interface BotCfg {
   cooldown_s: number;
   cooldown_ms?: number;
   raw_spread_buffer_pct: number;
+  net_min_after_slippage_pct?: number;
   slippage_pct: number;
   q_min_usdt: number;
   q_max_usdt: number;
@@ -17,6 +18,9 @@ export interface BotCfg {
     add_raw_spread_buffer_pct?: {
       by_exchange?: Partial<Record<ExchangeId, number>>;
       by_symbol?: Record<string, number>;
+    };
+    liquidity_quote_factor?: {
+      by_exchange?: Partial<Record<ExchangeId, number>>;
     };
   };
 }

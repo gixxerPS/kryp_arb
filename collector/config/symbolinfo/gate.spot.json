@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://api.gateio.ws/api/v4/spot/currency_pairs",
-    "fetchedAt": "2026-04-16T17:26:08.669Z"
+    "fetchedAt": "2026-05-05T08:15:58.664Z"
   },
   "symbols": {
     "ALGO_USDT": {
@@ -84,6 +84,22 @@
       "maxQty": null,
       "minNotional": 3
     },
+    "ENJ_USDT": {
+      "symbol": "ENJ_USDT",
+      "baseAsset": "ENJ",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 2,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.01,
+      "maxQty": null,
+      "minNotional": 3
+    },
     "FIL_USDT": {
       "symbol": "FIL_USDT",
       "baseAsset": "FIL",
@@ -132,6 +148,22 @@
       "maxQty": null,
       "minNotional": 3
     },
+    "MINA_USDT": {
+      "symbol": "MINA_USDT",
+      "baseAsset": "MINA",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 0,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "1",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 1,
+      "maxQty": null,
+      "minNotional": 3
+    },
     "MON_USDT": {
       "symbol": "MON_USDT",
       "baseAsset": "MON",
@@ -164,6 +196,22 @@
       "maxQty": null,
       "minNotional": 3
     },
+    "POPCAT_USDT": {
+      "symbol": "POPCAT_USDT",
+      "baseAsset": "POPCAT",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 0,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "1",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 1,
+      "maxQty": null,
+      "minNotional": 3
+    },
     "QNT_USDT": {
       "symbol": "QNT_USDT",
       "baseAsset": "QNT",
@@ -180,6 +228,22 @@
       "maxQty": null,
       "minNotional": 3
     },
+    "RUNE_USDT": {
+      "symbol": "RUNE_USDT",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 4,
+      "qtyPrecision": 2,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.01,
+      "maxQty": null,
+      "minNotional": 3
+    },
     "VET_USDT": {
       "symbol": "VET_USDT",
       "baseAsset": "VET",
@@ -193,6 +257,38 @@
       "qtyStep": "1",
       "qtyStepDerivedFromPrecision": true,
       "minQty": 1,
+      "maxQty": null,
+      "minNotional": 3
+    },
+    "WMTX_USDT": {
+      "symbol": "WMTX_USDT",
+      "baseAsset": "WMTX",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 2,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.01,
+      "maxQty": null,
+      "minNotional": 3
+    },
+    "ZIL_USDT": {
+      "symbol": "ZIL_USDT",
+      "baseAsset": "ZIL",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 6,
+      "qtyPrecision": 2,
+      "priceTick": "0.000001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.01,
       "maxQty": null,
       "minNotional": 3
     }

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-const fs = require("node:fs");
 const path = require("node:path");
 
-const { pow10Tick, asInt, asNumber } = require("./normalize");
+const { asInt, asNumber } = require("./normalize");
 const { mergeAndWriteOutput } = require('./output');
 
 const BASE_URL = 'https://api.binance.com';
@@ -43,15 +42,15 @@ function pickFilter(filters, type) {
   return (filters || []).find((f) => f.filterType === type) || null;
 }
 
-async function fetchExchangeInfo(wanted) {
-  const reqSymbols = JSON.stringify(Array.from(wanted));
-  const query = `?symbols=${encodeURIComponent(reqSymbols)}`;
+async function fetchBinanceSymbol(symbol) {
+  const query = `?symbol=${encodeURIComponent(symbol)}`;
   const res = await fetch(FETCH_URL + query);
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`binance fetch failed: ${res.status} ${t} for symbol(s) ${reqSymbols}`);
+    throw new Error(`binance fetch failed for ${symbol}: ${res.status} ${t}`);
   }
-  return res.json();
+  const json = await res.json();
+  return json.symbols?.[0] ?? null;
 }
 
 async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
@@ -65,29 +64,30 @@ async function run({ BOT_CFG_PATH, SYMBOLINFO_DIR, wantedInternal }) {
     })
   );
 
-  const exchangeInfo = await fetchExchangeInfo(wanted); // full exchangeInfo
-  // console.log(exchangeInfo); // debug
-
-  const symbols = exchangeInfo.symbols || [];
-
   const out = {
     meta: {
       source: FETCH_URL,
       fetchedAt: new Date().toISOString(),
-      timezone: exchangeInfo.timezone ?? null,
+      timezone: null,
       symbolCountRequested: wanted.size,
     },
     symbols: {},
   };
 
-  for (const s of symbols) {
+  for (const symbol of wanted) {
+    let s;
+    try {
+      s = await fetchBinanceSymbol(symbol);
+    } catch (err) {
+      console.log(`[binance] error for ${symbol}: ${String(err?.message ?? err)}`);
+      continue;
+    }
+
+    if (!s) continue;
     if (s.status !== "TRADING") continue;
 
     // optional: wenn du NUR USDC traden willst, lass das drin
     if (s.quoteAsset !== "USDC") continue;
-
-    // membership check (Binance exchange symbol)
-    if (!wanted.has(s.symbol)) continue;
 
     const priceFilter = pickFilter(s.filters, "PRICE_FILTER");
     const lotSize = pickFilter(s.filters, "LOT_SIZE");

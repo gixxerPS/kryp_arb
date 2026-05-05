@@ -25,6 +25,10 @@ export function toNumLevels(levels: L2Level[]): Array<[number, number]> {
   return out;
 }
 
+export function formatLevelsInline(levels: L2Level[]): string {
+  return levels.map(([price, qty]) => `[${price}, ${qty}]`).join(' ');
+}
+
 export function tradeRouteKey(intent: Pick<TradeIntentDraft, 'symbol' | 'buyEx' | 'sellEx'>): string {
   return `${intent.symbol}|${intent.buyEx}->${intent.sellEx}`;
 }

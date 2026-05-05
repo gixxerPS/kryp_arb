@@ -1,11 +1,39 @@
 {
   "meta": {
     "source": "https://api.binance.com/api/v3/exchangeInfo",
-    "fetchedAt": "2026-04-16T17:26:08.662Z",
-    "timezone": "UTC",
-    "symbolCountRequested": 7
+    "fetchedAt": "2026-05-05T08:15:56.105Z",
+    "timezone": null,
+    "symbolCountRequested": 10
   },
   "symbols": {
+    "ALGOUSDC": {
+      "symbol": "ALGOUSDC",
+      "baseAsset": "ALGO",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00010000",
+      "qtyStep": "1.00000000",
+      "minQty": 1,
+      "maxQty": 922327,
+      "minNotional": 5
+    },
+    "ARBUSDC": {
+      "symbol": "ARBUSDC",
+      "baseAsset": "ARB",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00010000",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 92141578,
+      "minNotional": 5
+    },
     "ATOMUSDC": {
       "symbol": "ATOMUSDC",
       "baseAsset": "ATOM",
@@ -46,6 +74,20 @@
       "qtyStep": "0.00100000",
       "minQty": 0.001,
       "maxQty": 90000,
+      "minNotional": 5
+    },
+    "ENJUSDC": {
+      "symbol": "ENJUSDC",
+      "baseAsset": "ENJ",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00001000",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 900000,
       "minNotional": 5
     },
     "FILUSDC": {
@@ -90,6 +132,34 @@
       "maxQty": 90000,
       "minNotional": 5
     },
+    "MINAUSDC": {
+      "symbol": "MINAUSDC",
+      "baseAsset": "MINA",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00010000",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 9222449,
+      "minNotional": 5
+    },
+    "POLUSDC": {
+      "symbol": "POLUSDC",
+      "baseAsset": "POL",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00010000",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 92141578,
+      "minNotional": 5
+    },
     "QNTUSDC": {
       "symbol": "QNTUSDC",
       "baseAsset": "QNT",
@@ -102,6 +172,34 @@
       "qtyStep": "0.00100000",
       "minQty": 0.001,
       "maxQty": 922327,
+      "minNotional": 5
+    },
+    "RUNEUSDC": {
+      "symbol": "RUNEUSDC",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00100000",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 90000,
+      "minNotional": 5
+    },
+    "VETUSDC": {
+      "symbol": "VETUSDC",
+      "baseAsset": "VET",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00000100",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 9000000,
       "minNotional": 5
     }
   }
