@@ -30,7 +30,7 @@ import {
   type ExecutorAccountStatusByExchange,
   OrderStates
 } from '../types/executor';
-import type { TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
+import type { TradeOrdersNokEvent, TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
 import type { TradeIntent } from '../types/strategy';
 
 type StartExecutorParams = {
@@ -332,6 +332,18 @@ export default async function startExecutor(
         deltaBalanceBase
       };
       bus.emit('trade:orders_ok', ordersOkEvent);
+    } else if (buyR && sellR) {
+      const ordersNokEvent: TradeOrdersNokEvent = {
+        id: intentId,
+        ts: new Date(),
+        symbol: pendingExecution.intent.symbol,
+        buy: buyR,
+        sell: sellR,
+        buyOk,
+        sellOk,
+        reason: 'ORDER_NOT_FILLED',
+      };
+      bus.emit('trade:orders_nok', ordersNokEvent);
     }
     if (buyR && sellR) { // wenn trade komplett dann auswerten kann ok / failed sein
       updateRuntimeState({ buyOk, sellOk, pnl });
@@ -708,6 +720,17 @@ export default async function startExecutor(
           sellReceived: sellOk,
           }, 'pending execution expired');
         releasePendingReservations(pendingExecution);
+        const ordersNokEvent: TradeOrdersNokEvent = {
+          id,
+          ts: new Date(),
+          symbol,
+          buy: pendingExecution.buy,
+          sell: pendingExecution.sell,
+          buyOk,
+          sellOk,
+          reason: 'TIMEOUT',
+        };
+        bus.emit('trade:orders_nok', ordersNokEvent);
         updateRuntimeState({ buyOk, sellOk, pnl });
         pendingExecutions.delete(id);
         busy = false;

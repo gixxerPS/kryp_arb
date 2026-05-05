@@ -468,6 +468,36 @@ function knownTrackerKey(clientOrderId?: string | number, orderId?: string | num
   return orderAliases.get(clientKey) ?? orderAliases.get(orderKey) ?? '';
 }
 
+function setTrackerAliases(key: string, tracker: HtxOrderTracker): void {
+  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
+  if (tracker.orderId !== '') orderAliases.set(String(tracker.orderId), key);
+}
+
+function createOrderTracker(params: {
+  canonSym: string;
+  exchangeSymbol: string;
+  side: 'BUY' | 'SELL';
+  clientOrderId?: string | number;
+  orderId?: string | number;
+  transactTime?: number;
+}): HtxOrderTracker {
+  return {
+    canonSym: params.canonSym,
+    exchangeSymbol: params.exchangeSymbol,
+    side: params.side,
+    clientOrderId: aliasId(params.clientOrderId),
+    orderId: aliasId(params.orderId),
+    transactTime: Number(params.transactTime ?? Date.now()),
+    executedQty: 0,
+    cummulativeQuoteQty: 0,
+    feeAmount: 0,
+    feeCurrency: '',
+    finalStatus: OrderStates.UNKNOWN,
+    orderFinalSeen: false,
+    seenTradeClearing: false,
+  };
+}
+
 function deleteOrderTracker(key: string, tracker: HtxOrderTracker): void {
   clearFinalTimer(tracker);
   orderTrackers.delete(key);
@@ -563,8 +593,7 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   if (!tracker) return;
   tracker.clientOrderId = tracker.clientOrderId || aliasId(row.clientOrderId);
   tracker.orderId = tracker.orderId || aliasId(row.orderId);
-  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
-  if (tracker.orderId !== '') orderAliases.set(String(tracker.orderId), key);
+  setTrackerAliases(key, tracker);
 
   if (row.eventType === 'cancellation') {
     tracker.finalStatus = OrderStates.CANCELLED;
@@ -589,9 +618,15 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
   tracker.feeAmount += Number.isFinite(feeAmount) ? feeAmount : 0;
   tracker.feeCurrency = feeCurrency || tracker.feeCurrency;
   tracker.transactTime = Number(row.tradeTime ?? tracker.transactTime);
+  const status = statusFromHtx(row.orderStatus);
+  if (status !== OrderStates.UNKNOWN) {
+    tracker.finalStatus = status;
+    tracker.orderFinalSeen = status === OrderStates.FILLED || status === OrderStates.CANCELLED;
+  }
   log.debug({
     key,
     orderStatus: row.orderStatus,
+    status,
     tradeQty,
     tradePrice,
     quoteQty,
@@ -610,7 +645,7 @@ function handleTradeDetails(msgObj: HtxWsResponse<HtxTradeClearingRow>): void {
 function handleOrderUpdate(msgObj: HtxWsResponse<HtxOrderUpdateRow>): void {
   const row = msgObj.data;
   if (!row?.symbol) return;
-  log.debug({ row }, 'htx order update raw event');
+  // log.debug({ row }, 'htx order update raw event');
   const canonSym = getCanonFromOderSym(row.symbol.toUpperCase(), ExchangeIds.htx);
   if (!canonSym) {
     log.warn({ row }, 'htx order update symbol mapping missing');
@@ -627,8 +662,7 @@ function handleOrderUpdate(msgObj: HtxWsResponse<HtxOrderUpdateRow>): void {
   if (!tracker) return;
   tracker.clientOrderId = tracker.clientOrderId || aliasId(row.clientOrderId);
   tracker.orderId = tracker.orderId || aliasId(row.orderId);
-  if (tracker.clientOrderId) orderAliases.set(tracker.clientOrderId, key);
-  if (tracker.orderId !== '') orderAliases.set(String(tracker.orderId), key);
+  setTrackerAliases(key, tracker);
 
   const execAmt = Number(row.execAmt ?? NaN);
   const remainAmt = Number(row.remainAmt ?? NaN);
@@ -640,15 +674,15 @@ function handleOrderUpdate(msgObj: HtxWsResponse<HtxOrderUpdateRow>): void {
   tracker.finalStatus = status;
   tracker.orderFinalSeen = status === OrderStates.FILLED || status === OrderStates.CANCELLED;
 
-  log.debug({
-    key,
-    status,
-    execAmt: row.execAmt,
-    remainAmt: row.remainAmt,
-    orderSize: row.orderSize,
-    orderValue: row.orderValue,
-    tracker,
-  }, 'htx order update parsed');
+  // log.debug({
+  //   key,
+  //   status,
+  //   execAmt: row.execAmt,
+  //   remainAmt: row.remainAmt,
+  //   orderSize: row.orderSize,
+  //   orderValue: row.orderValue,
+  //   tracker,
+  // }, 'htx order update parsed');
 
   if (!tracker.orderFinalSeen) return;
   scheduleFinalOrderResult(key, tracker);
@@ -792,6 +826,26 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
   if (!isLoggedIn) {
     throw new Error('htx ws-api not logged in');
   }
+  const canonSym = getCanonFromOderSym(orderParams.symbol.toUpperCase(), ExchangeIds.htx);
+  if (!canonSym) {
+    throw new Error(`htx placed order symbol mapping missing for ${orderParams.symbol}`);
+  }
+  const clientOrderId = aliasId(orderParams.orderId);
+  const optimisticKey = trackerKeyFor(clientOrderId);
+  const tracker = orderTrackers.get(optimisticKey) ?? createOrderTracker({
+    canonSym,
+    exchangeSymbol: orderParams.symbol.toUpperCase(),
+    side: orderParams.side,
+    clientOrderId,
+  });
+  tracker.canonSym = canonSym;
+  tracker.exchangeSymbol = orderParams.symbol.toUpperCase();
+  tracker.side = orderParams.side;
+  tracker.clientOrderId = tracker.clientOrderId || clientOrderId;
+  tracker.transactTime = Date.now();
+  orderTrackers.set(optimisticKey, tracker);
+  setTrackerAliases(optimisticKey, tracker);
+
   const data: Record<string, unknown> = {
     'account-id': accountId || await resolveAccountId(),
     source: 'spot-api',
@@ -818,35 +872,32 @@ async function placeOrder(orderParams: PlaceOrderParams): Promise<void> {
     });
     log.debug({ data, rawOrderResponse: response }, 'htx placeOrder rest response');
     if (response.data !== undefined) {
-      const canonSym = getCanonFromOderSym(orderParams.symbol.toUpperCase(), ExchangeIds.htx);
-      if (!canonSym) {
-        log.warn({ orderParams, orderId: response.data }, 'htx placed order symbol mapping missing');
-        return;
-      }
-      const clientOrderId = aliasId(orderParams.orderId);
       const orderId = response.data;
       const key = trackerKeyFor(clientOrderId, orderId);
-      const tracker: HtxOrderTracker = {
+      const tracker = orderTrackers.get(key) ?? orderTrackers.get(optimisticKey) ?? createOrderTracker({
         canonSym,
         exchangeSymbol: orderParams.symbol.toUpperCase(),
         side: orderParams.side,
         clientOrderId,
         orderId,
-        transactTime: Date.now(),
-        executedQty: 0,
-        cummulativeQuoteQty: 0,
-        feeAmount: 0,
-        feeCurrency: '',
-        finalStatus: OrderStates.UNKNOWN,
-        orderFinalSeen: false,
-        seenTradeClearing: false,
-      };
+      });
+      if (key !== optimisticKey) {
+        orderTrackers.delete(optimisticKey);
+      }
+      tracker.canonSym = canonSym;
+      tracker.exchangeSymbol = orderParams.symbol.toUpperCase();
+      tracker.side = orderParams.side;
+      tracker.clientOrderId = tracker.clientOrderId || clientOrderId;
+      tracker.orderId = tracker.orderId || orderId;
       orderTrackers.set(key, tracker);
-      if (clientOrderId) orderAliases.set(clientOrderId, key);
-      orderAliases.set(String(orderId), key);
+      setTrackerAliases(key, tracker);
       log.debug({ clientOrderId, orderId, symbol: orderParams.symbol }, 'htx placed order registered');
     }
   } catch (err) {
+    const latestTracker = orderTrackers.get(optimisticKey);
+    if (latestTracker && latestTracker.orderId === '') {
+      deleteOrderTracker(optimisticKey, latestTracker);
+    }
     log.error({ err, data }, 'htx placeOrder failed');
     throw err;
   }

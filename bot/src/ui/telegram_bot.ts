@@ -19,7 +19,7 @@ import type {
   ExecutorHandle,
   ExecutorRuntimeState,
 } from '../types/executor';
-import type { TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
+import type { TradeOrdersNokEvent, TradeOrdersOkEvent, TradeWarnPrecheckEvent } from '../types/events';
 import type { StrategyHandle } from '../types/strategy';
 
 const log = getLogger('ui').child({ type: 'telegram' });
@@ -285,6 +285,32 @@ function buildTradeOrdersOkText(ev: TradeOrdersOkEvent): string {
   ].join('\n');
 }
 
+function buildTradeOrdersNokText(ev: TradeOrdersNokEvent): string {
+  const lines = [
+    `TRADE FAILED @${fmtTs(ev.ts)}`,
+    `symbol=${ev.symbol} id=${ev.id}`,
+    `reason=${ev.reason} buyOk=${ev.buyOk} sellOk=${ev.sellOk}`,
+  ];
+
+  if (ev.buy) {
+    lines.push(
+      `BUY  [${ev.buy.exchange}] status=${ev.buy.status} quote=${n(ev.buy.cummulativeQuoteQty)} qty=${n(ev.buy.executedQty)} px=${n(ev.buy.priceVwap)}  feeUsd=${n(ev.buy.fee_usd)}`
+    );
+  } else {
+    lines.push('BUY  [n/a] no order result');
+  }
+
+  if (ev.sell) {
+    lines.push(
+      `SELL [${ev.sell.exchange}] status=${ev.sell.status} quote=${n(ev.sell.cummulativeQuoteQty)} qty=${n(ev.sell.executedQty)} px=${n(ev.sell.priceVwap)}  feeUsd=${n(ev.sell.fee_usd)}`
+    );
+  } else {
+    lines.push('SELL [n/a] no order result');
+  }
+
+  return lines.join('\n');
+}
+
 function buildTradeWarnPrecheckText(ev: TradeWarnPrecheckEvent): string {
   return [
     `TRADE WARN PRECHECK @${fmtTs(ev.ts)}`,
@@ -460,6 +486,10 @@ export function initTelegramBot({ cfg, app }: { cfg: AppConfig; app: AppContext 
 
   bus.on('trade:orders_ok', (ev: TradeOrdersOkEvent) => {
     notifyAllowedUsers(buildTradeOrdersOkText(ev), 'telegram trade notify');
+  });
+
+  bus.on('trade:orders_nok', (ev: TradeOrdersNokEvent) => {
+    notifyAllowedUsers(buildTradeOrdersNokText(ev), 'telegram trade failed notify');
   });
 
   bus.on('trade:warn_precheck', (ev: TradeWarnPrecheckEvent) => {

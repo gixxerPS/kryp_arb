@@ -11,6 +11,17 @@ export type TradeOrdersOkEvent = {
   deltaBalanceBase: number;
 };
 
+export type TradeOrdersNokEvent = {
+  id: string; // intent_id
+  ts: Date;
+  symbol: string;
+  buy?: CommonOrderResult;
+  sell?: CommonOrderResult;
+  buyOk: boolean;
+  sellOk: boolean;
+  reason: 'TIMEOUT' | 'ORDER_NOT_FILLED';
+};
+
 export type TradeWarnPrecheckEvent = {
   ts: Date;
   symbol: string;
