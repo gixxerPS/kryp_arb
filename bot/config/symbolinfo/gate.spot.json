@@ -52,6 +52,38 @@
       "minQty": 1,
       "maxQty": null,
       "minNotional": 3
+    },
+    "RUNE_USDT": {
+      "symbol": "RUNE_USDT",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 4,
+      "qtyPrecision": 2,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.01,
+      "maxQty": null,
+      "minNotional": 3
+    },
+    "WMTX_USDT": {
+      "symbol": "WMTX_USDT",
+      "baseAsset": "WMTX",
+      "quoteAsset": "USDT",
+      "status": "tradable",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 2,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.01,
+      "maxQty": null,
+      "minNotional": 3
     }
   }
 }

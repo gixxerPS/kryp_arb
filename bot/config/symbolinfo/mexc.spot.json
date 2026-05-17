@@ -266,6 +266,22 @@
       "minQty": null,
       "maxQty": null,
       "minNotional": null
+    },
+    "WMTXUSDT": {
+      "symbol": "WMTXUSDT",
+      "baseAsset": "WMTX",
+      "quoteAsset": "USDT",
+      "status": "1",
+      "enabled": true,
+      "pricePrecision": 5,
+      "qtyPrecision": 2,
+      "priceTick": "0.00001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.01",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": null,
+      "maxQty": null,
+      "minNotional": null
     }
   }
 }

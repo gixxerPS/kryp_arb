@@ -52,6 +52,22 @@
       "minQty": 0,
       "maxQty": 900000000000000000000,
       "minNotional": 1
+    },
+    "RUNEUSDT": {
+      "symbol": "RUNEUSDT",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 3,
+      "qtyPrecision": 3,
+      "priceTick": "0.001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.001",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0,
+      "maxQty": 900000000000000000000,
+      "minNotional": 1
     }
   }
 }

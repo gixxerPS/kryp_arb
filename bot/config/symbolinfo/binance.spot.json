@@ -34,6 +34,20 @@
       "minQty": 0.1,
       "maxQty": 92141578,
       "minNotional": 5
+    },
+    "RUNEUSDC": {
+      "symbol": "RUNEUSDC",
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDC",
+      "status": "TRADING",
+      "enabled": true,
+      "pricePrecision": 8,
+      "qtyPrecision": 8,
+      "priceTick": "0.00100000",
+      "qtyStep": "0.10000000",
+      "minQty": 0.1,
+      "maxQty": 90000,
+      "minNotional": 5
     }
   }
 }

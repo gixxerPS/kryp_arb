@@ -152,21 +152,21 @@
       "maxQty": 34535156,
       "minNotional": 5
     },
-    "UNDEFINED": {
-      "symbol": "UNDEFINED",
-      "baseAsset": "BABYDOGE",
+    "RUNEUSDT": {
+      "symbol": "RUNEUSDT",
+      "baseAsset": "RUNE",
       "quoteAsset": "USDT",
       "status": "online",
       "enabled": true,
-      "pricePrecision": null,
-      "qtyPrecision": null,
-      "priceTick": null,
+      "pricePrecision": 4,
+      "qtyPrecision": 4,
+      "priceTick": "0.0001",
       "priceTickDerivedFromPrecision": true,
-      "qtyStep": null,
+      "qtyStep": "0.0001",
       "qtyStepDerivedFromPrecision": true,
-      "minQty": null,
-      "maxQty": null,
-      "minNotional": null
+      "minQty": 0.01,
+      "maxQty": 200803,
+      "minNotional": 10
     },
     "VETUSDT": {
       "symbol": "VETUSDT",
@@ -183,6 +183,22 @@
       "minQty": 1,
       "maxQty": 80000000,
       "minNotional": 5
+    },
+    "WMTXUSDT": {
+      "symbol": "WMTXUSDT",
+      "baseAsset": "WMTX",
+      "quoteAsset": "USDT",
+      "status": "online",
+      "enabled": true,
+      "pricePrecision": 4,
+      "qtyPrecision": 4,
+      "priceTick": "0.0001",
+      "priceTickDerivedFromPrecision": true,
+      "qtyStep": "0.0001",
+      "qtyStepDerivedFromPrecision": true,
+      "minQty": 0.1,
+      "maxQty": 3557452,
+      "minNotional": 10
     }
   }
 }
